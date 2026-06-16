@@ -44,6 +44,7 @@ type DailyEntry = {
   exerciseMinutes: number
   sober: boolean
   foodLogged: boolean
+  finalizedAt: string | null
   calories: number | null
   proteinGrams: number | null
   waterLiters: number | null
@@ -166,13 +167,12 @@ const DEFAULT_TARGETS: ChallengeTargets = {
 }
 
 const DEFAULT_RULES: RuleConfig[] = [
-  { key: 'exercise', label: '90 min Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable' },
+  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable' },
   { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable' },
-  { key: 'foodLogged', label: 'Done Eating for the Day', icon: '●', enabled: true, weight: 'supporting' },
-  { key: 'calories', label: 'Calories On Target', icon: '◌', enabled: false, weight: 'supporting' },
-  { key: 'protein', label: 'Protein Goal', icon: '▲', enabled: true, weight: 'nonNegotiable' },
-  { key: 'water', label: 'Water Goal', icon: '≈', enabled: false, weight: 'supporting' },
-  { key: 'sleep', label: 'Sleep Goal', icon: '◒', enabled: false, weight: 'supporting' },
+  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting' },
+  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable' },
+  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting' },
+  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting' },
   { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting' },
   { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting' },
 ]
@@ -275,6 +275,26 @@ function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function normalizeTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString()
+}
+
+function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): string {
+  const legacyLabels: Partial<Record<RuleKey, string[]>> = {
+    exercise: ['90 min Exercise'],
+    foodLogged: ['Log Food Honestly', 'Food honestly logged', 'Done Eating for the Day'],
+    calories: ['Calories On Target'],
+    protein: ['Protein Goal'],
+    water: ['Water Goal'],
+    sleep: ['Sleep Goal'],
+  }
+
+  if (legacyLabels[defaultRule.key]?.includes(storedLabel)) return defaultRule.label
+  return storedLabel || defaultRule.label
+}
+
 function normalizeSettings(value: unknown): ChallengeSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<ChallengeSettings> : {}
   const targetsCandidate = candidate.targets && typeof candidate.targets === 'object'
@@ -304,12 +324,7 @@ function normalizeSettings(value: unknown): ChallengeSettings {
     const storedLabel = typeof storedRule?.label === 'string' && storedRule.label.trim()
       ? storedRule.label.trim()
       : ''
-    const label = defaultRule.key === 'foodLogged'
-      && (storedLabel === 'Log Food Honestly' || storedLabel === 'Food honestly logged')
-      ? defaultRule.label
-      : storedLabel
-        ? storedLabel
-        : defaultRule.label
+    const label = normalizeRuleLabel(defaultRule, storedLabel)
     const icon = typeof storedRule?.icon === 'string' && storedRule.icon.trim()
       ? storedRule.icon.trim().slice(0, 2)
       : defaultRule.icon
@@ -370,6 +385,7 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
     exerciseMinutes: normalizeBoundedNumber(candidate.exerciseMinutes, 0, 0, 300),
     sober: candidate.sober === true,
     foodLogged: candidate.foodLogged === true,
+    finalizedAt: normalizeTimestamp(candidate.finalizedAt),
     calories: normalizeOptionalNumber(candidate.calories, 0, 10000),
     proteinGrams: normalizeOptionalNumber(candidate.proteinGrams, 0, 500),
     waterLiters: normalizeOptionalNumber(candidate.waterLiters, 0, 15),
@@ -421,6 +437,7 @@ function makeEmptyEntry(date: string): DailyEntry {
     exerciseMinutes: 0,
     sober: false,
     foodLogged: false,
+    finalizedAt: null,
     calories: null,
     proteinGrams: null,
     waterLiters: null,
@@ -436,12 +453,25 @@ function makeEmptyEntry(date: string): DailyEntry {
   }
 }
 
+function isEntryFinalized(entry: DailyEntry): boolean {
+  return typeof entry.finalizedAt === 'string' && entry.finalizedAt.length > 0
+}
+
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
   }).format(new Date(`${date}T12:00:00`))
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
 
 function formatShortDate(date: string): string {
@@ -768,9 +798,9 @@ function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
     'completed_rules',
     'total_rules',
     ...ruleColumns,
+    'finalized_at',
     'exercise_minutes',
     'sober',
-    'done_eating_for_day',
     'calories',
     'protein_grams',
     'water_liters',
@@ -796,9 +826,9 @@ function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
       stats?.completed ?? '',
       stats?.total ?? '',
       ...settings.rules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
+      entry.finalizedAt,
       entry.exerciseMinutes,
       Number(entry.sober),
-      Number(entry.foodLogged),
       entry.calories,
       entry.proteinGrams,
       entry.waterLiters,
@@ -884,6 +914,7 @@ function App() {
   })
 
   const entry = entries[selectedDate] ?? makeEmptyEntry(selectedDate)
+  const entryFinalized = isEntryFinalized(entry)
   const stats = completionStats(entry, settings)
   const trackerHasStarted = todayIso() >= settings.startDate
   const latestSelectableDate = selectableEndDate(settings)
@@ -1009,6 +1040,38 @@ function App() {
         date: selectedDate,
       },
     }))
+  }
+
+  function updateEntryIfUnlocked(patch: Partial<DailyEntry>) {
+    if (isEntryFinalized(entry)) return
+    updateEntry(patch)
+  }
+
+  function finalizeSelectedDay() {
+    const nextEntries = {
+      ...entries,
+      [selectedDate]: {
+        ...entry,
+        date: selectedDate,
+        finalizedAt: new Date().toISOString(),
+      },
+    }
+
+    setEntries(nextEntries)
+    if (user) void publishFriendSummary(true, nextEntries)
+  }
+
+  function unlockSelectedDay() {
+    const nextEntries = {
+      ...entries,
+      [selectedDate]: {
+        ...entry,
+        date: selectedDate,
+        finalizedAt: null,
+      },
+    }
+
+    setEntries(nextEntries)
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
@@ -1355,7 +1418,7 @@ function App() {
     }
   }
 
-  async function publishFriendSummary(silent = false) {
+  async function publishFriendSummary(silent = false, sourceEntries = entries) {
     if (!supabase || !user) return
 
     if (!silent) setFriendsBusy(true)
@@ -1363,7 +1426,7 @@ function App() {
       const profile = await ensureFriendProfile()
       if (!profile) throw new Error('Could not load your friend profile.')
 
-      const summary = buildChallengeSummary(user.id, entries, settings)
+      const summary = buildChallengeSummary(user.id, sourceEntries, settings)
       const { error } = await supabase
         .from(SUPABASE_SUMMARY_TABLE)
         .upsert({
@@ -1395,6 +1458,7 @@ function App() {
   }
 
   function toggleRule(key: RuleKey) {
+    if (entryFinalized) return
     const next = !ruleComplete(entry, key, settings)
     switch (key) {
       case 'exercise':
@@ -1501,12 +1565,24 @@ function App() {
             totalRules={stats.total}
             percent={stats.percent}
             latestWeight={latestWeight}
+            isFinalized={entryFinalized}
             onToggleRule={toggleRule}
             onOpenCheckIn={() => setView('check-in')}
+            onFinalizeDay={finalizeSelectedDay}
+            onUnlockDay={unlockSelectedDay}
           />
         )}
 
-        {view === 'check-in' && <CheckIn entry={entry} settings={settings} onUpdate={updateEntry} />}
+        {view === 'check-in' && (
+          <CheckIn
+            entry={entry}
+            settings={settings}
+            isFinalized={entryFinalized}
+            onUpdate={updateEntryIfUnlocked}
+            onFinalizeDay={finalizeSelectedDay}
+            onUnlockDay={unlockSelectedDay}
+          />
+        )}
         {view === 'calendar' && (
           <CalendarView
             entries={entries}
@@ -1584,8 +1660,11 @@ function Dashboard({
   totalRules,
   percent,
   latestWeight,
+  isFinalized,
   onToggleRule,
   onOpenCheckIn,
+  onFinalizeDay,
+  onUnlockDay,
 }: {
   entry: DailyEntry
   entries: EntryMap
@@ -1595,8 +1674,11 @@ function Dashboard({
   totalRules: number
   percent: number
   latestWeight: number | undefined
+  isFinalized: boolean
   onToggleRule: (key: RuleKey) => void
   onOpenCheckIn: () => void
+  onFinalizeDay: () => void
+  onUnlockDay: () => void
 }) {
   const activeRules = getEnabledRules(settings)
 
@@ -1605,8 +1687,8 @@ function Dashboard({
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">{formatDate(selectedDate)}</p>
-          <h2>{percent === 100 ? 'God mode secured.' : 'Build the day.'}</h2>
-          <p>{completed} of {totalRules} rules complete</p>
+          <h2>{isFinalized ? 'Day finalized.' : percent === 100 ? 'God mode secured.' : 'Build the day.'}</h2>
+          <p>{completed} of {totalRules} rules complete{isFinalized && entry.finalizedAt ? ` · ${formatDateTime(entry.finalizedAt)}` : ''}</p>
         </div>
         <div className="progress-ring" style={{ '--progress': `${percent * 3.6}deg` } as CSSProperties}>
           <div>
@@ -1642,6 +1724,7 @@ function Dashboard({
                 type="button"
                 key={rule.key}
                 onClick={() => onToggleRule(rule.key)}
+                disabled={isFinalized}
               >
                 <span className="rule-icon">{rule.icon}</span>
                 <span className="rule-label">
@@ -1659,6 +1742,15 @@ function Dashboard({
         <button className="primary-button" type="button" onClick={onOpenCheckIn}>
           Open full check-in
         </button>
+        {isFinalized ? (
+          <button className="secondary-button" type="button" onClick={onUnlockDay}>
+            Unlock Day
+          </button>
+        ) : (
+          <button className="secondary-button" type="button" onClick={onFinalizeDay}>
+            Finalize Day
+          </button>
+        )}
       </section>
     </div>
   )
@@ -1677,60 +1769,78 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 function CheckIn({
   entry,
   settings,
+  isFinalized,
   onUpdate,
+  onFinalizeDay,
+  onUnlockDay,
 }: {
   entry: DailyEntry
   settings: ChallengeSettings
+  isFinalized: boolean
   onUpdate: (patch: Partial<DailyEntry>) => void
+  onFinalizeDay: () => void
+  onUnlockDay: () => void
 }) {
   return (
     <div className="page-stack">
       <section className="page-intro">
-        <p className="eyebrow">Daily input</p>
+        <p className="eyebrow">{isFinalized ? 'Finalized' : 'Daily input'}</p>
         <h2>Check-In</h2>
-        <p>Track the facts. Honest data is more useful than a perfect score.</p>
+        <p>{isFinalized && entry.finalizedAt ? `Locked ${formatDateTime(entry.finalizedAt)}.` : 'Track the facts. Honest data is more useful than a perfect score.'}</p>
       </section>
 
       <section className="panel form-panel">
         <SectionTitle number="1" title="Workout" />
-        <NumberField label={`Exercise minutes (${settings.targets.exerciseMinutes} min goal)`} value={entry.exerciseMinutes} min={0} max={300} onChange={(value) => onUpdate({ exerciseMinutes: value ?? 0 })} suffix="min" />
+        <NumberField disabled={isFinalized} label={`Exercise minutes (${settings.targets.exerciseMinutes} min goal)`} value={entry.exerciseMinutes} min={0} max={300} onChange={(value) => onUpdate({ exerciseMinutes: value ?? 0 })} suffix="min" />
       </section>
 
       <section className="panel form-panel">
         <SectionTitle number="2" title="Nutrition" />
         <div className="field-grid">
-          <NumberField label={`Calories (${settings.targets.calories} kcal target)`} value={entry.calories} min={0} max={10000} onChange={(value) => onUpdate({ calories: value })} suffix="kcal" />
-          <NumberField label={`Protein (${settings.targets.proteinGrams} g goal)`} value={entry.proteinGrams} min={0} max={500} onChange={(value) => onUpdate({ proteinGrams: value })} suffix="g" />
-          <NumberField label={`Water (${settings.targets.waterLiters} L goal)`} value={entry.waterLiters} min={0} max={15} step={0.1} onChange={(value) => onUpdate({ waterLiters: value })} suffix="L" />
-          <NumberField label="Weight" value={entry.weightPounds} min={50} max={700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value })} suffix="lb" />
+          <NumberField disabled={isFinalized} label={`Calories (${settings.targets.calories} kcal target)`} value={entry.calories} min={0} max={10000} onChange={(value) => onUpdate({ calories: value })} suffix="kcal" />
+          <NumberField disabled={isFinalized} label={`Protein (${settings.targets.proteinGrams} g goal)`} value={entry.proteinGrams} min={0} max={500} onChange={(value) => onUpdate({ proteinGrams: value })} suffix="g" />
+          <NumberField disabled={isFinalized} label={`Water (${settings.targets.waterLiters} L goal)`} value={entry.waterLiters} min={0} max={15} step={0.1} onChange={(value) => onUpdate({ waterLiters: value })} suffix="L" />
+          <NumberField disabled={isFinalized} label="Weight" value={entry.weightPounds} min={50} max={700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value })} suffix="lb" />
         </div>
-        <CheckField label="Done eating for the day" checked={entry.foodLogged} onChange={(checked) => onUpdate({ foodLogged: checked })} />
       </section>
 
       <section className="panel form-panel">
         <SectionTitle number="3" title="Discipline" />
-        <CheckField label="Sober" checked={entry.sober} onChange={(checked) => onUpdate({ sober: checked })} />
-        <CheckField label="Read 10 pages" checked={entry.readTenPages} onChange={(checked) => onUpdate({ readTenPages: checked })} />
-        <CheckField label="Journal completed" checked={entry.journaled} onChange={(checked) => onUpdate({ journaled: checked })} />
+        <CheckField disabled={isFinalized} label="Sober" checked={entry.sober} onChange={(checked) => onUpdate({ sober: checked })} />
+        <CheckField disabled={isFinalized} label="Read 10 pages" checked={entry.readTenPages} onChange={(checked) => onUpdate({ readTenPages: checked })} />
+        <CheckField disabled={isFinalized} label="Journal completed" checked={entry.journaled} onChange={(checked) => onUpdate({ journaled: checked })} />
       </section>
 
       <section className="panel form-panel">
         <SectionTitle number="4" title="Body + Mind" />
+        <NumberField disabled={isFinalized} label={`Sleep hours (${settings.targets.sleepHours} hr target)`} value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
         <div className="rating-grid">
-          <RatingField label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} />
-          <RatingField label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} />
-          <RatingField label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} />
+          <RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} />
+          <RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} />
+          <RatingField disabled={isFinalized} label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} />
         </div>
-        <NumberField label={`Sleep (${settings.targets.sleepHours} hr goal)`} value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
       </section>
 
       <section className="panel form-panel">
         <SectionTitle number="5" title="Reflection" />
-        <TextArea label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} />
-        <TextArea label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} />
+        <TextArea disabled={isFinalized} label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} />
+        <TextArea disabled={isFinalized} label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} />
       </section>
 
-      <p className="autosave-note">Changes save automatically on this device.</p>
+      <section className="panel form-panel">
+        <SectionTitle number="6" title="Finalize" />
+        {isFinalized ? (
+          <button className="secondary-button" type="button" onClick={onUnlockDay}>
+            Unlock Day
+          </button>
+        ) : (
+          <button className="primary-button" type="button" onClick={onFinalizeDay}>
+            Finalize Day
+          </button>
+        )}
+      </section>
+
+      <p className="autosave-note">{isFinalized ? 'This day is locked until you unlock it.' : 'Changes save automatically on this device.'}</p>
     </div>
   )
 }
@@ -2027,7 +2137,7 @@ function SettingsView({
       <section className="page-intro">
         <p className="eyebrow">Milestone 4</p>
         <h2>Settings</h2>
-        <p>Ongoing tracker · {activeRuleCount} active rules</p>
+        <p>Ongoing tracker · {activeRuleCount} scored rules</p>
       </section>
 
       <section className="panel form-panel">
@@ -2083,16 +2193,16 @@ function SettingsView({
       <section className="panel form-panel">
         <SectionTitle number="5" title="Targets" />
         <div className="field-grid">
-          <NumberField label="Exercise" value={settings.targets.exerciseMinutes} min={1} max={300} onChange={(value) => value !== null && updateTargets({ exerciseMinutes: value })} suffix="min" />
-          <NumberField label="Calories" value={settings.targets.calories} min={1} max={10000} onChange={(value) => value !== null && updateTargets({ calories: value })} suffix="kcal" />
-          <NumberField label="Protein" value={settings.targets.proteinGrams} min={1} max={500} onChange={(value) => value !== null && updateTargets({ proteinGrams: value })} suffix="g" />
-          <NumberField label="Water" value={settings.targets.waterLiters} min={0.1} max={15} step={0.1} onChange={(value) => value !== null && updateTargets({ waterLiters: value })} suffix="L" />
-          <NumberField label="Sleep" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
+          <NumberField label="Exercise target" value={settings.targets.exerciseMinutes} min={1} max={300} onChange={(value) => value !== null && updateTargets({ exerciseMinutes: value })} suffix="min" />
+          <NumberField label="Calorie target" value={settings.targets.calories} min={1} max={10000} onChange={(value) => value !== null && updateTargets({ calories: value })} suffix="kcal" />
+          <NumberField label="Protein target" value={settings.targets.proteinGrams} min={1} max={500} onChange={(value) => value !== null && updateTargets({ proteinGrams: value })} suffix="g" />
+          <NumberField label="Water target" value={settings.targets.waterLiters} min={0.1} max={15} step={0.1} onChange={(value) => value !== null && updateTargets({ waterLiters: value })} suffix="L" />
+          <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
         </div>
       </section>
 
       <section className="panel form-panel">
-        <SectionTitle number="6" title="Rules" />
+        <SectionTitle number="6" title="Scored Rules" />
         <div className="settings-rule-list">
           {settings.rules.map((rule) => (
             <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
@@ -2259,6 +2369,7 @@ function NumberField({
   max,
   step = 1,
   suffix,
+  disabled = false,
   onChange,
 }: {
   label: string
@@ -2267,6 +2378,7 @@ function NumberField({
   max: number
   step?: number
   suffix: string
+  disabled?: boolean
   onChange: (value: number | null) => void
 }) {
   return (
@@ -2280,6 +2392,7 @@ function NumberField({
           max={max}
           step={step}
           value={value ?? ''}
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
         />
         <small>{suffix}</small>
@@ -2292,46 +2405,80 @@ function TextField({
   label,
   value,
   type = 'text',
+  disabled = false,
   onChange,
 }: {
   label: string
   value: string
   type?: 'text' | 'date' | 'email' | 'time'
+  disabled?: boolean
   onChange: (value: string) => void
 }) {
   return (
     <label className="text-field">
       <span>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }
 
-function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function CheckField({
+  label,
+  checked,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (checked: boolean) => void
+}) {
   return (
     <label className="check-field">
       <span>{label}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
     </label>
   )
 }
 
-function RatingField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function RatingField({
+  label,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  value: number
+  disabled?: boolean
+  onChange: (value: number) => void
+}) {
   return (
     <label className="rating-field">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))}>
         {[1, 2, 3, 4, 5].map((number) => <option key={number} value={number}>{number}/5</option>)}
       </select>
     </label>
   )
 }
 
-function TextArea({ label, value, placeholder, onChange }: { label: string; value: string; placeholder: string; onChange: (value: string) => void }) {
+function TextArea({
+  label,
+  value,
+  placeholder,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  value: string
+  placeholder: string
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
   return (
     <label className="text-area-field">
       <span>{label}</span>
-      <textarea value={value} placeholder={placeholder} rows={4} onChange={(event) => onChange(event.target.value)} />
+      <textarea value={value} placeholder={placeholder} rows={4} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }
