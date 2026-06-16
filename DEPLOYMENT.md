@@ -3,7 +3,8 @@
 ## Supabase setup
 
 1. Create a Supabase project.
-2. In the SQL editor, run `supabase-schema.sql`. This creates the cloud snapshot, profile, friendship, and leaderboard summary tables.
+2. In the SQL editor, run `supabase-schema.sql`. This creates the cloud snapshot, profile, friendship, and leaderboard summary tables, plus the RLS policies for sync, friends, export, and cloud-data deletion.
+   - If you already ran an older version, run the current file again. It uses `create table if not exists`, `add column if not exists`, and policy replacement so existing app data is preserved.
 3. In Authentication > URL Configuration, add your local and hosted app URLs:
    - `http://localhost:5173`
    - your production URL, for example `https://your-app.vercel.app`

@@ -26,6 +26,12 @@ create policy "Users can update their own challenge snapshot"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete their own challenge snapshot" on public.god_mode_challenge_snapshots;
+create policy "Users can delete their own challenge snapshot"
+  on public.god_mode_challenge_snapshots
+  for delete
+  using (auth.uid() = user_id);
+
 create table if not exists public.god_mode_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
@@ -54,6 +60,12 @@ create policy "Users can update their own profile"
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own profile" on public.god_mode_profiles;
+create policy "Users can delete their own profile"
+  on public.god_mode_profiles
+  for delete
+  using (auth.uid() = user_id);
 
 create table if not exists public.god_mode_friendships (
   user_a uuid not null references auth.users(id) on delete cascade,
@@ -208,3 +220,9 @@ create policy "Users can update their own challenge summary"
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own challenge summary" on public.god_mode_challenge_summaries;
+create policy "Users can delete their own challenge summary"
+  on public.god_mode_challenge_summaries
+  for delete
+  using (auth.uid() = user_id);

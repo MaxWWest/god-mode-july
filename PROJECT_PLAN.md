@@ -21,6 +21,7 @@
 
 - JSON and CSV export (complete)
 - Import and backup recovery (complete)
+- Account data export and cloud data deletion controls (complete)
 - Last-7-day and last-30-day progress reviews (complete)
 - Weight, sleep, calorie, and mood trend charts (complete)
 

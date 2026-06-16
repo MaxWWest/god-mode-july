@@ -93,6 +93,26 @@ type SyncConflict = {
   message: string
 }
 
+type AccountDataExport = {
+  app: 'god-mode-july'
+  exportType: 'account-data'
+  exportedAt: string
+  user: {
+    id: string
+    email: string | null
+  }
+  local: {
+    settings: ChallengeSettings
+    entries: EntryMap
+  }
+  cloud: {
+    snapshot: CloudSnapshot | null
+    profile: FriendProfile | null
+    friendships: FriendshipRow[]
+    summary: ChallengeSummary | null
+  }
+}
+
 type DataStatus = {
   tone: 'success' | 'error' | 'neutral'
   message: string
@@ -1371,6 +1391,64 @@ function App() {
     return updatedAt
   }
 
+  async function buildAccountDataExport(): Promise<AccountDataExport> {
+    if (!supabase || !user) throw new Error('Sign in before exporting account data.')
+
+    const [
+      snapshotResult,
+      profileResult,
+      friendshipResult,
+      summaryResult,
+    ] = await Promise.all([
+      supabase
+        .from(SUPABASE_TABLE)
+        .select('settings, entries, updated_at')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      supabase
+        .from(SUPABASE_PROFILE_TABLE)
+        .select('user_id, display_name, invite_code')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+      supabase
+        .from(SUPABASE_FRIENDSHIP_TABLE)
+        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
+        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
+      supabase
+        .from(SUPABASE_SUMMARY_TABLE)
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+    ])
+
+    if (snapshotResult.error) throw snapshotResult.error
+    if (profileResult.error) throw profileResult.error
+    if (friendshipResult.error) throw friendshipResult.error
+    if (summaryResult.error) throw summaryResult.error
+
+    return {
+      app: 'god-mode-july',
+      exportType: 'account-data',
+      exportedAt: new Date().toISOString(),
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+      },
+      local: {
+        settings: normalizeSettings(settings),
+        entries: normalizeEntries(entries),
+      },
+      cloud: {
+        snapshot: normalizeCloudSnapshot(snapshotResult.data),
+        profile: normalizeFriendProfileRow(profileResult.data),
+        friendships: (friendshipResult.data ?? [])
+          .map(normalizeFriendshipRow)
+          .filter((row): row is FriendshipRow => row !== null),
+        summary: normalizeSummaryRow(summaryResult.data),
+      },
+    }
+  }
+
   async function sendMagicLink() {
     if (!supabase) return
     const email = authEmail.trim()
@@ -1474,6 +1552,82 @@ function App() {
       setCloudStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not pull cloud data.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function exportAccountData() {
+    if (!supabase || !user) return
+
+    setCloudBusy(true)
+    try {
+      const payload = await buildAccountDataExport()
+      const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-account-data.json`
+      downloadTextFile(filename, 'application/json;charset=utf-8', JSON.stringify(payload, null, 2))
+      setCloudStatus({ tone: 'success', message: 'Account data export downloaded.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not export account data.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function deleteCloudAccountData() {
+    if (!supabase || !user) return
+
+    const confirmed = window.confirm(
+      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, and leaderboard summary from Supabase? Local data on this device will stay.',
+    )
+    if (!confirmed) {
+      setCloudStatus({ tone: 'neutral', message: 'Cloud data deletion canceled.' })
+      return
+    }
+
+    setCloudBusy(true)
+    try {
+      const friendshipDelete = await supabase
+        .from(SUPABASE_FRIENDSHIP_TABLE)
+        .delete()
+        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
+      if (friendshipDelete.error) throw friendshipDelete.error
+
+      const summaryDelete = await supabase
+        .from(SUPABASE_SUMMARY_TABLE)
+        .delete()
+        .eq('user_id', user.id)
+      if (summaryDelete.error) throw summaryDelete.error
+
+      const profileDelete = await supabase
+        .from(SUPABASE_PROFILE_TABLE)
+        .delete()
+        .eq('user_id', user.id)
+      if (profileDelete.error) throw profileDelete.error
+
+      const snapshotDelete = await supabase
+        .from(SUPABASE_TABLE)
+        .delete()
+        .eq('user_id', user.id)
+      if (snapshotDelete.error) throw snapshotDelete.error
+
+      setCloudUpdatedAt(null)
+      setSyncConflict(null)
+      setSyncMeta(DEFAULT_SYNC_META)
+      setFriendProfile(null)
+      setDisplayNameDraft('')
+      setInviteCodeDraft('')
+      setLeaderboardRows([])
+      setFriendRequests([])
+      setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
+      setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not delete cloud account data.',
       })
     } finally {
       setCloudBusy(false)
@@ -2120,6 +2274,8 @@ function App() {
             onSignOut={signOut}
             onPushCloud={pushCloudData}
             onPullCloud={pullCloudData}
+            onExportAccountData={exportAccountData}
+            onDeleteCloudAccountData={deleteCloudAccountData}
             onUseCloudVersion={useCloudConflictVersion}
             onKeepLocalVersion={keepLocalConflictVersion}
             onMergeCloudEntries={mergeConflictEntries}
@@ -2662,6 +2818,8 @@ function SettingsView({
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onExportAccountData,
+  onDeleteCloudAccountData,
   onUseCloudVersion,
   onKeepLocalVersion,
   onMergeCloudEntries,
@@ -2687,6 +2845,8 @@ function SettingsView({
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onExportAccountData: () => void
+  onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
   onKeepLocalVersion: () => void
   onMergeCloudEntries: () => void
@@ -2812,6 +2972,8 @@ function SettingsView({
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
           onPullCloud={onPullCloud}
+          onExportAccountData={onExportAccountData}
+          onDeleteCloudAccountData={onDeleteCloudAccountData}
           onUseCloudVersion={onUseCloudVersion}
           onKeepLocalVersion={onKeepLocalVersion}
           onMergeCloudEntries={onMergeCloudEntries}
@@ -2899,6 +3061,8 @@ function CloudSyncPanel({
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onExportAccountData,
+  onDeleteCloudAccountData,
   onUseCloudVersion,
   onKeepLocalVersion,
   onMergeCloudEntries,
@@ -2916,6 +3080,8 @@ function CloudSyncPanel({
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onExportAccountData: () => void
+  onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
   onKeepLocalVersion: () => void
   onMergeCloudEntries: () => void
@@ -2977,6 +3143,20 @@ function CloudSyncPanel({
             </button>
           </div>
           <p className="cloud-updated">Cloud snapshot: {updatedLabel}</p>
+          <div className="account-data-panel">
+            <div>
+              <small>Account data</small>
+              <p>Export or delete the cloud records this app stores for your signed-in account.</p>
+            </div>
+            <div className="account-data-actions">
+              <button className="secondary-button" type="button" onClick={onExportAccountData} disabled={busy}>
+                Export Account Data
+              </button>
+              <button className="danger-button" type="button" onClick={onDeleteCloudAccountData} disabled={busy}>
+                Delete Cloud Data
+              </button>
+            </div>
+          </div>
           {conflict && (
             <div className="sync-conflict-panel">
               <div>

@@ -454,8 +454,24 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
+.danger-button {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid rgba(237, 107, 114, 0.36);
+  border-radius: 14px;
+  background: rgba(237, 107, 114, 0.12);
+  color: #ffb4b8;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: center;
+  cursor: pointer;
+}
+
 .secondary-button:disabled,
 .primary-button:disabled,
+.danger-button:disabled,
 .ghost-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -511,6 +527,35 @@ textarea:focus-visible {
 }
 
 .sync-conflict-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-data-panel {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.account-data-panel small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.account-data-panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.account-data-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -1518,6 +1563,7 @@ textarea:focus-visible {
 
   .cloud-panel .data-actions,
   .auth-form,
+  .account-data-actions,
   .sync-conflict-actions {
     grid-template-columns: 1fr;
   }
