@@ -226,3 +226,51 @@ create policy "Users can delete their own challenge summary"
   on public.god_mode_challenge_summaries
   for delete
   using (auth.uid() = user_id);
+
+create table if not exists public.god_mode_push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  subscription jsonb not null,
+  title text not null default 'God Mode July',
+  message text not null default 'Log today before the day gets away from you.',
+  reminder_time time not null default '20:30',
+  timezone text not null default 'UTC',
+  enabled boolean not null default true,
+  last_sent_date date,
+  last_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists god_mode_push_subscriptions_user_id_idx
+  on public.god_mode_push_subscriptions (user_id);
+
+create index if not exists god_mode_push_subscriptions_enabled_idx
+  on public.god_mode_push_subscriptions (enabled);
+
+alter table public.god_mode_push_subscriptions enable row level security;
+
+drop policy if exists "Users can read their own push subscriptions" on public.god_mode_push_subscriptions;
+create policy "Users can read their own push subscriptions"
+  on public.god_mode_push_subscriptions
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own push subscriptions" on public.god_mode_push_subscriptions;
+create policy "Users can insert their own push subscriptions"
+  on public.god_mode_push_subscriptions
+  for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update their own push subscriptions" on public.god_mode_push_subscriptions;
+create policy "Users can update their own push subscriptions"
+  on public.god_mode_push_subscriptions
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own push subscriptions" on public.god_mode_push_subscriptions;
+create policy "Users can delete their own push subscriptions"
+  on public.god_mode_push_subscriptions
+  for delete
+  using (auth.uid() = user_id);

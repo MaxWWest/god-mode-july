@@ -32,6 +32,7 @@
 - Conflict detection for simultaneous multi-device edits (complete)
 - Hosted deployment docs and env template (complete)
 - Optional reminders (complete)
+- Push-notification backend for reminders while the app is closed (complete)
 
 ## Social v1 — Friends and competition (complete)
 
