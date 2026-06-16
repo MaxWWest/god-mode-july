@@ -1181,6 +1181,7 @@ textarea:focus-visible {
 
 .friends-profile-panel,
 .add-friend-panel,
+.friend-requests-panel,
 .leaderboard-panel {
   display: grid;
   gap: 12px;
@@ -1222,6 +1223,55 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.friend-request-list {
+  display: grid;
+  gap: 10px;
+}
+
+.friend-request-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.friend-request-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.friend-request-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-request-main span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.friend-request-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.request-badge {
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(230, 189, 75, 0.14);
+  color: #f0ce73;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .leaderboard-list {
@@ -1445,6 +1495,11 @@ textarea:focus-visible {
   }
 
   .friends-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .friend-request-card,
+  .friend-request-actions {
     grid-template-columns: 1fr;
   }
 }

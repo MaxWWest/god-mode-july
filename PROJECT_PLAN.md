@@ -34,7 +34,8 @@
 ## Social v1 — Friends and competition (complete)
 
 - Friend profiles with display names and invite codes
-- Accepted friendships by invite code
+- Invite-code friend requests with accept and decline actions
+- Accepted friendships only appear in the leaderboard
 - Share-safe challenge summaries
 - Friends leaderboard for last-7-day completion, average completion, streaks, and logged days
 
@@ -42,5 +43,5 @@
 
 - Removed fixed July 1-31 timeframe from the main experience
 - Current-date daily tracking with no visible end date
-- Changed food rule to Done Eating for the Day
+- Replaced Done Eating as a scored rule with finalizing/locking a day
 - Replaced Week 1-5 progress recaps with Last 7 and Last 30 reviews

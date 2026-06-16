@@ -20,7 +20,7 @@ npm run dev
 
 Open the app, go to Settings, send yourself a magic link, then use Push Local and Pull Cloud.
 
-For friends, sign in on two accounts, publish a score from the Friends tab, then add the other account's invite code.
+For friends, sign in on two accounts, publish a score from the Friends tab, send a request with the other account's invite code, then accept it from the receiving account.
 
 ## Vercel or Netlify
 

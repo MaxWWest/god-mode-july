@@ -18,7 +18,8 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - JSON backup and restore
 - CSV entry export
 - Supabase magic-link auth and cloud sync
-- Friends list with invite codes
+- Friends list with invite-code requests
+- Friend request accept/decline flow
 - Share-safe leaderboard competition
 - Local daily notification reminders
 - Automatic localStorage persistence
@@ -76,7 +77,6 @@ Friends and leaderboards use separate Supabase tables for profiles, friendships,
 
 ## Next recommended milestones
 
-1. Friend request accept/decline flow
-2. Push-notification backend for reminders while the app is closed
-3. Conflict resolution for simultaneous multi-device edits
-4. Account data deletion/export controls
+1. Push-notification backend for reminders while the app is closed
+2. Conflict resolution for simultaneous multi-device edits
+3. Account data deletion/export controls

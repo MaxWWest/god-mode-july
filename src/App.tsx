@@ -152,6 +152,26 @@ type LeaderboardRow = FriendProfile & {
   isCurrentUser: boolean
 }
 
+type FriendshipStatus = 'pending' | 'accepted' | 'declined'
+
+type FriendshipRow = {
+  userA: string
+  userB: string
+  createdBy: string
+  requestedBy: string
+  status: FriendshipStatus
+  createdAt: string
+  respondedAt: string | null
+}
+
+type FriendRequest = FriendProfile & {
+  userA: string
+  userB: string
+  requestedBy: string
+  direction: 'incoming' | 'outgoing'
+  createdAt: string
+}
+
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
@@ -738,6 +758,10 @@ function generateInviteCode(userId: string): string {
   return `GM-${userId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
 }
 
+function sortedFriendshipPair(userId: string, friendId: string): [string, string] {
+  return [userId, friendId].sort() as [string, string]
+}
+
 function defaultDisplayName(user: User): string {
   return user.email?.split('@')[0] || 'New challenger'
 }
@@ -755,6 +779,39 @@ function normalizeFriendProfileRow(row: unknown): FriendProfile | null {
       : 'Challenger',
     inviteCode: typeof candidate.invite_code === 'string' ? candidate.invite_code : '',
   }
+}
+
+function normalizeFriendshipStatus(value: unknown): FriendshipStatus {
+  return value === 'pending' || value === 'accepted' || value === 'declined' ? value : 'accepted'
+}
+
+function normalizeFriendshipRow(row: unknown): FriendshipRow | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.user_a !== 'string' || typeof candidate.user_b !== 'string') return null
+
+  const createdBy = typeof candidate.created_by === 'string' ? candidate.created_by : candidate.user_a
+  const requestedBy = typeof candidate.requested_by === 'string' ? candidate.requested_by : createdBy
+
+  return {
+    userA: candidate.user_a,
+    userB: candidate.user_b,
+    createdBy,
+    requestedBy,
+    status: normalizeFriendshipStatus(candidate.status),
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+    respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
+  }
+}
+
+function isFriendRequestSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('status')
+    || message.includes('requested_by')
+    || message.includes('responded_at')
+    || message.includes('column')
 }
 
 function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
@@ -992,6 +1049,7 @@ function App() {
   const [displayNameDraft, setDisplayNameDraft] = useState('')
   const [inviteCodeDraft, setInviteCodeDraft] = useState('')
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([])
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
   const [friendsBusy, setFriendsBusy] = useState(false)
   const [friendsStatus, setFriendsStatus] = useState<DataStatus>({
     tone: 'neutral',
@@ -1049,6 +1107,7 @@ function App() {
       setDisplayNameDraft('')
       setInviteCodeDraft('')
       setLeaderboardRows([])
+      setFriendRequests([])
       setFriendsStatus({
         tone: 'neutral',
         message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
@@ -1350,15 +1409,28 @@ function App() {
 
       const { data: friendships, error: friendshipError } = await supabase
         .from(SUPABASE_FRIENDSHIP_TABLE)
-        .select('user_a, user_b')
+        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
         .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
 
-      if (friendshipError) throw friendshipError
+      if (friendshipError) {
+        if (isFriendRequestSchemaError(friendshipError)) {
+          throw new Error('Run the updated Supabase schema to enable friend requests.')
+        }
+        throw friendshipError
+      }
 
-      const friendIds = (friendships ?? [])
-        .map((friendship) => friendship.user_a === user.id ? friendship.user_b : friendship.user_a)
+      const friendshipRows = (friendships ?? [])
+        .map(normalizeFriendshipRow)
+        .filter((row): row is FriendshipRow => row !== null)
+      const acceptedFriendIds = friendshipRows
+        .filter((friendship) => friendship.status === 'accepted')
+        .map((friendship) => friendship.userA === user.id ? friendship.userB : friendship.userA)
         .filter((id): id is string => typeof id === 'string')
-      const visibleUserIds = Array.from(new Set([user.id, ...friendIds]))
+      const pendingFriendships = friendshipRows.filter((friendship) => friendship.status === 'pending')
+      const pendingUserIds = pendingFriendships
+        .map((friendship) => friendship.userA === user.id ? friendship.userB : friendship.userA)
+        .filter((id): id is string => typeof id === 'string')
+      const visibleUserIds = Array.from(new Set([user.id, ...acceptedFriendIds, ...pendingUserIds]))
 
       const { data: profileRows, error: profileError } = await supabase
         .from(SUPABASE_PROFILE_TABLE)
@@ -1367,16 +1439,18 @@ function App() {
 
       if (profileError) throw profileError
 
+      const summaryUserIds = Array.from(new Set([user.id, ...acceptedFriendIds]))
       const { data: summaryRows, error: summaryError } = await supabase
         .from(SUPABASE_SUMMARY_TABLE)
         .select('*')
-        .in('user_id', visibleUserIds)
+        .in('user_id', summaryUserIds)
 
       if (summaryError) throw summaryError
 
       const profiles = (profileRows ?? [])
         .map(normalizeFriendProfileRow)
         .filter((row): row is FriendProfile => row !== null)
+      const profilesByUserId = new Map(profiles.map((profileRow) => [profileRow.userId, profileRow]))
       const summariesByUserId = new Map(
         (summaryRows ?? [])
           .map(normalizeSummaryRow)
@@ -1387,6 +1461,7 @@ function App() {
       if (!profiles.some((row) => row.userId === profile.userId)) profiles.push(profile)
 
       const rows = profiles
+        .filter((profileRow) => profileRow.userId === user.id || acceptedFriendIds.includes(profileRow.userId))
         .map((profileRow) => ({
           ...profileRow,
           summary: summariesByUserId.get(profileRow.userId) ?? null,
@@ -1401,10 +1476,28 @@ function App() {
             || a.displayName.localeCompare(b.displayName)
         })
 
+      const requests = pendingFriendships
+        .map((friendship) => {
+          const otherUserId = friendship.userA === user.id ? friendship.userB : friendship.userA
+          const requestProfile = profilesByUserId.get(otherUserId)
+          if (!requestProfile) return null
+          return {
+            ...requestProfile,
+            userA: friendship.userA,
+            userB: friendship.userB,
+            requestedBy: friendship.requestedBy,
+            direction: friendship.requestedBy === user.id ? 'outgoing' : 'incoming',
+            createdAt: friendship.createdAt,
+          } satisfies FriendRequest
+        })
+        .filter((request): request is FriendRequest => request !== null)
+        .sort((a, b) => a.direction.localeCompare(b.direction) || a.displayName.localeCompare(b.displayName))
+
       setLeaderboardRows(rows)
+      setFriendRequests(requests)
       setFriendsStatus({
         tone: 'success',
-        message: `${friendIds.length} ${friendIds.length === 1 ? 'friend' : 'friends'} loaded.`,
+        message: `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${requests.length} pending.`,
       })
     } catch (error) {
       setFriendsStatus({
@@ -1455,7 +1548,7 @@ function App() {
     }
   }
 
-  async function addFriendByInviteCode() {
+  async function sendFriendRequestByInviteCode() {
     if (!supabase || !user) return
 
     const inviteCode = inviteCodeDraft.trim().toUpperCase()
@@ -1480,23 +1573,112 @@ function App() {
       if (!friendProfile) throw new Error('No friend found with that invite code.')
       if (friendProfile.userId === user.id) throw new Error('That is your own invite code.')
 
-      const [userA, userB] = [user.id, friendProfile.userId].sort()
-      const { error: friendshipError } = await supabase
+      const [userA, userB] = sortedFriendshipPair(user.id, friendProfile.userId)
+      const { data: existingFriendshipRow, error: existingFriendshipError } = await supabase
         .from(SUPABASE_FRIENDSHIP_TABLE)
-        .upsert({
-          user_a: userA,
-          user_b: userB,
-          created_by: user.id,
-        }, { onConflict: 'user_a,user_b' })
+        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
+        .eq('user_a', userA)
+        .eq('user_b', userB)
+        .maybeSingle()
 
-      if (friendshipError) throw friendshipError
+      if (existingFriendshipError) {
+        if (isFriendRequestSchemaError(existingFriendshipError)) {
+          throw new Error('Run the updated Supabase schema to enable friend requests.')
+        }
+        throw existingFriendshipError
+      }
+
+      const existingFriendship = normalizeFriendshipRow(existingFriendshipRow)
+      if (existingFriendship?.status === 'accepted') {
+        throw new Error(`${friendProfile.displayName} is already on your leaderboard.`)
+      }
+
+      if (existingFriendship?.status === 'pending' && existingFriendship.requestedBy === user.id) {
+        throw new Error(`You already sent ${friendProfile.displayName} a request.`)
+      }
+
+      if (existingFriendship?.status === 'pending' && existingFriendship.requestedBy !== user.id) {
+        await respondToFriendRequest(friendProfile.userId, 'accepted', `${friendProfile.displayName} accepted.`)
+        setInviteCodeDraft('')
+        return
+      }
+
+      const nextRequest = {
+        user_a: userA,
+        user_b: userB,
+        created_by: user.id,
+        requested_by: user.id,
+        status: 'pending',
+        responded_at: null,
+      }
+      const { error: friendshipError } = existingFriendship
+        ? await supabase
+          .from(SUPABASE_FRIENDSHIP_TABLE)
+          .update(nextRequest)
+          .eq('user_a', userA)
+          .eq('user_b', userB)
+        : await supabase
+          .from(SUPABASE_FRIENDSHIP_TABLE)
+          .insert({
+            ...nextRequest,
+            created_at: new Date().toISOString(),
+          })
+
+      if (friendshipError) {
+        if (isFriendRequestSchemaError(friendshipError)) {
+          throw new Error('Run the updated Supabase schema to enable friend requests.')
+        }
+        throw friendshipError
+      }
       setInviteCodeDraft('')
-      setFriendsStatus({ tone: 'success', message: `${friendProfile.displayName} added to your leaderboard.` })
+      setFriendsStatus({ tone: 'success', message: `Friend request sent to ${friendProfile.displayName}.` })
       await refreshFriendsData()
     } catch (error) {
       setFriendsStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not add friend.',
+        message: error instanceof Error ? error.message : 'Could not send friend request.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function respondToFriendRequest(otherUserId: string, nextStatus: 'accepted' | 'declined', successMessage?: string) {
+    if (!supabase || !user) return
+
+    setFriendsBusy(true)
+    try {
+      const [userA, userB] = sortedFriendshipPair(user.id, otherUserId)
+      const { data, error } = await supabase
+        .from(SUPABASE_FRIENDSHIP_TABLE)
+        .update({
+          status: nextStatus,
+          responded_at: new Date().toISOString(),
+        })
+        .eq('user_a', userA)
+        .eq('user_b', userB)
+        .eq('status', 'pending')
+        .neq('requested_by', user.id)
+        .select('user_a')
+        .maybeSingle()
+
+      if (error) {
+        if (isFriendRequestSchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable friend requests.')
+        }
+        throw error
+      }
+      if (!data) throw new Error('No incoming friend request found.')
+
+      setFriendsStatus({
+        tone: 'success',
+        message: successMessage ?? (nextStatus === 'accepted' ? 'Friend request accepted.' : 'Friend request declined.'),
+      })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not update friend request.',
       })
     } finally {
       setFriendsBusy(false)
@@ -1697,12 +1879,15 @@ function App() {
             displayName={displayNameDraft}
             inviteCode={inviteCodeDraft}
             leaderboardRows={leaderboardRows}
+            friendRequests={friendRequests}
             status={friendsStatus}
             busy={friendsBusy}
             onDisplayNameChange={setDisplayNameDraft}
             onInviteCodeChange={setInviteCodeDraft}
             onSaveProfile={saveFriendProfile}
-            onAddFriend={addFriendByInviteCode}
+            onAddFriend={sendFriendRequestByInviteCode}
+            onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
+            onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
             onPublishSummary={() => publishFriendSummary(false)}
             onRefresh={refreshFriendsData}
             onOpenSettings={() => setView('settings')}
@@ -2009,12 +2194,15 @@ function FriendsView({
   displayName,
   inviteCode,
   leaderboardRows,
+  friendRequests,
   status,
   busy,
   onDisplayNameChange,
   onInviteCodeChange,
   onSaveProfile,
   onAddFriend,
+  onAcceptRequest,
+  onDeclineRequest,
   onPublishSummary,
   onRefresh,
   onOpenSettings,
@@ -2025,21 +2213,27 @@ function FriendsView({
   displayName: string
   inviteCode: string
   leaderboardRows: LeaderboardRow[]
+  friendRequests: FriendRequest[]
   status: DataStatus
   busy: boolean
   onDisplayNameChange: (value: string) => void
   onInviteCodeChange: (value: string) => void
   onSaveProfile: () => void
   onAddFriend: () => void
+  onAcceptRequest: (userId: string) => void
+  onDeclineRequest: (userId: string) => void
   onPublishSummary: () => void
   onRefresh: () => void
   onOpenSettings: () => void
 }) {
+  const incomingRequests = friendRequests.filter((request) => request.direction === 'incoming')
+  const outgoingRequests = friendRequests.filter((request) => request.direction === 'outgoing')
+
   if (!configured) {
     return (
       <div className="page-stack">
         <section className="page-intro">
-          <p className="eyebrow">Friends v1</p>
+          <p className="eyebrow">Friends v2</p>
           <h2>Friends</h2>
           <p>Supabase is required for friends, invite codes, and leaderboards.</p>
         </section>
@@ -2056,9 +2250,9 @@ function FriendsView({
     return (
       <div className="page-stack">
         <section className="page-intro">
-          <p className="eyebrow">Friends v1</p>
+          <p className="eyebrow">Friends v2</p>
           <h2>Friends</h2>
-          <p>Sign in to create an invite code and compare daily scores.</p>
+          <p>Sign in to send friend requests and compare daily scores.</p>
         </section>
         <section className="panel focus-panel">
           <p className="eyebrow">Account needed</p>
@@ -2075,9 +2269,9 @@ function FriendsView({
   return (
     <div className="page-stack">
       <section className="page-intro">
-        <p className="eyebrow">Friends v1</p>
+        <p className="eyebrow">Friends v2</p>
         <h2>Friends</h2>
-        <p>Compare last-7-day completion, average score, streaks, and logged days.</p>
+        <p>Accept requests, then compare last-7-day completion, average score, streaks, and logged days.</p>
       </section>
 
       <section className="panel friends-profile-panel">
@@ -2118,9 +2312,43 @@ function FriendsView({
         <div className="auth-form">
           <TextField label="Friend code" value={inviteCode} onChange={(value) => onInviteCodeChange(value.toUpperCase())} />
           <button className="secondary-button" type="button" onClick={onAddFriend} disabled={busy}>
-            Add Friend
+            Send Request
           </button>
         </div>
+      </section>
+
+      <section className="panel friend-requests-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Requests</p>
+            <h2>Friend requests</h2>
+          </div>
+          <span>{friendRequests.length}</span>
+        </div>
+        {friendRequests.length === 0 ? (
+          <p className="empty-leaderboard">No pending requests.</p>
+        ) : (
+          <div className="friend-request-list">
+            {incomingRequests.map((request) => (
+              <FriendRequestCard
+                key={`${request.userA}-${request.userB}`}
+                request={request}
+                busy={busy}
+                onAccept={() => onAcceptRequest(request.userId)}
+                onDecline={() => onDeclineRequest(request.userId)}
+              />
+            ))}
+            {outgoingRequests.map((request) => (
+              <FriendRequestCard
+                key={`${request.userA}-${request.userB}`}
+                request={request}
+                busy={busy}
+                onAccept={() => {}}
+                onDecline={() => {}}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel leaderboard-panel">
@@ -2142,6 +2370,41 @@ function FriendsView({
         )}
       </section>
     </div>
+  )
+}
+
+function FriendRequestCard({
+  request,
+  busy,
+  onAccept,
+  onDecline,
+}: {
+  request: FriendRequest
+  busy: boolean
+  onAccept: () => void
+  onDecline: () => void
+}) {
+  const isIncoming = request.direction === 'incoming'
+
+  return (
+    <article className="friend-request-card">
+      <div className="friend-request-main">
+        <strong>{request.displayName}</strong>
+        <span>{isIncoming ? 'Wants to compete with you' : 'Waiting for response'}</span>
+      </div>
+      {isIncoming ? (
+        <div className="friend-request-actions">
+          <button className="secondary-button compact-button" type="button" onClick={onAccept} disabled={busy}>
+            Accept
+          </button>
+          <button className="ghost-button" type="button" onClick={onDecline} disabled={busy}>
+            Decline
+          </button>
+        </div>
+      ) : (
+        <span className="request-badge">Pending</span>
+      )}
+    </article>
   )
 }
 
