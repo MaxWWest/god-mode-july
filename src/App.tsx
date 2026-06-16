@@ -42,6 +42,7 @@ type ChallengeSettings = {
 type DailyEntry = {
   date: string
   exerciseMinutes: number
+  workouts: WorkoutLog[]
   sober: boolean
   foodLogged: boolean
   finalizedAt: string | null
@@ -57,6 +58,12 @@ type DailyEntry = {
   sleepHours: number | null
   wentWell: string
   difficult: string
+}
+
+type WorkoutLog = {
+  id: string
+  type: string
+  minutes: number
 }
 
 type EntryMap = Record<string, DailyEntry>
@@ -155,8 +162,13 @@ const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
 const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
 const DAY_IN_MS = 86_400_000
 const MAX_TRACKING_DAYS = 3650
+const MAX_WORKOUT_LOGS = 12
+const MAX_WORKOUT_MINUTES = 300
+const MAX_DAILY_EXERCISE_MINUTES = 600
 const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
+const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
+const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
 
 const DEFAULT_TARGETS: ChallengeTargets = {
   exerciseMinutes: 90,
@@ -275,6 +287,72 @@ function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function normalizeWorkoutType(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_WORKOUT_TYPE
+  const trimmed = value.trim()
+  return trimmed || DEFAULT_WORKOUT_TYPE
+}
+
+function makeWorkoutId(): string {
+  return `workout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function normalizeWorkoutLog(value: unknown, index: number): WorkoutLog | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<WorkoutLog>
+  const id = typeof candidate.id === 'string' && candidate.id.trim()
+    ? candidate.id.trim()
+    : `workout-${index + 1}`
+  const type = normalizeWorkoutType(candidate.type)
+  const minutes = normalizeBoundedNumber(candidate.minutes, 0, 0, MAX_WORKOUT_MINUTES)
+
+  return { id, type, minutes }
+}
+
+function normalizeWorkoutLogs(value: unknown): WorkoutLog[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item, index) => normalizeWorkoutLog(item, index))
+    .filter((item): item is WorkoutLog => item !== null)
+    .slice(0, MAX_WORKOUT_LOGS)
+}
+
+function workoutMinutesTotal(workouts: WorkoutLog[]): number {
+  return Math.min(
+    MAX_DAILY_EXERCISE_MINUTES,
+    workouts.reduce((sum, workout) => sum + workout.minutes, 0),
+  )
+}
+
+function getExerciseMinutes(entry: DailyEntry): number {
+  const workouts = Array.isArray(entry.workouts) ? entry.workouts : []
+  return workouts.length > 0 ? workoutMinutesTotal(workouts) : entry.exerciseMinutes
+}
+
+function makeLegacyWorkout(minutes: number): WorkoutLog {
+  return {
+    id: 'legacy-exercise-total',
+    type: 'Workout',
+    minutes,
+  }
+}
+
+function makeEmptyWorkout(): WorkoutLog {
+  return {
+    id: makeWorkoutId(),
+    type: DEFAULT_WORKOUT_TYPE,
+    minutes: 0,
+  }
+}
+
+function formatWorkoutSummary(workouts: WorkoutLog[] = []): string {
+  const completedWorkouts = workouts.filter((workout) => workout.minutes > 0)
+  if (completedWorkouts.length === 0) return ''
+  return completedWorkouts
+    .map((workout) => `${workout.type} ${workout.minutes} min`)
+    .join('; ')
+}
+
 function normalizeTimestamp(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null
   const parsed = Date.parse(value)
@@ -379,10 +457,14 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
   const candidate = value && typeof value === 'object' ? value as Partial<DailyEntry> : {}
   const date = isIsoDate(candidate.date) ? candidate.date : fallbackDate
   if (!isIsoDate(date)) return null
+  const legacyExerciseMinutes = normalizeBoundedNumber(candidate.exerciseMinutes, 0, 0, MAX_DAILY_EXERCISE_MINUTES)
+  const workouts = normalizeWorkoutLogs(candidate.workouts)
+  const exerciseMinutes = workouts.length > 0 ? workoutMinutesTotal(workouts) : legacyExerciseMinutes
 
   return {
     date,
-    exerciseMinutes: normalizeBoundedNumber(candidate.exerciseMinutes, 0, 0, 300),
+    exerciseMinutes,
+    workouts: workouts.length > 0 ? workouts : legacyExerciseMinutes > 0 ? [makeLegacyWorkout(legacyExerciseMinutes)] : [],
     sober: candidate.sober === true,
     foodLogged: candidate.foodLogged === true,
     finalizedAt: normalizeTimestamp(candidate.finalizedAt),
@@ -435,6 +517,7 @@ function makeEmptyEntry(date: string): DailyEntry {
   return {
     date,
     exerciseMinutes: 0,
+    workouts: [],
     sober: false,
     foodLogged: false,
     finalizedAt: null,
@@ -511,7 +594,7 @@ function ruleWeightValue(rule: RuleConfig): number {
 function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: ChallengeSettings): boolean {
   switch (rule) {
     case 'exercise':
-      return entry.exerciseMinutes >= settings.targets.exerciseMinutes
+      return getExerciseMinutes(entry) >= settings.targets.exerciseMinutes
     case 'sober':
       return entry.sober
     case 'foodLogged':
@@ -730,7 +813,7 @@ function longestStreak(entries: EntryMap, settings: ChallengeSettings): number {
 function ruleDetail(rule: RuleConfig, entry: DailyEntry, settings: ChallengeSettings): string | undefined {
   switch (rule.key) {
     case 'exercise':
-      return `${entry.exerciseMinutes} / ${settings.targets.exerciseMinutes} min`
+      return `${getExerciseMinutes(entry)} / ${settings.targets.exerciseMinutes} min`
     case 'calories':
       return `${entry.calories ?? 0} / ${settings.targets.calories} kcal`
     case 'protein':
@@ -800,6 +883,7 @@ function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
     ...ruleColumns,
     'finalized_at',
     'exercise_minutes',
+    'workout_log',
     'sober',
     'calories',
     'protein_grams',
@@ -827,7 +911,8 @@ function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
       stats?.total ?? '',
       ...settings.rules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
       entry.finalizedAt,
-      entry.exerciseMinutes,
+      getExerciseMinutes(entry),
+      formatWorkoutSummary(entry.workouts),
       Number(entry.sober),
       entry.calories,
       entry.proteinGrams,
@@ -887,7 +972,7 @@ function App() {
   const [settings, setSettings] = useState<ChallengeSettings>(() => normalizeSettings(loadFromStorage<unknown>(SETTINGS_STORAGE_KEY, null)))
   const [view, setView] = useState<View>('home')
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
-  const [entries, setEntries] = useState<EntryMap>(() => loadFromStorage(ENTRIES_STORAGE_KEY, {}))
+  const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => normalizeReminderSettings(loadFromStorage<unknown>(REMINDER_STORAGE_KEY, null)))
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const [savePulse, setSavePulse] = useState(false)
@@ -1462,7 +1547,16 @@ function App() {
     const next = !ruleComplete(entry, key, settings)
     switch (key) {
       case 'exercise':
-        updateEntry({ exerciseMinutes: next ? settings.targets.exerciseMinutes : 0 })
+        if (next) {
+          const workout = {
+            id: makeWorkoutId(),
+            type: 'Workout',
+            minutes: settings.targets.exerciseMinutes,
+          }
+          updateEntry({ exerciseMinutes: workout.minutes, workouts: [workout] })
+        } else {
+          updateEntry({ exerciseMinutes: 0, workouts: [] })
+        }
         break
       case 'sober':
         updateEntry({ sober: next })
@@ -1781,6 +1875,31 @@ function CheckIn({
   onFinalizeDay: () => void
   onUnlockDay: () => void
 }) {
+  const workoutLogs = Array.isArray(entry.workouts) ? entry.workouts : []
+  const workoutTotal = getExerciseMinutes(entry)
+  const workoutProgress = Math.min(100, Math.round((workoutTotal / settings.targets.exerciseMinutes) * 100))
+
+  function updateWorkouts(nextWorkouts: WorkoutLog[]) {
+    const workouts = normalizeWorkoutLogs(nextWorkouts)
+    onUpdate({
+      workouts,
+      exerciseMinutes: workoutMinutesTotal(workouts),
+    })
+  }
+
+  function updateWorkout(id: string, patch: Partial<WorkoutLog>) {
+    updateWorkouts(workoutLogs.map((workout) => workout.id === id ? { ...workout, ...patch } : workout))
+  }
+
+  function addWorkout() {
+    if (workoutLogs.length >= MAX_WORKOUT_LOGS) return
+    updateWorkouts([...workoutLogs, makeEmptyWorkout()])
+  }
+
+  function removeWorkout(id: string) {
+    updateWorkouts(workoutLogs.filter((workout) => workout.id !== id))
+  }
+
   return (
     <div className="page-stack">
       <section className="page-intro">
@@ -1791,7 +1910,45 @@ function CheckIn({
 
       <section className="panel form-panel">
         <SectionTitle number="1" title="Workout" />
-        <NumberField disabled={isFinalized} label={`Exercise minutes (${settings.targets.exerciseMinutes} min goal)`} value={entry.exerciseMinutes} min={0} max={300} onChange={(value) => onUpdate({ exerciseMinutes: value ?? 0 })} suffix="min" />
+        <div className="workout-summary">
+          <div>
+            <strong>{workoutTotal} / {settings.targets.exerciseMinutes} min</strong>
+            <span>{workoutProgress}% of daily workout target</span>
+          </div>
+          <button className="secondary-button compact-button" type="button" onClick={addWorkout} disabled={isFinalized || workoutLogs.length >= MAX_WORKOUT_LOGS}>
+            Add Exercise
+          </button>
+        </div>
+        {workoutLogs.length === 0 ? (
+          <p className="empty-workout-log">Add a workout entry to count minutes toward your exercise rule.</p>
+        ) : (
+          <div className="workout-log-list">
+            {workoutLogs.map((workout) => (
+              <article className="workout-log-row" key={workout.id}>
+                <SelectField
+                  disabled={isFinalized}
+                  label="Type"
+                  value={workout.type}
+                  options={WORKOUT_TYPES}
+                  onChange={(type) => updateWorkout(workout.id, { type })}
+                />
+                <NumberField
+                  disabled={isFinalized}
+                  label="Minutes"
+                  value={workout.minutes}
+                  min={0}
+                  max={MAX_WORKOUT_MINUTES}
+                  step={5}
+                  onChange={(value) => updateWorkout(workout.id, { minutes: value ?? 0 })}
+                  suffix="min"
+                />
+                <button className="ghost-button workout-remove-button" type="button" onClick={() => removeWorkout(workout.id)} disabled={isFinalized}>
+                  Remove
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel form-panel">
@@ -2418,6 +2575,29 @@ function TextField({
     <label className="text-field">
       <span>{label}</span>
       <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  )
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: string[]
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="select-field">
+      <span>{label}</span>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
     </label>
   )
 }
