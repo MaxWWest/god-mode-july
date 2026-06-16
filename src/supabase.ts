@@ -15,6 +15,7 @@ export const supabase = isSupabaseConfigured
     auth: {
       autoRefreshToken: true,
       persistSession: true,
+      storageKey: 'god-mode-july-auth-session',
     },
   })
   : null
