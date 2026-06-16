@@ -18,6 +18,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - JSON backup and restore
 - CSV entry export
 - Supabase magic-link auth and cloud sync
+- Multi-device conflict detection and resolution
 - Friends list with invite-code requests
 - Friend request accept/decline flow
 - Share-safe leaderboard competition
@@ -62,7 +63,7 @@ Tracker settings are stored under this browser key:
 god-mode-july-settings-v1
 ```
 
-The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Settings exposes magic-link sign-in plus Push Local and Pull Cloud sync controls.
+The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Settings exposes magic-link sign-in plus Push Local and Pull Cloud sync controls. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
 
 Cloud sync uses the Supabase table in `supabase-schema.sql` when these Vite env vars are configured:
 
@@ -78,5 +79,4 @@ Friends and leaderboards use separate Supabase tables for profiles, friendships,
 ## Next recommended milestones
 
 1. Push-notification backend for reminders while the app is closed
-2. Conflict resolution for simultaneous multi-device edits
-3. Account data deletion/export controls
+2. Account data deletion/export controls

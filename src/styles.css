@@ -485,6 +485,37 @@ textarea:focus-visible {
   line-height: 1.45;
 }
 
+.sync-conflict-panel {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid rgba(230, 189, 75, 0.35);
+  border-radius: 16px;
+  background: rgba(230, 189, 75, 0.09);
+}
+
+.sync-conflict-panel h3,
+.sync-conflict-panel p {
+  margin: 0;
+}
+
+.sync-conflict-panel h3 {
+  font-size: 1rem;
+}
+
+.sync-conflict-panel p,
+.sync-conflict-panel small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.sync-conflict-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .sync-account-row {
   display: flex;
   align-items: center;
@@ -1486,7 +1517,8 @@ textarea:focus-visible {
   }
 
   .cloud-panel .data-actions,
-  .auth-form {
+  .auth-form,
+  .sync-conflict-actions {
     grid-template-columns: 1fr;
   }
 

@@ -76,6 +76,23 @@ type BackupPayload = {
   entries: EntryMap
 }
 
+type SyncMeta = {
+  lastCloudUpdatedAt: string | null
+  lastLocalChangeAt: string | null
+}
+
+type CloudSnapshot = {
+  settings: ChallengeSettings
+  entries: EntryMap
+  updatedAt: string | null
+}
+
+type SyncConflict = {
+  cloud: CloudSnapshot
+  localChangedAt: string | null
+  message: string
+}
+
 type DataStatus = {
   tone: 'success' | 'error' | 'neutral'
   message: string
@@ -180,6 +197,7 @@ type InstallPromptEvent = Event & {
 const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
 const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
+const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
 const DAY_IN_MS = 86_400_000
 const MAX_TRACKING_DAYS = 3650
 const MAX_WORKOUT_LOGS = 12
@@ -221,6 +239,11 @@ const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
   enabled: false,
   time: '20:30',
   message: 'Log today before the day gets away from you.',
+}
+
+const DEFAULT_SYNC_META: SyncMeta = {
+  lastCloudUpdatedAt: null,
+  lastLocalChangeAt: null,
 }
 
 const TREND_METRICS: TrendMetric[] = [
@@ -379,6 +402,20 @@ function normalizeTimestamp(value: unknown): string | null {
   return Number.isNaN(parsed) ? null : new Date(parsed).toISOString()
 }
 
+function normalizeSyncMeta(value: unknown): SyncMeta {
+  const candidate = value && typeof value === 'object' ? value as Partial<SyncMeta> : {}
+  return {
+    lastCloudUpdatedAt: normalizeTimestamp(candidate.lastCloudUpdatedAt),
+    lastLocalChangeAt: normalizeTimestamp(candidate.lastLocalChangeAt),
+  }
+}
+
+function timestampIsAfter(value: string | null, baseline: string | null): boolean {
+  if (!value) return false
+  if (!baseline) return true
+  return new Date(value).getTime() > new Date(baseline).getTime()
+}
+
 function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): string {
   const legacyLabels: Partial<Record<RuleKey, string[]>> = {
     exercise: ['90 min Exercise'],
@@ -513,6 +550,30 @@ function normalizeEntries(value: unknown): EntryMap {
   }
 
   return entries
+}
+
+function normalizeCloudSnapshot(row: unknown): CloudSnapshot | null {
+  const candidate = row && typeof row === 'object'
+    ? row as { settings?: unknown; entries?: unknown; updated_at?: unknown }
+    : null
+  if (!candidate) return null
+
+  return {
+    settings: normalizeSettings(candidate.settings),
+    entries: normalizeEntries(candidate.entries),
+    updatedAt: normalizeTimestamp(candidate.updated_at),
+  }
+}
+
+function mergeCloudOnlyEntries(localEntries: EntryMap, cloudEntries: EntryMap): EntryMap {
+  return normalizeEntries({
+    ...cloudEntries,
+    ...localEntries,
+  })
+}
+
+function countCloudOnlyEntries(localEntries: EntryMap, cloudEntries: EntryMap): number {
+  return Object.keys(cloudEntries).filter((date) => !localEntries[date]).length
 }
 
 function todayIso(): string {
@@ -1031,12 +1092,14 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
   const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => normalizeReminderSettings(loadFromStorage<unknown>(REMINDER_STORAGE_KEY, null)))
+  const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)))
+  const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null)
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const [savePulse, setSavePulse] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [authEmail, setAuthEmail] = useState('')
   const [cloudBusy, setCloudBusy] = useState(false)
-  const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(null)
+  const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)).lastCloudUpdatedAt)
   const [cloudStatus, setCloudStatus] = useState<DataStatus>({
     tone: 'neutral',
     message: isSupabaseConfigured ? 'Sign in to sync across devices.' : 'Add Supabase env vars to enable cloud sync.',
@@ -1077,6 +1140,10 @@ function App() {
   useEffect(() => {
     saveToStorage(REMINDER_STORAGE_KEY, reminderSettings)
   }, [reminderSettings])
+
+  useEffect(() => {
+    saveToStorage(SYNC_META_STORAGE_KEY, syncMeta)
+  }, [syncMeta])
 
   useEffect(() => {
     if (!supabase) return
@@ -1175,7 +1242,17 @@ function App() {
       .find((weight): weight is number => typeof weight === 'number')
   }, [entries, loggedDates])
 
+  function markLocalChanged() {
+    const changedAt = new Date().toISOString()
+    setSyncConflict(null)
+    setSyncMeta((current) => ({
+      ...current,
+      lastLocalChangeAt: changedAt,
+    }))
+  }
+
   function updateEntry(patch: Partial<DailyEntry>) {
+    markLocalChanged()
     setEntries((current) => ({
       ...current,
       [selectedDate]: {
@@ -1192,6 +1269,7 @@ function App() {
   }
 
   function finalizeSelectedDay() {
+    markLocalChanged()
     const nextEntries = {
       ...entries,
       [selectedDate]: {
@@ -1206,6 +1284,7 @@ function App() {
   }
 
   function unlockSelectedDay() {
+    markLocalChanged()
     const nextEntries = {
       ...entries,
       [selectedDate]: {
@@ -1219,10 +1298,12 @@ function App() {
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
+    markLocalChanged()
     setSettings(normalizeSettings(nextSettings))
   }
 
-  function replaceData(nextSettings: ChallengeSettings, nextEntries: EntryMap) {
+  function replaceData(nextSettings: ChallengeSettings, nextEntries: EntryMap, markChanged = true) {
+    if (markChanged) markLocalChanged()
     const normalizedSettings = normalizeSettings(nextSettings)
     setSettings(normalizedSettings)
     setEntries(normalizeEntries(nextEntries))
@@ -1231,6 +1312,63 @@ function App() {
 
   function updateReminder(nextReminderSettings: ReminderSettings) {
     setReminderSettings(normalizeReminderSettings(nextReminderSettings))
+  }
+
+  function hasLocalUnsyncedChanges(): boolean {
+    return timestampIsAfter(syncMeta.lastLocalChangeAt, syncMeta.lastCloudUpdatedAt)
+      || (!syncMeta.lastCloudUpdatedAt && Object.keys(entries).length > 0)
+  }
+
+  function cloudChangedSinceLastSync(cloud: CloudSnapshot): boolean {
+    return timestampIsAfter(cloud.updatedAt, syncMeta.lastCloudUpdatedAt)
+  }
+
+  function markSynced(updatedAt: string | null) {
+    setCloudUpdatedAt(updatedAt)
+    setSyncMeta({
+      lastCloudUpdatedAt: updatedAt,
+      lastLocalChangeAt: updatedAt,
+    })
+  }
+
+  function openSyncConflict(cloud: CloudSnapshot, message: string) {
+    setCloudUpdatedAt(cloud.updatedAt)
+    setSyncConflict({
+      cloud,
+      localChangedAt: syncMeta.lastLocalChangeAt,
+      message,
+    })
+    setCloudStatus({ tone: 'error', message })
+  }
+
+  async function fetchCloudSnapshot(): Promise<CloudSnapshot | null> {
+    if (!supabase || !user) return null
+
+    const { data, error } = await supabase
+      .from(SUPABASE_TABLE)
+      .select('settings, entries, updated_at')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (error) throw error
+    return normalizeCloudSnapshot(data)
+  }
+
+  async function writeCloudSnapshot(nextSettings: ChallengeSettings, nextEntries: EntryMap): Promise<string> {
+    if (!supabase || !user) throw new Error('Sign in before syncing.')
+
+    const updatedAt = new Date().toISOString()
+    const { error } = await supabase
+      .from(SUPABASE_TABLE)
+      .upsert({
+        user_id: user.id,
+        settings: normalizeSettings(nextSettings),
+        entries: normalizeEntries(nextEntries),
+        updated_at: updatedAt,
+      }, { onConflict: 'user_id' })
+
+    if (error) throw error
+    return updatedAt
   }
 
   async function sendMagicLink() {
@@ -1286,18 +1424,15 @@ function App() {
 
     setCloudBusy(true)
     try {
-      const updatedAt = new Date().toISOString()
-      const { error } = await supabase
-        .from(SUPABASE_TABLE)
-        .upsert({
-          user_id: user.id,
-          settings: normalizeSettings(settings),
-          entries: normalizeEntries(entries),
-          updated_at: updatedAt,
-        }, { onConflict: 'user_id' })
+      const cloud = await fetchCloudSnapshot()
+      if (cloud && cloudChangedSinceLastSync(cloud)) {
+        openSyncConflict(cloud, 'Cloud has changed since this device last synced. Choose how to resolve before pushing.')
+        return
+      }
 
-      if (error) throw error
-      setCloudUpdatedAt(updatedAt)
+      const updatedAt = await writeCloudSnapshot(settings, entries)
+      markSynced(updatedAt)
+      setSyncConflict(null)
       setCloudStatus({ tone: 'success', message: 'Local data pushed to cloud.' })
     } catch (error) {
       setCloudStatus({
@@ -1314,15 +1449,14 @@ function App() {
 
     setCloudBusy(true)
     try {
-      const { data, error } = await supabase
-        .from(SUPABASE_TABLE)
-        .select('settings, entries, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (error) throw error
-      if (!data) {
+      const cloud = await fetchCloudSnapshot()
+      if (!cloud) {
         setCloudStatus({ tone: 'neutral', message: 'No cloud data found yet. Push this device first.' })
+        return
+      }
+
+      if (cloudChangedSinceLastSync(cloud) && hasLocalUnsyncedChanges()) {
+        openSyncConflict(cloud, 'Both this device and cloud changed since the last sync. Choose how to resolve.')
         return
       }
 
@@ -1332,8 +1466,9 @@ function App() {
         return
       }
 
-      replaceData(data.settings, data.entries)
-      setCloudUpdatedAt(typeof data.updated_at === 'string' ? data.updated_at : null)
+      replaceData(cloud.settings, cloud.entries, false)
+      markSynced(cloud.updatedAt)
+      setSyncConflict(null)
       setCloudStatus({ tone: 'success', message: 'Cloud data pulled onto this device.' })
     } catch (error) {
       setCloudStatus({
@@ -1343,6 +1478,76 @@ function App() {
     } finally {
       setCloudBusy(false)
     }
+  }
+
+  async function useCloudConflictVersion() {
+    if (!syncConflict) return
+
+    setCloudBusy(true)
+    try {
+      replaceData(syncConflict.cloud.settings, syncConflict.cloud.entries, false)
+      markSynced(syncConflict.cloud.updatedAt)
+      setSyncConflict(null)
+      setCloudStatus({ tone: 'success', message: 'Cloud version applied to this device.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not apply cloud version.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function keepLocalConflictVersion() {
+    if (!syncConflict || !supabase || !user) return
+
+    setCloudBusy(true)
+    try {
+      const updatedAt = await writeCloudSnapshot(settings, entries)
+      markSynced(updatedAt)
+      setSyncConflict(null)
+      setCloudStatus({ tone: 'success', message: 'Local version kept and pushed to cloud.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not keep local version.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function mergeConflictEntries() {
+    if (!syncConflict || !supabase || !user) return
+
+    setCloudBusy(true)
+    try {
+      const mergedEntries = mergeCloudOnlyEntries(entries, syncConflict.cloud.entries)
+      const addedCount = countCloudOnlyEntries(entries, syncConflict.cloud.entries)
+      const updatedAt = await writeCloudSnapshot(settings, mergedEntries)
+      replaceData(settings, mergedEntries, false)
+      markSynced(updatedAt)
+      setSyncConflict(null)
+      setCloudStatus({
+        tone: 'success',
+        message: addedCount === 0
+          ? 'Merged with no cloud-only days to add; local overlapping days were kept.'
+          : `Merged ${addedCount} cloud-only ${addedCount === 1 ? 'day' : 'days'} and kept local overlapping days.`,
+      })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not merge cloud and local data.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  function dismissSyncConflict() {
+    setSyncConflict(null)
+    setCloudStatus({ tone: 'neutral', message: 'Sync conflict left unresolved.' })
   }
 
   async function requestReminderPermission() {
@@ -1903,6 +2108,7 @@ function App() {
             cloudStatus={cloudStatus}
             cloudBusy={cloudBusy}
             cloudUpdatedAt={cloudUpdatedAt}
+            syncConflict={syncConflict}
             user={user}
             authEmail={authEmail}
             onSettingsChange={updateSettings}
@@ -1914,6 +2120,10 @@ function App() {
             onSignOut={signOut}
             onPushCloud={pushCloudData}
             onPullCloud={pullCloudData}
+            onUseCloudVersion={useCloudConflictVersion}
+            onKeepLocalVersion={keepLocalConflictVersion}
+            onMergeCloudEntries={mergeConflictEntries}
+            onDismissConflict={dismissSyncConflict}
           />
         )}
       </main>
@@ -2440,6 +2650,7 @@ function SettingsView({
   cloudStatus,
   cloudBusy,
   cloudUpdatedAt,
+  syncConflict,
   user,
   authEmail,
   onSettingsChange,
@@ -2451,6 +2662,10 @@ function SettingsView({
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onUseCloudVersion,
+  onKeepLocalVersion,
+  onMergeCloudEntries,
+  onDismissConflict,
 }: {
   settings: ChallengeSettings
   entries: EntryMap
@@ -2460,6 +2675,7 @@ function SettingsView({
   cloudStatus: DataStatus
   cloudBusy: boolean
   cloudUpdatedAt: string | null
+  syncConflict: SyncConflict | null
   user: User | null
   authEmail: string
   onSettingsChange: (settings: ChallengeSettings) => void
@@ -2471,6 +2687,10 @@ function SettingsView({
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onUseCloudVersion: () => void
+  onKeepLocalVersion: () => void
+  onMergeCloudEntries: () => void
+  onDismissConflict: () => void
 }) {
   const activeRuleCount = getEnabledRules(settings).length
   const entryCount = Object.keys(entries).length
@@ -2585,12 +2805,17 @@ function SettingsView({
           status={cloudStatus}
           busy={cloudBusy}
           updatedAt={cloudUpdatedAt}
+          conflict={syncConflict}
           authEmail={authEmail}
           onAuthEmailChange={onAuthEmailChange}
           onSendMagicLink={onSendMagicLink}
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
           onPullCloud={onPullCloud}
+          onUseCloudVersion={onUseCloudVersion}
+          onKeepLocalVersion={onKeepLocalVersion}
+          onMergeCloudEntries={onMergeCloudEntries}
+          onDismissConflict={onDismissConflict}
         />
       </section>
 
@@ -2667,24 +2892,34 @@ function CloudSyncPanel({
   status,
   busy,
   updatedAt,
+  conflict,
   authEmail,
   onAuthEmailChange,
   onSendMagicLink,
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onUseCloudVersion,
+  onKeepLocalVersion,
+  onMergeCloudEntries,
+  onDismissConflict,
 }: {
   configured: boolean
   user: User | null
   status: DataStatus
   busy: boolean
   updatedAt: string | null
+  conflict: SyncConflict | null
   authEmail: string
   onAuthEmailChange: (email: string) => void
   onSendMagicLink: () => void
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onUseCloudVersion: () => void
+  onKeepLocalVersion: () => void
+  onMergeCloudEntries: () => void
+  onDismissConflict: () => void
 }) {
   const updatedLabel = updatedAt
     ? new Intl.DateTimeFormat('en-US', {
@@ -2694,6 +2929,22 @@ function CloudSyncPanel({
       minute: '2-digit',
     }).format(new Date(updatedAt))
     : 'Not synced yet'
+  const conflictCloudLabel = conflict?.cloud.updatedAt
+    ? new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(conflict.cloud.updatedAt))
+    : null
+  const conflictLocalLabel = conflict?.localChangedAt
+    ? new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(conflict.localChangedAt))
+    : null
 
   if (!configured) {
     return (
@@ -2726,6 +2977,32 @@ function CloudSyncPanel({
             </button>
           </div>
           <p className="cloud-updated">Cloud snapshot: {updatedLabel}</p>
+          {conflict && (
+            <div className="sync-conflict-panel">
+              <div>
+                <p className="eyebrow">Sync conflict</p>
+                <h3>Choose a version</h3>
+                <p>{conflict.message}</p>
+                <small>
+                  Cloud: {conflictCloudLabel ?? 'unknown'} · This device: {conflictLocalLabel ?? 'unsynced local data'}
+                </small>
+              </div>
+              <div className="sync-conflict-actions">
+                <button className="secondary-button" type="button" onClick={onMergeCloudEntries} disabled={busy}>
+                  Merge Daily Entries
+                </button>
+                <button className="secondary-button" type="button" onClick={onUseCloudVersion} disabled={busy}>
+                  Use Cloud
+                </button>
+                <button className="secondary-button" type="button" onClick={onKeepLocalVersion} disabled={busy}>
+                  Keep Local
+                </button>
+                <button className="ghost-button" type="button" onClick={onDismissConflict} disabled={busy}>
+                  Decide Later
+                </button>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div className="auth-form">

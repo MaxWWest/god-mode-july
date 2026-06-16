@@ -28,6 +28,7 @@
 
 - Supabase login (complete)
 - Multi-device synchronization (complete)
+- Conflict detection for simultaneous multi-device edits (complete)
 - Hosted deployment docs and env template (complete)
 - Optional reminders (complete)
 
