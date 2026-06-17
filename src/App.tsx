@@ -16,7 +16,12 @@ type BuiltInRuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protei
 type CustomRuleKey = `custom-${string}`
 type RuleKey = BuiltInRuleKey | CustomRuleKey
 type RuleWeight = 'nonNegotiable' | 'supporting'
-type RuleCategory = 'physical' | 'mental'
+type RuleCategoryKey = string
+
+type RuleCategoryConfig = {
+  key: RuleCategoryKey
+  label: string
+}
 
 type RuleConfig = {
   key: RuleKey
@@ -24,7 +29,7 @@ type RuleConfig = {
   icon: string
   enabled: boolean
   weight: RuleWeight
-  category: RuleCategory
+  category: RuleCategoryKey
   deleted?: boolean
 }
 
@@ -41,6 +46,7 @@ type ChallengeSettings = {
   startDate: string
   endDate: string
   targets: ChallengeTargets
+  categories: RuleCategoryConfig[]
   rules: RuleConfig[]
 }
 
@@ -234,9 +240,10 @@ const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
 const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
 const BUILT_IN_RULE_KEYS: BuiltInRuleKey[] = ['exercise', 'sober', 'foodLogged', 'calories', 'protein', 'water', 'sleep', 'reading', 'journal']
-const RULE_CATEGORIES: { key: RuleCategory; label: string; addLabel: string; emptyLabel: string }[] = [
-  { key: 'physical', label: 'Physical', addLabel: 'Add Physical Rule', emptyLabel: 'No physical rules yet.' },
-  { key: 'mental', label: 'Mental', addLabel: 'Add Mental Rule', emptyLabel: 'No mental rules yet.' },
+const DEFAULT_RULE_CATEGORIES: RuleCategoryConfig[] = [
+  { key: 'activity', label: 'Activity' },
+  { key: 'exercise', label: 'Exercise' },
+  { key: 'mental', label: 'Mental' },
 ]
 
 const DEFAULT_TARGETS: ChallengeTargets = {
@@ -248,12 +255,12 @@ const DEFAULT_TARGETS: ChallengeTargets = {
 }
 
 const DEFAULT_RULES: RuleConfig[] = [
-  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'physical' },
-  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'physical' },
-  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'physical' },
-  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'physical' },
-  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'physical' },
-  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'physical' },
+  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'exercise' },
+  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'activity' },
+  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'activity' },
+  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'activity' },
+  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'activity' },
+  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'activity' },
   { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting', category: 'mental' },
   { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting', category: 'mental' },
 ]
@@ -263,6 +270,7 @@ const DEFAULT_SETTINGS: ChallengeSettings = {
   startDate: todayIso(),
   endDate: addDays(todayIso(), 365),
   targets: DEFAULT_TARGETS,
+  categories: DEFAULT_RULE_CATEGORIES,
   rules: DEFAULT_RULES,
 }
 
@@ -347,8 +355,44 @@ function normalizeRuleKey(value: unknown): RuleKey | null {
   return null
 }
 
-function normalizeRuleCategory(value: unknown, fallback: RuleCategory): RuleCategory {
-  return value === 'physical' || value === 'mental' ? value : fallback
+function normalizeCategoryKey(value: unknown, fallback: RuleCategoryKey): RuleCategoryKey {
+  if (value === 'physical') return fallback
+  if (typeof value !== 'string') return fallback
+  const key = value.trim().toLowerCase()
+  return /^[a-z0-9-]{2,80}$/.test(key) ? key : fallback
+}
+
+function normalizeCategoryLabel(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const trimmed = value.trim().replace(/\s+/g, ' ')
+  return trimmed ? trimmed.slice(0, 32) : fallback
+}
+
+function slugifyCategoryLabel(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+function makeCategoryKey(label: string, existingKeys: Set<string>): RuleCategoryKey {
+  const base = slugifyCategoryLabel(label) || 'custom'
+  let key = base
+  let suffix = 2
+  while (existingKeys.has(key)) {
+    key = `${base}-${suffix}`
+    suffix += 1
+  }
+  return key
+}
+
+function categoryLabelFromKey(key: RuleCategoryKey): string {
+  return key
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Custom'
 }
 
 function normalizeRuleWeight(value: unknown, fallback: RuleWeight): RuleWeight {
@@ -359,14 +403,14 @@ function makeCustomRuleKey(): CustomRuleKey {
   return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function makeCustomRule(category: RuleCategory): RuleConfig {
+function makeCustomRule(category: RuleCategoryConfig): RuleConfig {
   return {
     key: makeCustomRuleKey(),
-    label: category === 'physical' ? 'New Physical Rule' : 'New Mental Rule',
-    icon: category === 'physical' ? '◆' : '✦',
+    label: `New ${category.label} Rule`,
+    icon: category.key === 'mental' ? '✦' : category.key === 'exercise' ? '◆' : '◈',
     enabled: true,
     weight: 'supporting',
-    category,
+    category: category.key,
   }
 }
 
@@ -501,6 +545,35 @@ function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): strin
   return storedLabel || defaultRule.label
 }
 
+function normalizeRuleCategories(value: unknown, rules: RuleConfig[]): RuleCategoryConfig[] {
+  const categoriesByKey = new Map<string, RuleCategoryConfig>()
+
+  for (const category of DEFAULT_RULE_CATEGORIES) {
+    categoriesByKey.set(category.key, category)
+  }
+
+  if (Array.isArray(value)) {
+    for (const rawCategory of value) {
+      if (!rawCategory || typeof rawCategory !== 'object') continue
+      const category = rawCategory as Partial<RuleCategoryConfig>
+      const labelFallback = typeof category.key === 'string' ? categoryLabelFromKey(category.key) : 'Custom'
+      const label = normalizeCategoryLabel(category.label, labelFallback)
+      const keyFallback = makeCategoryKey(label, new Set(categoriesByKey.keys()))
+      const key = normalizeCategoryKey(category.key, keyFallback)
+      categoriesByKey.set(key, { key, label })
+    }
+  }
+
+  for (const rule of rules) {
+    const key = normalizeCategoryKey(rule.category, 'activity')
+    if (!categoriesByKey.has(key)) {
+      categoriesByKey.set(key, { key, label: categoryLabelFromKey(key) })
+    }
+  }
+
+  return Array.from(categoriesByKey.values())
+}
+
 function normalizeSettings(value: unknown): ChallengeSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<ChallengeSettings> : {}
   const targetsCandidate = candidate.targets && typeof candidate.targets === 'object'
@@ -542,7 +615,7 @@ function normalizeSettings(value: unknown): ChallengeSettings {
       icon,
       enabled: typeof storedRule?.enabled === 'boolean' ? storedRule.enabled : defaultRule.enabled,
       weight: normalizeRuleWeight(storedRule?.weight, defaultRule.weight),
-      category: normalizeRuleCategory(storedRule?.category, defaultRule.category),
+      category: normalizeCategoryKey(storedRule?.category, defaultRule.category),
       deleted: storedRule?.deleted === true,
     }
   })
@@ -564,11 +637,13 @@ function normalizeSettings(value: unknown): ChallengeSettings {
       icon,
       enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
       weight: normalizeRuleWeight(rule.weight, 'supporting'),
-      category: normalizeRuleCategory(rule.category, 'mental'),
+      category: normalizeCategoryKey(rule.category, 'activity'),
       deleted: rule.deleted === true,
     })
     return normalizedRules
   }, [])
+  const allRules = [...rules, ...customRules]
+  const categories = normalizeRuleCategories(candidate.categories, allRules)
 
   const today = todayIso()
   const hasLegacyDefaultDates = candidate.startDate === LEGACY_DEFAULT_START_DATE && candidate.endDate === LEGACY_DEFAULT_END_DATE
@@ -586,7 +661,8 @@ function normalizeSettings(value: unknown): ChallengeSettings {
     startDate,
     endDate,
     targets,
-    rules: [...rules, ...customRules],
+    categories,
+    rules: allRules,
   }
 }
 
@@ -3126,6 +3202,8 @@ function SettingsView({
     tone: 'neutral',
     message: `${entryCount} saved ${entryCount === 1 ? 'entry' : 'entries'}`,
   })
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const categories = settings.categories.length > 0 ? settings.categories : DEFAULT_RULE_CATEGORIES
 
   function update(patch: Partial<ChallengeSettings>) {
     onSettingsChange(normalizeSettings({ ...settings, ...patch }))
@@ -3141,10 +3219,20 @@ function SettingsView({
     })
   }
 
-  function addRule(category: RuleCategory) {
+  function addRule(category: RuleCategoryConfig) {
     update({
       rules: [...settings.rules, makeCustomRule(category)],
     })
+  }
+
+  function addCategory() {
+    const label = normalizeCategoryLabel(newCategoryName, '')
+    if (!label) return
+    const key = makeCategoryKey(label, new Set(categories.map((category) => category.key)))
+    update({
+      categories: [...categories, { key, label }],
+    })
+    setNewCategoryName('')
   }
 
   function removeRule(key: RuleKey) {
@@ -3299,7 +3387,13 @@ function SettingsView({
           <span><strong>Supporting</strong> counts once.</span>
           <span><strong>Active</strong> counts now; inactive stays saved for later.</span>
         </div>
-        {RULE_CATEGORIES.map((category) => {
+        <div className="category-create-row">
+          <TextField label="New category" value={newCategoryName} onChange={setNewCategoryName} />
+          <button className="secondary-button" type="button" onClick={addCategory} disabled={!newCategoryName.trim()}>
+            Add Category
+          </button>
+        </div>
+        {categories.map((category) => {
           const categoryRules = getScoredRules(settings).filter((rule) => rule.category === category.key)
 
           return (
@@ -3309,12 +3403,12 @@ function SettingsView({
                   <p className="eyebrow">{category.label}</p>
                   <h3>{category.label} Rules</h3>
                 </div>
-                <button className="secondary-button compact-button" type="button" onClick={() => addRule(category.key)}>
-                  {category.addLabel}
+                <button className="secondary-button compact-button" type="button" onClick={() => addRule(category)}>
+                  Add Rule
                 </button>
               </div>
               <div className="settings-rule-list">
-                {categoryRules.length === 0 && <p className="empty-rule-category">{category.emptyLabel}</p>}
+                {categoryRules.length === 0 && <p className="empty-rule-category">No {category.label.toLowerCase()} rules yet.</p>}
                 {categoryRules.map((rule) => (
                   <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
                     <label className="symbol-field">
@@ -3345,9 +3439,10 @@ function SettingsView({
                       </label>
                       <label className="weight-field">
                         <span>Group</span>
-                        <select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value as RuleCategory })}>
-                          <option value="physical">Physical</option>
-                          <option value="mental">Mental</option>
+                        <select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value })}>
+                          {categories.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
                         </select>
                       </label>
                       <button className="danger-button" type="button" onClick={() => removeRule(rule.key)}>

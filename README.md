@@ -10,7 +10,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Daily rule checklist
 - Detailed check-in form
 - Configurable tracker title and start date
-- Physical and mental scored rules with custom add/remove controls
+- Activity, exercise, mental, and custom scored rule categories
 - Editable rules, targets, and rule weights
 - Monthly calendar heatmap
 - Rule completion analytics

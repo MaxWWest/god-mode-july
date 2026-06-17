@@ -834,6 +834,13 @@ textarea:focus-visible {
   color: #f8f5ff;
 }
 
+.category-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
 .workout-summary {
   display: flex;
   align-items: center;
@@ -1613,6 +1620,7 @@ textarea:focus-visible {
   }
 
   .rule-glossary,
+  .category-create-row,
   .settings-rule-category-header {
     grid-template-columns: 1fr;
   }
