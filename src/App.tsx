@@ -1205,6 +1205,7 @@ function App() {
   const [savePulse, setSavePulse] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
   const [cloudBusy, setCloudBusy] = useState(false)
   const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)).lastCloudUpdatedAt)
   const [cloudStatus, setCloudStatus] = useState<DataStatus>({
@@ -1631,11 +1632,85 @@ function App() {
         },
       })
       if (error) throw error
-      setCloudStatus({ tone: 'success', message: 'Magic link sent. Check your email to finish signing in.' })
+      setCloudStatus({ tone: 'success', message: 'Magic link sent. Password sign-in works better for the iPhone Home Screen app.' })
     } catch (error) {
       setCloudStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not send magic link.',
+        message: error instanceof Error ? error.message : 'Could not send the magic link.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function signInWithPassword() {
+    if (!supabase) return
+    const email = authEmail.trim()
+    const password = authPassword.trim()
+    if (!email) {
+      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
+      return
+    }
+
+    if (!password) {
+      setCloudStatus({ tone: 'error', message: 'Enter your password.' })
+      return
+    }
+
+    setCloudBusy(true)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) throw error
+      setUser(data.user ?? data.session?.user ?? null)
+      setCloudStatus({ tone: 'success', message: 'Signed in. Push local data or pull cloud data.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not sign in with that email and password.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function createPasswordAccount() {
+    if (!supabase) return
+    const email = authEmail.trim()
+    const password = authPassword.trim()
+    if (!email) {
+      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
+      return
+    }
+
+    if (password.length < 6) {
+      setCloudStatus({ tone: 'error', message: 'Use a password with at least 6 characters.' })
+      return
+    }
+
+    setCloudBusy(true)
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      })
+      if (error) throw error
+
+      if (data.session?.user) {
+        setUser(data.session.user)
+        setCloudStatus({ tone: 'success', message: 'Account created and signed in.' })
+      } else {
+        setCloudStatus({ tone: 'success', message: 'Account created. If Supabase asks for email confirmation, confirm it once, then sign in here with your password.' })
+      }
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not create account.',
       })
     } finally {
       setCloudBusy(false)
@@ -1650,6 +1725,7 @@ function App() {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
       setUser(null)
+      setAuthPassword('')
       setCloudUpdatedAt(null)
       setCloudStatus({ tone: 'neutral', message: 'Signed out. Local data is still saved on this device.' })
     } catch (error) {
@@ -2573,6 +2649,7 @@ function App() {
             syncConflict={syncConflict}
             user={user}
             authEmail={authEmail}
+            authPassword={authPassword}
             onSettingsChange={updateSettings}
             onDataImport={replaceData}
             onReminderChange={updateReminder}
@@ -2580,6 +2657,9 @@ function App() {
             onEnablePushReminder={enablePushReminder}
             onDisablePushReminder={disablePushReminder}
             onAuthEmailChange={setAuthEmail}
+            onAuthPasswordChange={setAuthPassword}
+            onSignInWithPassword={signInWithPassword}
+            onCreatePasswordAccount={createPasswordAccount}
             onSendMagicLink={sendMagicLink}
             onSignOut={signOut}
             onPushCloud={pushCloudData}
@@ -3122,6 +3202,7 @@ function SettingsView({
   syncConflict,
   user,
   authEmail,
+  authPassword,
   onSettingsChange,
   onDataImport,
   onReminderChange,
@@ -3129,6 +3210,9 @@ function SettingsView({
   onEnablePushReminder,
   onDisablePushReminder,
   onAuthEmailChange,
+  onAuthPasswordChange,
+  onSignInWithPassword,
+  onCreatePasswordAccount,
   onSendMagicLink,
   onSignOut,
   onPushCloud,
@@ -3154,6 +3238,7 @@ function SettingsView({
   syncConflict: SyncConflict | null
   user: User | null
   authEmail: string
+  authPassword: string
   onSettingsChange: (settings: ChallengeSettings) => void
   onDataImport: (settings: ChallengeSettings, entries: EntryMap) => void
   onReminderChange: (settings: ReminderSettings) => void
@@ -3161,6 +3246,9 @@ function SettingsView({
   onEnablePushReminder: () => void
   onDisablePushReminder: () => void
   onAuthEmailChange: (email: string) => void
+  onAuthPasswordChange: (password: string) => void
+  onSignInWithPassword: () => void
+  onCreatePasswordAccount: () => void
   onSendMagicLink: () => void
   onSignOut: () => void
   onPushCloud: () => void
@@ -3287,7 +3375,11 @@ function SettingsView({
           updatedAt={cloudUpdatedAt}
           conflict={syncConflict}
           authEmail={authEmail}
+          authPassword={authPassword}
           onAuthEmailChange={onAuthEmailChange}
+          onAuthPasswordChange={onAuthPasswordChange}
+          onSignInWithPassword={onSignInWithPassword}
+          onCreatePasswordAccount={onCreatePasswordAccount}
           onSendMagicLink={onSendMagicLink}
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
@@ -3382,7 +3474,11 @@ function CloudSyncPanel({
   updatedAt,
   conflict,
   authEmail,
+  authPassword,
   onAuthEmailChange,
+  onAuthPasswordChange,
+  onSignInWithPassword,
+  onCreatePasswordAccount,
   onSendMagicLink,
   onSignOut,
   onPushCloud,
@@ -3401,7 +3497,11 @@ function CloudSyncPanel({
   updatedAt: string | null
   conflict: SyncConflict | null
   authEmail: string
+  authPassword: string
   onAuthEmailChange: (email: string) => void
+  onAuthPasswordChange: (password: string) => void
+  onSignInWithPassword: () => void
+  onCreatePasswordAccount: () => void
   onSendMagicLink: () => void
   onSignOut: () => void
   onPushCloud: () => void
@@ -3511,11 +3611,24 @@ function CloudSyncPanel({
           )}
         </>
       ) : (
-        <div className="auth-form">
-          <TextField label="Email" type="email" value={authEmail} onChange={onAuthEmailChange} />
-          <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy}>
-            Send Magic Link
-          </button>
+        <div className="auth-stack">
+          <div className="field-grid">
+            <TextField label="Email" type="email" value={authEmail} onChange={onAuthEmailChange} />
+            <TextField label="Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
+          </div>
+          <div className="auth-actions">
+            <button className="secondary-button" type="button" onClick={onSignInWithPassword} disabled={busy}>
+              Sign In
+            </button>
+            <button className="secondary-button" type="button" onClick={onCreatePasswordAccount} disabled={busy}>
+              Create Account
+            </button>
+          </div>
+          <div className="auth-form">
+            <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy}>
+              Send Magic Link Backup
+            </button>
+          </div>
         </div>
       )}
       <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
@@ -3636,7 +3749,7 @@ function TextField({
 }: {
   label: string
   value: string
-  type?: 'text' | 'date' | 'email' | 'time'
+  type?: 'text' | 'date' | 'email' | 'password' | 'time'
   disabled?: boolean
   onChange: (value: string) => void
 }) {
