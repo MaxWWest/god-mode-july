@@ -288,6 +288,14 @@ create table if not exists public.god_mode_challenge_summaries (
   updated_at timestamptz not null default now()
 );
 
+alter table public.god_mode_challenge_summaries
+  add column if not exists privacy jsonb not null default '{
+    "showWeeklyCompletion": true,
+    "showAverageCompletion": true,
+    "showStreak": true,
+    "showLoggedDays": true
+  }'::jsonb;
+
 alter table public.god_mode_challenge_summaries enable row level security;
 
 drop policy if exists "Users can read own and friends summaries" on public.god_mode_challenge_summaries;

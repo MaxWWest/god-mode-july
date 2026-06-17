@@ -120,6 +120,7 @@ type AccountDataExport = {
   local: {
     settings: ChallengeSettings
     entries: EntryMap
+    privacy: PrivacySettings
   }
   cloud: {
     snapshot: CloudSnapshot | null
@@ -142,6 +143,13 @@ type AppNotice = {
   id: number
   tone: 'success' | 'error' | 'neutral'
   message: string
+}
+
+type PrivacySettings = {
+  showWeeklyCompletion: boolean
+  showAverageCompletion: boolean
+  showStreak: boolean
+  showLoggedDays: boolean
 }
 
 type RuleRate = RuleConfig & {
@@ -208,6 +216,7 @@ type ChallengeSummary = {
   longestStreak: number
   lastLoggedDate: string | null
   updatedAt: string
+  privacy: PrivacySettings
 }
 
 type LeaderboardRow = FriendProfile & {
@@ -304,6 +313,14 @@ type CreateFriendSquadInput = {
   memberIds: string[]
 }
 
+type ChallengeTemplate = {
+  id: string
+  name: string
+  durationDays: number
+  scoringMode: FriendChallengeScoringMode
+  note: string
+}
+
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
@@ -314,6 +331,7 @@ const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
 const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
 const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
 const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v1'
+const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
 const DAY_IN_MS = 86_400_000
 const MAX_TRACKING_DAYS = 3650
 const MAX_WORKOUT_LOGS = 12
@@ -368,6 +386,51 @@ const DEFAULT_SYNC_META: SyncMeta = {
   lastCloudUpdatedAt: null,
   lastLocalChangeAt: null,
 }
+
+const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+  showWeeklyCompletion: true,
+  showAverageCompletion: true,
+  showStreak: true,
+  showLoggedDays: true,
+}
+
+const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
+  {
+    id: 'custom',
+    name: 'Custom',
+    durationDays: 7,
+    scoringMode: 'personal',
+    note: 'Start from a blank challenge.',
+  },
+  {
+    id: 'no-zero-days',
+    name: 'No Zero Days',
+    durationDays: 7,
+    scoringMode: 'personal',
+    note: 'One-week push using everyone’s own targets.',
+  },
+  {
+    id: 'lock-in-week',
+    name: 'Lock-In Week',
+    durationDays: 7,
+    scoringMode: 'shared',
+    note: 'Shared rules for a clean head-to-head week.',
+  },
+  {
+    id: 'month-sprint',
+    name: '30-Day Sprint',
+    durationDays: 30,
+    scoringMode: 'personal',
+    note: 'Longer personal-target challenge.',
+  },
+  {
+    id: 'sleep-reset',
+    name: 'Sleep Reset',
+    durationDays: 10,
+    scoringMode: 'shared',
+    note: 'Short shared-rule reset challenge.',
+  },
+]
 
 const TUTORIAL_STEPS = [
   {
@@ -634,6 +697,16 @@ function normalizeSyncMeta(value: unknown): SyncMeta {
   return {
     lastCloudUpdatedAt: normalizeTimestamp(candidate.lastCloudUpdatedAt),
     lastLocalChangeAt: normalizeTimestamp(candidate.lastLocalChangeAt),
+  }
+}
+
+function normalizePrivacySettings(value: unknown): PrivacySettings {
+  const candidate = value && typeof value === 'object' ? value as Partial<PrivacySettings> : {}
+  return {
+    showWeeklyCompletion: typeof candidate.showWeeklyCompletion === 'boolean' ? candidate.showWeeklyCompletion : DEFAULT_PRIVACY_SETTINGS.showWeeklyCompletion,
+    showAverageCompletion: typeof candidate.showAverageCompletion === 'boolean' ? candidate.showAverageCompletion : DEFAULT_PRIVACY_SETTINGS.showAverageCompletion,
+    showStreak: typeof candidate.showStreak === 'boolean' ? candidate.showStreak : DEFAULT_PRIVACY_SETTINGS.showStreak,
+    showLoggedDays: typeof candidate.showLoggedDays === 'boolean' ? candidate.showLoggedDays : DEFAULT_PRIVACY_SETTINGS.showLoggedDays,
   }
 }
 
@@ -1078,7 +1151,8 @@ function leaderboardThroughDate(entries: EntryMap, settings: ChallengeSettings):
   return loggedDates[loggedDates.length - 1] ?? settings.startDate
 }
 
-function buildChallengeSummary(userId: string, entries: EntryMap, settings: ChallengeSettings): ChallengeSummary {
+function buildChallengeSummary(userId: string, entries: EntryMap, settings: ChallengeSettings, privacySettings = DEFAULT_PRIVACY_SETTINGS): ChallengeSummary {
+  const privacy = normalizePrivacySettings(privacySettings)
   const loggedDates = getLoggedDates(entries, settings)
   const throughDate = leaderboardThroughDate(entries, settings)
   const weekStart = addDays(throughDate, -6) < settings.startDate ? settings.startDate : addDays(throughDate, -6)
@@ -1095,14 +1169,15 @@ function buildChallengeSummary(userId: string, entries: EntryMap, settings: Chal
     challengeTitle: settings.title,
     startDate: settings.startDate,
     endDate: throughDate,
-    loggedDays: loggedDates.length,
+    loggedDays: privacy.showLoggedDays ? loggedDates.length : 0,
     totalDays: trackingLength(settings, throughDate),
-    averageCompletion,
-    weeklyCompletion,
-    currentStreak: currentStreak(entries, throughDate, settings),
-    longestStreak: longestStreak(entries, settings),
-    lastLoggedDate: loggedDates[loggedDates.length - 1] ?? null,
+    averageCompletion: privacy.showAverageCompletion ? averageCompletion : 0,
+    weeklyCompletion: privacy.showWeeklyCompletion ? weeklyCompletion : 0,
+    currentStreak: privacy.showStreak ? currentStreak(entries, throughDate, settings) : 0,
+    longestStreak: privacy.showStreak ? longestStreak(entries, settings) : 0,
+    lastLoggedDate: privacy.showLoggedDays ? loggedDates[loggedDates.length - 1] ?? null : null,
     updatedAt: new Date().toISOString(),
+    privacy,
   }
 }
 
@@ -1155,7 +1230,9 @@ function buildFriendChallengeSummary(
   entries: EntryMap,
   challenge: FriendChallenge,
   personalSettings: ChallengeSettings,
+  privacySettings = DEFAULT_PRIVACY_SETTINGS,
 ): ChallengeSummary {
+  const privacy = normalizePrivacySettings(privacySettings)
   const challengeSettings = settingsForFriendChallenge(challenge, personalSettings)
   const elapsedDates = getChallengeElapsedDates(challenge)
   const loggedDates = elapsedDates.filter((date) => Boolean(entries[date]))
@@ -1174,14 +1251,15 @@ function buildFriendChallengeSummary(
     challengeTitle: challenge.name,
     startDate: challenge.startDate,
     endDate: challenge.endDate,
-    loggedDays: loggedDates.length,
+    loggedDays: privacy.showLoggedDays ? loggedDates.length : 0,
     totalDays: elapsedDates.length,
-    averageCompletion,
-    weeklyCompletion,
-    currentStreak: streaks.current,
-    longestStreak: streaks.longest,
-    lastLoggedDate: loggedDates[loggedDates.length - 1] ?? null,
+    averageCompletion: privacy.showAverageCompletion ? averageCompletion : 0,
+    weeklyCompletion: privacy.showWeeklyCompletion ? weeklyCompletion : 0,
+    currentStreak: privacy.showStreak ? streaks.current : 0,
+    longestStreak: privacy.showStreak ? streaks.longest : 0,
+    lastLoggedDate: privacy.showLoggedDays ? loggedDates[loggedDates.length - 1] ?? null : null,
     updatedAt: new Date().toISOString(),
+    privacy,
   }
 }
 
@@ -1273,6 +1351,14 @@ function isFriendSquadSchemaError(error: unknown): boolean {
     || message.includes('column')
 }
 
+function isSummarySchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('god_mode_challenge_summaries')
+    || message.includes('privacy')
+    || message.includes('column')
+}
+
 function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
   const candidate = row && typeof row === 'object'
     ? row as Record<string, unknown>
@@ -1295,6 +1381,7 @@ function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
     longestStreak: normalizeBoundedNumber(candidate.longest_streak ?? candidate.longestStreak, 0, 0, MAX_TRACKING_DAYS),
     lastLoggedDate: isIsoDate(candidate.last_logged_date) ? candidate.last_logged_date : isIsoDate(candidate.lastLoggedDate) ? candidate.lastLoggedDate : null,
     updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
+    privacy: normalizePrivacySettings(candidate.privacy),
   }
 }
 
@@ -1618,6 +1705,7 @@ function App() {
   const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => normalizeReminderSettings(loadFromStorage<unknown>(REMINDER_STORAGE_KEY, null)))
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)))
+  const [privacySettings, setPrivacySettings] = useState<PrivacySettings>(() => normalizePrivacySettings(loadFromStorage<unknown>(PRIVACY_STORAGE_KEY, null)))
   const [syncConflict, setSyncConflict] = useState<SyncConflict | null>(null)
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const [savePulse, setSavePulse] = useState(false)
@@ -1697,6 +1785,10 @@ function App() {
   }, [syncMeta])
 
   useEffect(() => {
+    saveToStorage(PRIVACY_STORAGE_KEY, privacySettings)
+  }, [privacySettings])
+
+  useEffect(() => {
     if (!appNotice) return
     const timer = window.setTimeout(() => setAppNotice(null), 3600)
     return () => window.clearTimeout(timer)
@@ -1737,11 +1829,13 @@ function App() {
 
     void initializeAuthSession()
 
-    const { data } = client.auth.onAuthStateChange((_event, session) => {
+    const { data } = client.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
       setCloudStatus({
-        tone: 'neutral',
-        message: session?.user ? 'Signed in. Push local data or pull cloud data.' : 'Sign in to sync across devices.',
+        tone: event === 'PASSWORD_RECOVERY' ? 'success' : 'neutral',
+        message: event === 'PASSWORD_RECOVERY'
+          ? 'Password reset verified. Enter a new password below and tap Set Password.'
+          : session?.user ? 'Signed in. Push local data or pull cloud data.' : 'Sign in to sync across devices.',
       })
     })
 
@@ -1865,7 +1959,7 @@ function App() {
     }
 
     setEntries(nextEntries)
-    if (user) void publishFriendSummary(true, nextEntries)
+    if (user) void publishFriendSummary(true, nextEntries, privacySettings)
   }
 
   function unlockSelectedDay() {
@@ -1897,6 +1991,12 @@ function App() {
 
   function updateReminder(nextReminderSettings: ReminderSettings) {
     setReminderSettings(normalizeReminderSettings(nextReminderSettings))
+  }
+
+  function updatePrivacy(nextPrivacySettings: PrivacySettings) {
+    const normalizedPrivacySettings = normalizePrivacySettings(nextPrivacySettings)
+    setPrivacySettings(normalizedPrivacySettings)
+    if (user) void publishFriendSummary(true, entries, normalizedPrivacySettings)
   }
 
   function hasLocalUnsyncedChanges(): boolean {
@@ -2091,6 +2191,7 @@ function App() {
       local: {
         settings: normalizeSettings(settings),
         entries: normalizeEntries(entries),
+        privacy: normalizePrivacySettings(privacySettings),
       },
       cloud: {
         snapshot: normalizeCloudSnapshot(snapshotResult.data),
@@ -2129,6 +2230,32 @@ function App() {
       setCloudStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not send the magic link.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function sendPasswordReset() {
+    if (!supabase) return
+    const email = authEmail.trim()
+    if (!email) {
+      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
+      return
+    }
+
+    setCloudBusy(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      })
+      if (error) throw error
+      setCloudStatus({ tone: 'success', message: 'Password reset email sent. Open the link, then set a new password here.' })
+      showAppNotice('Password reset email sent.')
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not send the password reset email.',
       })
     } finally {
       setCloudBusy(false)
@@ -2894,6 +3021,49 @@ function App() {
     }
   }
 
+  function buildOwnInviteMessage(): string | null {
+    const inviteCode = friendProfile?.inviteCode
+    if (!inviteCode) return null
+
+    const name = friendProfile?.displayName || displayNameDraft.trim() || 'me'
+    return `Add ${name} on God Mode: ${inviteCode}\n${window.location.origin}`
+  }
+
+  async function shareOwnInviteMessage() {
+    const inviteMessage = buildOwnInviteMessage()
+    if (!inviteMessage) {
+      setFriendsStatus({ tone: 'error', message: 'Invite code is still loading.' })
+      showAppNotice('Invite code is still loading.', 'error')
+      return
+    }
+
+    try {
+      if ('share' in navigator && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: 'God Mode invite',
+          text: inviteMessage,
+        })
+        setFriendsStatus({ tone: 'success', message: 'Invite shared.' })
+        return
+      }
+
+      await copyTextToClipboard(inviteMessage)
+      setFriendsStatus({ tone: 'success', message: 'Invite text copied.' })
+      showAppNotice('Invite text copied.')
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        setFriendsStatus({ tone: 'neutral', message: 'Invite share canceled.' })
+        return
+      }
+
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not share invite.',
+      })
+      showAppNotice('Could not share invite.', 'error')
+    }
+  }
+
   async function sendFriendRequestByInviteCode() {
     if (!supabase || !user) return
 
@@ -3190,7 +3360,7 @@ function App() {
 
       const challenge = normalizeFriendChallengeRow(challengeRow)
       if (!challenge) throw new Error('Could not create the challenge.')
-      const ownerSummary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+      const ownerSummary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
       const now = new Date().toISOString()
       const participantRows = [
         {
@@ -3250,7 +3420,7 @@ function App() {
         responded_at: new Date().toISOString(),
       }
       if (challenge && nextStatus === 'accepted') {
-        updatePayload.summary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+        updatePayload.summary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
       }
 
       const { data, error } = await supabase
@@ -3300,7 +3470,7 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const summary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+      const summary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
       const { error } = await supabase
         .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
         .update({
@@ -3330,7 +3500,7 @@ function App() {
     }
   }
 
-  async function publishFriendSummary(silent = false, sourceEntries = entries) {
+  async function publishFriendSummary(silent = false, sourceEntries = entries, sourcePrivacySettings = privacySettings) {
     if (!supabase || !user) return
 
     if (!silent) setFriendsBusy(true)
@@ -3338,7 +3508,7 @@ function App() {
       const profile = await ensureFriendProfile()
       if (!profile) throw new Error('Could not load your friend profile.')
 
-      const summary = buildChallengeSummary(user.id, sourceEntries, settings)
+      const summary = buildChallengeSummary(user.id, sourceEntries, settings, sourcePrivacySettings)
       const { error } = await supabase
         .from(SUPABASE_SUMMARY_TABLE)
         .upsert({
@@ -3353,10 +3523,16 @@ function App() {
           current_streak: summary.currentStreak,
           longest_streak: summary.longestStreak,
           last_logged_date: summary.lastLoggedDate,
+          privacy: summary.privacy,
           updated_at: summary.updatedAt,
         }, { onConflict: 'user_id' })
 
-      if (error) throw error
+      if (error) {
+        if (isSummarySchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable privacy settings.')
+        }
+        throw error
+      }
       await refreshFriendsData()
       if (!silent) setFriendsStatus({ tone: 'success', message: 'Leaderboard score published.' })
     } catch (error) {
@@ -3539,12 +3715,15 @@ function App() {
             friendRequests={friendRequests}
             friendChallenges={friendChallenges}
             friendSquads={friendSquads}
+            privacySettings={privacySettings}
             status={friendsStatus}
             busy={friendsBusy}
             onDisplayNameChange={setDisplayNameDraft}
             onInviteCodeChange={setInviteCodeDraft}
             onSaveProfile={saveFriendProfile}
             onCopyInviteCode={copyOwnInviteCode}
+            onShareInviteMessage={shareOwnInviteMessage}
+            onPrivacyChange={updatePrivacy}
             onAddFriend={sendFriendRequestByInviteCode}
             onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
             onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
@@ -3583,6 +3762,7 @@ function App() {
             onCreatePasswordAccount={createPasswordAccount}
             onSetAccountPassword={setAccountPassword}
             onSendMagicLink={sendMagicLink}
+            onSendPasswordReset={sendPasswordReset}
             onSignOut={signOut}
             onPushCloud={pushCloudData}
             onPullCloud={pullCloudData}
@@ -3954,12 +4134,15 @@ function FriendsView({
   friendRequests,
   friendChallenges,
   friendSquads,
+  privacySettings,
   status,
   busy,
   onDisplayNameChange,
   onInviteCodeChange,
   onSaveProfile,
   onCopyInviteCode,
+  onShareInviteMessage,
+  onPrivacyChange,
   onAddFriend,
   onAcceptRequest,
   onDeclineRequest,
@@ -3982,12 +4165,15 @@ function FriendsView({
   friendRequests: FriendRequest[]
   friendChallenges: FriendChallengeView[]
   friendSquads: FriendSquadView[]
+  privacySettings: PrivacySettings
   status: DataStatus
   busy: boolean
   onDisplayNameChange: (value: string) => void
   onInviteCodeChange: (value: string) => void
   onSaveProfile: () => void
   onCopyInviteCode: () => void
+  onShareInviteMessage: () => void
+  onPrivacyChange: (privacySettings: PrivacySettings) => void
   onAddFriend: () => void
   onAcceptRequest: (userId: string) => void
   onDeclineRequest: (userId: string) => void
@@ -4004,6 +4190,7 @@ function FriendsView({
   const incomingRequests = friendRequests.filter((request) => request.direction === 'incoming')
   const outgoingRequests = friendRequests.filter((request) => request.direction === 'outgoing')
   const acceptedFriends = leaderboardRows.filter((row) => !row.isCurrentUser)
+  const [challengeTemplateId, setChallengeTemplateId] = useState(CHALLENGE_TEMPLATES[1]?.id ?? 'custom')
   const [challengeName, setChallengeName] = useState('No Zero Days')
   const [challengeStartDate, setChallengeStartDate] = useState(todayIso())
   const [challengeEndDate, setChallengeEndDate] = useState(addDays(todayIso(), 6))
@@ -4031,6 +4218,24 @@ function FriendsView({
   function applySquadToChallenge(squad: FriendSquadView) {
     const memberIds = squad.members.map((member) => member.userId)
     setChallengeInviteIds((current) => Array.from(new Set([...current, ...memberIds])))
+  }
+
+  function applyChallengeTemplate(templateId: string) {
+    const template = CHALLENGE_TEMPLATES.find((item) => item.id === templateId) ?? CHALLENGE_TEMPLATES[0]
+    setChallengeTemplateId(template.id)
+    if (template.id === 'custom') return
+
+    setChallengeName(template.name)
+    setChallengeScoringMode(template.scoringMode)
+    if (isIsoDate(challengeStartDate)) setChallengeEndDate(addDays(challengeStartDate, template.durationDays - 1))
+  }
+
+  function updateChallengeStartDate(startDate: string) {
+    setChallengeStartDate(startDate)
+    const template = CHALLENGE_TEMPLATES.find((item) => item.id === challengeTemplateId)
+    if (template && template.id !== 'custom' && isIsoDate(startDate)) {
+      setChallengeEndDate(addDays(startDate, template.durationDays - 1))
+    }
   }
 
   function submitSquad() {
@@ -4121,9 +4326,44 @@ function FriendsView({
           <button className="secondary-button" type="button" onClick={onPublishSummary} disabled={busy}>
             Publish Score
           </button>
+          <button className="secondary-button" type="button" onClick={onShareInviteMessage} disabled={busy || !profile?.inviteCode}>
+            Share Invite
+          </button>
           <button className="secondary-button" type="button" onClick={onRefresh} disabled={busy}>
             Refresh
           </button>
+        </div>
+        <div className="privacy-panel">
+          <div>
+            <small>Privacy settings</small>
+            <p>Choose which stats are visible when you publish leaderboard and challenge scores.</p>
+          </div>
+          <div className="privacy-grid">
+            <CheckField
+              label="Show 7-day score"
+              checked={privacySettings.showWeeklyCompletion}
+              disabled={busy}
+              onChange={(showWeeklyCompletion) => onPrivacyChange({ ...privacySettings, showWeeklyCompletion })}
+            />
+            <CheckField
+              label="Show average"
+              checked={privacySettings.showAverageCompletion}
+              disabled={busy}
+              onChange={(showAverageCompletion) => onPrivacyChange({ ...privacySettings, showAverageCompletion })}
+            />
+            <CheckField
+              label="Show streak"
+              checked={privacySettings.showStreak}
+              disabled={busy}
+              onChange={(showStreak) => onPrivacyChange({ ...privacySettings, showStreak })}
+            />
+            <CheckField
+              label="Show logged days"
+              checked={privacySettings.showLoggedDays}
+              disabled={busy}
+              onChange={(showLoggedDays) => onPrivacyChange({ ...privacySettings, showLoggedDays })}
+            />
+          </div>
         </div>
         <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
       </section>
@@ -4238,6 +4478,17 @@ function FriendsView({
           <span>{friendChallenges.length}</span>
         </div>
         <div className="challenge-create-panel">
+          <div className="template-picker">
+            <label className="select-field">
+              <span>Template</span>
+              <select value={challengeTemplateId} onChange={(event) => applyChallengeTemplate(event.target.value)}>
+                {CHALLENGE_TEMPLATES.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+            </label>
+            <p>{CHALLENGE_TEMPLATES.find((template) => template.id === challengeTemplateId)?.note ?? 'Start from a blank challenge.'}</p>
+          </div>
           <div className="field-grid">
             <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
             <label className="select-field">
@@ -4247,7 +4498,7 @@ function FriendsView({
                 <option value="shared">Shared rules</option>
               </select>
             </label>
-            <TextField label="Start" type="date" value={challengeStartDate} onChange={setChallengeStartDate} />
+            <TextField label="Start" type="date" value={challengeStartDate} onChange={updateChallengeStartDate} />
             <TextField label="End" type="date" value={challengeEndDate} onChange={setChallengeEndDate} />
           </div>
           <div className="challenge-invite-picker">
@@ -4464,10 +4715,10 @@ function FriendChallengeCard({
                 <small>{participant.summary ? `Updated ${formatShortDate(participant.summary.updatedAt.slice(0, 10))}` : 'No score published yet'}</small>
               </div>
               <div className="leaderboard-stats">
-                <span><small>7-day</small><strong>{participant.summary ? `${participant.summary.weeklyCompletion}%` : '—'}</strong></span>
-                <span><small>Avg</small><strong>{participant.summary ? `${participant.summary.averageCompletion}%` : '—'}</strong></span>
-                <span><small>Streak</small><strong>{participant.summary ? participant.summary.currentStreak : '—'}</strong></span>
-                <span><small>Logged</small><strong>{participant.summary ? `${participant.summary.loggedDays}/${participant.summary.totalDays}` : '—'}</strong></span>
+                <span><small>7-day</small><strong>{formatSummaryMetric(participant.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)}</strong></span>
+                <span><small>Avg</small><strong>{formatSummaryMetric(participant.summary, 'showAverageCompletion', (summary) => `${summary.averageCompletion}%`)}</strong></span>
+                <span><small>Streak</small><strong>{formatSummaryMetric(participant.summary, 'showStreak', (summary) => String(summary.currentStreak))}</strong></span>
+                <span><small>Logged</small><strong>{formatSummaryMetric(participant.summary, 'showLoggedDays', (summary) => `${summary.loggedDays}/${summary.totalDays}`)}</strong></span>
               </div>
             </article>
           ))}
@@ -4491,13 +4742,22 @@ function LeaderboardCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
         <small>{summary?.challengeTitle ?? 'No score published yet'}</small>
       </div>
       <div className="leaderboard-stats">
-        <span><small>7-day</small><strong>{summary ? `${summary.weeklyCompletion}%` : '—'}</strong></span>
-        <span><small>Avg</small><strong>{summary ? `${summary.averageCompletion}%` : '—'}</strong></span>
-        <span><small>Streak</small><strong>{summary ? summary.currentStreak : '—'}</strong></span>
-        <span><small>Logged</small><strong>{summary ? `${summary.loggedDays}/${summary.totalDays}` : '—'}</strong></span>
+        <span><small>7-day</small><strong>{formatSummaryMetric(summary, 'showWeeklyCompletion', (item) => `${item.weeklyCompletion}%`)}</strong></span>
+        <span><small>Avg</small><strong>{formatSummaryMetric(summary, 'showAverageCompletion', (item) => `${item.averageCompletion}%`)}</strong></span>
+        <span><small>Streak</small><strong>{formatSummaryMetric(summary, 'showStreak', (item) => String(item.currentStreak))}</strong></span>
+        <span><small>Logged</small><strong>{formatSummaryMetric(summary, 'showLoggedDays', (item) => `${item.loggedDays}/${item.totalDays}`)}</strong></span>
       </div>
     </article>
   )
+}
+
+function formatSummaryMetric(
+  summary: ChallengeSummary | null,
+  privacyKey: keyof PrivacySettings,
+  format: (summary: ChallengeSummary) => string,
+): string {
+  if (!summary) return '—'
+  return summary.privacy[privacyKey] ? format(summary) : 'Private'
 }
 
 function SettingsView({
@@ -4523,6 +4783,7 @@ function SettingsView({
   onCreatePasswordAccount,
   onSetAccountPassword,
   onSendMagicLink,
+  onSendPasswordReset,
   onSignOut,
   onPushCloud,
   onPullCloud,
@@ -4555,6 +4816,7 @@ function SettingsView({
   onCreatePasswordAccount: () => void
   onSetAccountPassword: () => void
   onSendMagicLink: () => void
+  onSendPasswordReset: () => void
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
@@ -4709,6 +4971,7 @@ function SettingsView({
           onCreatePasswordAccount={onCreatePasswordAccount}
           onSetAccountPassword={onSetAccountPassword}
           onSendMagicLink={onSendMagicLink}
+          onSendPasswordReset={onSendPasswordReset}
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
           onPullCloud={onPullCloud}
@@ -4844,6 +5107,7 @@ function CloudSyncPanel({
   onCreatePasswordAccount,
   onSetAccountPassword,
   onSendMagicLink,
+  onSendPasswordReset,
   onSignOut,
   onPushCloud,
   onPullCloud,
@@ -4868,6 +5132,7 @@ function CloudSyncPanel({
   onCreatePasswordAccount: () => void
   onSetAccountPassword: () => void
   onSendMagicLink: () => void
+  onSendPasswordReset: () => void
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
@@ -5004,6 +5269,9 @@ function CloudSyncPanel({
           <div className="auth-form">
             <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy}>
               Send Magic Link Backup
+            </button>
+            <button className="ghost-button" type="button" onClick={onSendPasswordReset} disabled={busy}>
+              Reset Password
             </button>
           </div>
         </div>

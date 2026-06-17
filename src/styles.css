@@ -605,6 +605,10 @@ textarea:focus-visible {
   gap: 9px;
 }
 
+.friends-profile-panel .data-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .cloud-panel,
 .reminder-panel {
   display: grid;
@@ -1504,6 +1508,37 @@ textarea:focus-visible {
   align-self: center;
 }
 
+.privacy-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.privacy-panel small,
+.template-picker span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.privacy-panel p,
+.template-picker p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.privacy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .empty-leaderboard {
   margin: 0;
   color: var(--muted);
@@ -1639,6 +1674,13 @@ textarea:focus-visible {
 .challenge-create-panel {
   border-color: rgba(156, 92, 255, 0.22);
   background: rgba(156, 92, 255, 0.06);
+}
+
+.template-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
 }
 
 .challenge-invite-picker {
@@ -1952,6 +1994,12 @@ textarea:focus-visible {
   }
 
   .data-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .friends-profile-panel .data-actions,
+  .privacy-grid,
+  .template-picker {
     grid-template-columns: 1fr;
   }
 
