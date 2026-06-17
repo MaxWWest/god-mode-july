@@ -15,6 +15,8 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'implicit',
       persistSession: true,
       storageKey: 'god-mode-july-auth-session',
     },

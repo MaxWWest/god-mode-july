@@ -1033,6 +1033,41 @@ function downloadTextFile(filename: string, mimeType: string, text: string): voi
   window.URL.revokeObjectURL(url)
 }
 
+function clearAuthRedirectUrl() {
+  window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`)
+}
+
+async function consumeAuthRedirectSession(): Promise<User | null> {
+  if (!supabase) return null
+
+  const searchParams = new URLSearchParams(window.location.search)
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const authError = searchParams.get('error_description') || hashParams.get('error_description')
+  if (authError) throw new Error(authError)
+
+  const accessToken = hashParams.get('access_token')
+  const refreshToken = hashParams.get('refresh_token')
+  if (accessToken && refreshToken) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    if (error) throw error
+    clearAuthRedirectUrl()
+    return data.user ?? data.session?.user ?? null
+  }
+
+  const authCode = searchParams.get('code')
+  if (authCode) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(authCode)
+    if (error) throw error
+    clearAuthRedirectUrl()
+    return data.user ?? data.session?.user ?? null
+  }
+
+  return null
+}
+
 function urlBase64ToArrayBuffer(value: string): ArrayBuffer {
   const padding = '='.repeat((4 - value.length % 4) % 4)
   const base64 = `${value}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
@@ -1224,14 +1259,40 @@ function App() {
 
   useEffect(() => {
     if (!supabase) return
+    const client = supabase
 
     let isMounted = true
-    supabase.auth.getSession().then(({ data }) => {
-      if (!isMounted) return
-      setUser(data.session?.user ?? null)
-    })
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    async function initializeAuthSession() {
+      try {
+        const redirectedUser = await consumeAuthRedirectSession()
+        if (!isMounted) return
+
+        if (redirectedUser) {
+          setUser(redirectedUser)
+          setCloudStatus({ tone: 'success', message: 'Signed in. Push local data or pull cloud data.' })
+          return
+        }
+
+        const { data, error } = await client.auth.getSession()
+        if (error) throw error
+        if (!isMounted) return
+        setUser(data.session?.user ?? null)
+      } catch (error) {
+        if (!isMounted) return
+        setCloudStatus({
+          tone: 'error',
+          message: error instanceof Error ? `Magic link sign-in failed: ${error.message}` : 'Magic link sign-in failed.',
+        })
+
+        const { data } = await client.auth.getSession()
+        if (isMounted) setUser(data.session?.user ?? null)
+      }
+    }
+
+    void initializeAuthSession()
+
+    const { data } = client.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       setCloudStatus({
         tone: 'neutral',
