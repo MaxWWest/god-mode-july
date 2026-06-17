@@ -561,6 +561,13 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.password-update-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
 .sync-account-row {
   display: flex;
   align-items: center;
@@ -1576,6 +1583,7 @@ textarea:focus-visible {
   .auth-form,
   .auth-actions,
   .account-data-actions,
+  .password-update-actions,
   .sync-conflict-actions {
     grid-template-columns: 1fr;
   }

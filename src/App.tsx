@@ -1613,6 +1613,30 @@ function App() {
     }
   }
 
+  async function setAccountPassword() {
+    if (!supabase || !user) return
+    const password = authPassword.trim()
+    if (password.length < 6) {
+      setCloudStatus({ tone: 'error', message: 'Use a password with at least 6 characters.' })
+      return
+    }
+
+    setCloudBusy(true)
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+      setAuthPassword('')
+      setCloudStatus({ tone: 'success', message: 'Password set. Next time, sign in with email and password.' })
+    } catch (error) {
+      setCloudStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not set the password.',
+      })
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
   async function signOut() {
     if (!supabase) return
 
@@ -2411,6 +2435,7 @@ function App() {
             onAuthPasswordChange={setAuthPassword}
             onSignInWithPassword={signInWithPassword}
             onCreatePasswordAccount={createPasswordAccount}
+            onSetAccountPassword={setAccountPassword}
             onSendMagicLink={sendMagicLink}
             onSignOut={signOut}
             onPushCloud={pushCloudData}
@@ -2959,6 +2984,7 @@ function SettingsView({
   onAuthPasswordChange,
   onSignInWithPassword,
   onCreatePasswordAccount,
+  onSetAccountPassword,
   onSendMagicLink,
   onSignOut,
   onPushCloud,
@@ -2990,6 +3016,7 @@ function SettingsView({
   onAuthPasswordChange: (password: string) => void
   onSignInWithPassword: () => void
   onCreatePasswordAccount: () => void
+  onSetAccountPassword: () => void
   onSendMagicLink: () => void
   onSignOut: () => void
   onPushCloud: () => void
@@ -3121,6 +3148,7 @@ function SettingsView({
           onAuthPasswordChange={onAuthPasswordChange}
           onSignInWithPassword={onSignInWithPassword}
           onCreatePasswordAccount={onCreatePasswordAccount}
+          onSetAccountPassword={onSetAccountPassword}
           onSendMagicLink={onSendMagicLink}
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
@@ -3214,6 +3242,7 @@ function CloudSyncPanel({
   onAuthPasswordChange,
   onSignInWithPassword,
   onCreatePasswordAccount,
+  onSetAccountPassword,
   onSendMagicLink,
   onSignOut,
   onPushCloud,
@@ -3237,6 +3266,7 @@ function CloudSyncPanel({
   onAuthPasswordChange: (password: string) => void
   onSignInWithPassword: () => void
   onCreatePasswordAccount: () => void
+  onSetAccountPassword: () => void
   onSendMagicLink: () => void
   onSignOut: () => void
   onPushCloud: () => void
@@ -3304,6 +3334,18 @@ function CloudSyncPanel({
             </button>
           </div>
           <p className="cloud-updated">Cloud snapshot: {updatedLabel}</p>
+          <div className="account-data-panel">
+            <div>
+              <small>Password sign-in</small>
+              <p>Set or update the password for this account so you can sign in without magic links.</p>
+            </div>
+            <div className="password-update-actions">
+              <TextField label="New Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
+              <button className="secondary-button" type="button" onClick={onSetAccountPassword} disabled={busy}>
+                Set Password
+              </button>
+            </div>
+          </div>
           <div className="account-data-panel">
             <div>
               <small>Account data</small>
