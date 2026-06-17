@@ -130,6 +130,128 @@ textarea:focus-visible {
   background: var(--purple-soft);
 }
 
+.app-notice {
+  position: fixed;
+  z-index: 30;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(calc(100% - 28px), 560px);
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid rgba(156, 92, 255, 0.32);
+  border-radius: 16px;
+  background: rgba(20, 17, 29, 0.96);
+  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.38);
+  transform: translateX(-50%);
+}
+
+.app-notice.success {
+  border-color: rgba(87, 217, 121, 0.38);
+}
+
+.app-notice.error {
+  border-color: rgba(237, 107, 114, 0.44);
+}
+
+.app-notice span {
+  min-width: 0;
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.app-notice button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+}
+
+.tutorial-backdrop {
+  position: fixed;
+  z-index: 25;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 7, 13, 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.tutorial-panel {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+  padding: 18px;
+  border: 1px solid rgba(156, 92, 255, 0.28);
+  border-radius: 20px;
+  background: rgba(20, 17, 29, 0.98);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52);
+}
+
+.tutorial-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.tutorial-header div {
+  min-width: 0;
+}
+
+.tutorial-panel h2,
+.tutorial-panel p {
+  margin: 0;
+}
+
+.tutorial-panel h2 {
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.tutorial-panel > p {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.tutorial-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.tutorial-progress span {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tutorial-progress span.active {
+  background: var(--purple);
+}
+
+.tutorial-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.tutorial-actions .primary-button {
+  margin-top: 0;
+}
+
 .date-strip {
   display: grid;
   grid-template-columns: 42px 1fr 42px;
@@ -1350,6 +1472,7 @@ textarea:focus-visible {
 .invite-code-card {
   display: grid;
   gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 68px;
   padding: 12px;
   border: 1px solid rgba(156, 92, 255, 0.25);
@@ -1365,10 +1488,19 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.invite-code-card small {
+  grid-column: 1 / -1;
+}
+
 .invite-code-card strong {
+  min-width: 0;
   overflow-wrap: anywhere;
   font-size: 1rem;
   letter-spacing: 0.06em;
+}
+
+.invite-code-card .ghost-button {
+  align-self: center;
 }
 
 .empty-leaderboard {
@@ -1769,6 +1901,10 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .invite-code-card {
+    grid-template-columns: 1fr;
+  }
+
   .friend-request-card,
   .friend-request-actions {
     grid-template-columns: 1fr;
@@ -1780,6 +1916,10 @@ textarea:focus-visible {
 
   .challenge-card-header {
     display: grid;
+  }
+
+  .tutorial-actions {
+    grid-template-columns: 1fr;
   }
 }
 

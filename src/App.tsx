@@ -134,6 +134,12 @@ type DataStatus = {
   message: string
 }
 
+type AppNotice = {
+  id: number
+  tone: 'success' | 'error' | 'neutral'
+  message: string
+}
+
 type RuleRate = RuleConfig & {
   rate: number
 }
@@ -279,6 +285,7 @@ const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
 const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
 const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
+const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v1'
 const DAY_IN_MS = 86_400_000
 const MAX_TRACKING_DAYS = 3650
 const MAX_WORKOUT_LOGS = 12
@@ -333,6 +340,34 @@ const DEFAULT_SYNC_META: SyncMeta = {
   lastCloudUpdatedAt: null,
   lastLocalChangeAt: null,
 }
+
+const TUTORIAL_STEPS = [
+  {
+    eyebrow: 'Step 1',
+    title: 'Build today from the Home tab.',
+    body: 'Tap daily rules as you complete them. Your percent is weighted by non-negotiable and supporting rules.',
+  },
+  {
+    eyebrow: 'Step 2',
+    title: 'Use Check-In for the details.',
+    body: 'Log workouts, food targets, water, sleep, mood, and short reflections before you finalize the day.',
+  },
+  {
+    eyebrow: 'Step 3',
+    title: 'Finalize when the day is done.',
+    body: 'Finalizing locks the day so your score feels published. You can still unlock it if you need to fix something.',
+  },
+  {
+    eyebrow: 'Step 4',
+    title: 'Tune the tracker in Settings.',
+    body: 'Change targets, scored rule categories, active rules, account sync, reminders, exports, and cloud data controls.',
+  },
+  {
+    eyebrow: 'Step 5',
+    title: 'Compete from Friends.',
+    body: 'Copy your invite code, accept requests, publish scores, and create private friend challenges.',
+  },
+]
 
 const TREND_METRICS: TrendMetric[] = [
   {
@@ -1344,6 +1379,24 @@ function downloadTextFile(filename: string, mimeType: string, text: string): voi
   window.URL.revokeObjectURL(url)
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const input = document.createElement('textarea')
+  input.value = text
+  input.setAttribute('readonly', 'true')
+  input.style.position = 'fixed'
+  input.style.left = '-9999px'
+  document.body.appendChild(input)
+  input.select()
+  const copied = document.execCommand('copy')
+  input.remove()
+  if (!copied) throw new Error('Clipboard copy is not available in this browser.')
+}
+
 function clearAuthRedirectUrl() {
   window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`)
 }
@@ -1526,12 +1579,35 @@ function App() {
     tone: 'neutral',
     message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
   })
+  const [appNotice, setAppNotice] = useState<AppNotice | null>(null)
+  const [showTutorial, setShowTutorial] = useState(() => {
+    return loadFromStorage<unknown>(TUTORIAL_STORAGE_KEY, false) !== true && Object.keys(entries).length === 0
+  })
+  const [tutorialStep, setTutorialStep] = useState(0)
 
   const entry = entries[selectedDate] ?? makeEmptyEntry(selectedDate)
   const entryFinalized = isEntryFinalized(entry)
   const stats = completionStats(entry, settings)
   const trackerHasStarted = todayIso() >= settings.startDate
   const latestSelectableDate = selectableEndDate(settings)
+
+  function showAppNotice(message: string, tone: AppNotice['tone'] = 'success') {
+    setAppNotice({
+      id: Date.now(),
+      tone,
+      message,
+    })
+  }
+
+  function openTutorial() {
+    setTutorialStep(0)
+    setShowTutorial(true)
+  }
+
+  function closeTutorial(markSeen = true) {
+    if (markSeen) saveToStorage(TUTORIAL_STORAGE_KEY, true)
+    setShowTutorial(false)
+  }
 
   useEffect(() => {
     saveToStorage(ENTRIES_STORAGE_KEY, entries)
@@ -1552,6 +1628,12 @@ function App() {
   useEffect(() => {
     saveToStorage(SYNC_META_STORAGE_KEY, syncMeta)
   }, [syncMeta])
+
+  useEffect(() => {
+    if (!appNotice) return
+    const timer = window.setTimeout(() => setAppNotice(null), 3600)
+    return () => window.clearTimeout(timer)
+  }, [appNotice])
 
   useEffect(() => {
     if (!supabase) return
@@ -2014,8 +2096,10 @@ function App() {
       if (data.session?.user) {
         setUser(data.session.user)
         setCloudStatus({ tone: 'success', message: 'Account created and signed in.' })
+        showAppNotice('Password set. Your account is ready.')
       } else {
         setCloudStatus({ tone: 'success', message: 'Account created. If Supabase asks for email confirmation, confirm it once, then sign in here with your password.' })
+        showAppNotice('Password saved. Confirm your email if Supabase asks.')
       }
     } catch (error) {
       setCloudStatus({
@@ -2041,6 +2125,7 @@ function App() {
       if (error) throw error
       setAuthPassword('')
       setCloudStatus({ tone: 'success', message: 'Password set. Next time, sign in with email and password.' })
+      showAppNotice('Password set. You can use email/password next time.')
     } catch (error) {
       setCloudStatus({
         tone: 'error',
@@ -2619,6 +2704,27 @@ function App() {
     }
   }
 
+  async function copyOwnInviteCode() {
+    const inviteCode = friendProfile?.inviteCode
+    if (!inviteCode) {
+      setFriendsStatus({ tone: 'error', message: 'Invite code is still loading.' })
+      showAppNotice('Invite code is still loading.', 'error')
+      return
+    }
+
+    try {
+      await copyTextToClipboard(inviteCode)
+      setFriendsStatus({ tone: 'success', message: 'Invite code copied.' })
+      showAppNotice('Invite code copied.')
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not copy invite code.',
+      })
+      showAppNotice('Could not copy invite code.', 'error')
+    }
+  }
+
   async function sendFriendRequestByInviteCode() {
     if (!supabase || !user) return
 
@@ -3060,8 +3166,12 @@ function App() {
               Install
             </button>
           )}
+          <button className="install-button" type="button" onClick={openTutorial}>
+            Guide
+          </button>
         </div>
       </header>
+      {appNotice && <AppNoticeToast notice={appNotice} onDismiss={() => setAppNotice(null)} />}
 
       <main>
         <section className="date-strip" aria-label="Selected day">
@@ -3155,6 +3265,7 @@ function App() {
             onDisplayNameChange={setDisplayNameDraft}
             onInviteCodeChange={setInviteCodeDraft}
             onSaveProfile={saveFriendProfile}
+            onCopyInviteCode={copyOwnInviteCode}
             onAddFriend={sendFriendRequestByInviteCode}
             onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
             onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
@@ -3212,6 +3323,85 @@ function App() {
         <NavButton label="Friends" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} />
         <NavButton label="Settings" icon="settings" active={view === 'settings'} onClick={() => setView('settings')} />
       </nav>
+      {showTutorial && (
+        <TutorialOverlay
+          step={tutorialStep}
+          onStepChange={setTutorialStep}
+          onClose={() => closeTutorial(true)}
+          onNavigate={(nextView) => {
+            setView(nextView)
+            closeTutorial(true)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function AppNoticeToast({ notice, onDismiss }: { notice: AppNotice; onDismiss: () => void }) {
+  return (
+    <div className={`app-notice ${notice.tone}`} role="status" aria-live="polite">
+      <span>{notice.message}</span>
+      <button type="button" onClick={onDismiss} aria-label="Dismiss notification">
+        x
+      </button>
+    </div>
+  )
+}
+
+function TutorialOverlay({
+  step,
+  onStepChange,
+  onClose,
+  onNavigate,
+}: {
+  step: number
+  onStepChange: (step: number) => void
+  onClose: () => void
+  onNavigate: (view: View) => void
+}) {
+  const currentStep = TUTORIAL_STEPS[step] ?? TUTORIAL_STEPS[0]
+  const isFirst = step === 0
+  const isLast = step === TUTORIAL_STEPS.length - 1
+  const targetView: View = step === 1 ? 'check-in' : step === 3 ? 'settings' : step === 4 ? 'friends' : 'home'
+  const targetLabel = targetView === 'check-in' ? 'Open Check-In' : `Open ${targetView.charAt(0).toUpperCase()}${targetView.slice(1)}`
+
+  return (
+    <div className="tutorial-backdrop" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+      <section className="tutorial-panel">
+        <div className="tutorial-header">
+          <div>
+            <p className="eyebrow">{currentStep.eyebrow}</p>
+            <h2 id="tutorial-title">{currentStep.title}</h2>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            Skip
+          </button>
+        </div>
+        <p>{currentStep.body}</p>
+        <div className="tutorial-progress" aria-label="Tutorial progress">
+          {TUTORIAL_STEPS.map((tutorialStep, index) => (
+            <span className={index === step ? 'active' : ''} key={tutorialStep.title} />
+          ))}
+        </div>
+        <div className="tutorial-actions">
+          <button className="ghost-button" type="button" onClick={() => onStepChange(Math.max(0, step - 1))} disabled={isFirst}>
+            Back
+          </button>
+          <button className="secondary-button" type="button" onClick={() => onNavigate(targetView)}>
+            {targetLabel}
+          </button>
+          {isLast ? (
+            <button className="primary-button" type="button" onClick={onClose}>
+              Finish
+            </button>
+          ) : (
+            <button className="primary-button" type="button" onClick={() => onStepChange(Math.min(TUTORIAL_STEPS.length - 1, step + 1))}>
+              Next
+            </button>
+          )}
+        </div>
+      </section>
     </div>
   )
 }
@@ -3487,6 +3677,7 @@ function FriendsView({
   onDisplayNameChange,
   onInviteCodeChange,
   onSaveProfile,
+  onCopyInviteCode,
   onAddFriend,
   onAcceptRequest,
   onDeclineRequest,
@@ -3511,6 +3702,7 @@ function FriendsView({
   onDisplayNameChange: (value: string) => void
   onInviteCodeChange: (value: string) => void
   onSaveProfile: () => void
+  onCopyInviteCode: () => void
   onAddFriend: () => void
   onAcceptRequest: (userId: string) => void
   onDeclineRequest: (userId: string) => void
@@ -3607,6 +3799,9 @@ function FriendsView({
           <div className="invite-code-card">
             <small>Invite code</small>
             <strong>{profile?.inviteCode || 'Loading...'}</strong>
+            <button className="ghost-button" type="button" onClick={onCopyInviteCode} disabled={busy || !profile?.inviteCode}>
+              Copy Code
+            </button>
           </div>
         </div>
         <div className="data-actions">
