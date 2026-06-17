@@ -13,6 +13,7 @@
 ## Milestone 2 — Make the rules yours (complete)
 
 - Editable rules
+- Physical and mental rule groups with custom add/remove controls
 - Editable calorie, protein, water, exercise, and sleep targets
 - Non-negotiable versus supporting-rule weights
 - Custom tracker title and start date

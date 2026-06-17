@@ -813,6 +813,27 @@ textarea:focus-visible {
   padding: 9px 12px;
 }
 
+.rule-glossary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rule-glossary span {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.rule-glossary strong {
+  color: #f8f5ff;
+}
+
 .workout-summary {
   display: flex;
   align-items: center;
@@ -870,6 +891,36 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.settings-rule-category {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-rule-category + .settings-rule-category {
+  padding-top: 8px;
+}
+
+.settings-rule-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-rule-category-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.empty-rule-category {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
 .settings-rule-row {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);
@@ -907,7 +958,7 @@ textarea:focus-visible {
 .settings-rule-controls {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: 0.95fr 1.35fr 1.1fr auto;
   gap: 10px;
 }
 
@@ -1559,6 +1610,15 @@ textarea:focus-visible {
 
   .settings-rule-controls {
     grid-template-columns: 1fr;
+  }
+
+  .rule-glossary,
+  .settings-rule-category-header {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-rule-category-header {
+    display: grid;
   }
 
   .workout-summary,

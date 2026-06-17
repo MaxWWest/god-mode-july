@@ -12,8 +12,11 @@ import {
 } from './supabase'
 
 type View = 'home' | 'check-in' | 'calendar' | 'progress' | 'friends' | 'settings'
-type RuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protein' | 'water' | 'sleep' | 'reading' | 'journal'
+type BuiltInRuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protein' | 'water' | 'sleep' | 'reading' | 'journal'
+type CustomRuleKey = `custom-${string}`
+type RuleKey = BuiltInRuleKey | CustomRuleKey
 type RuleWeight = 'nonNegotiable' | 'supporting'
+type RuleCategory = 'physical' | 'mental'
 
 type RuleConfig = {
   key: RuleKey
@@ -21,6 +24,8 @@ type RuleConfig = {
   icon: string
   enabled: boolean
   weight: RuleWeight
+  category: RuleCategory
+  deleted?: boolean
 }
 
 type ChallengeTargets = {
@@ -52,6 +57,7 @@ type DailyEntry = {
   weightPounds: number | null
   readTenPages: boolean
   journaled: boolean
+  ruleCompletions: Record<string, boolean>
   mood: number
   energy: number
   hunger: number
@@ -227,6 +233,11 @@ const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
 const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
+const BUILT_IN_RULE_KEYS: BuiltInRuleKey[] = ['exercise', 'sober', 'foodLogged', 'calories', 'protein', 'water', 'sleep', 'reading', 'journal']
+const RULE_CATEGORIES: { key: RuleCategory; label: string; addLabel: string; emptyLabel: string }[] = [
+  { key: 'physical', label: 'Physical', addLabel: 'Add Physical Rule', emptyLabel: 'No physical rules yet.' },
+  { key: 'mental', label: 'Mental', addLabel: 'Add Mental Rule', emptyLabel: 'No mental rules yet.' },
+]
 
 const DEFAULT_TARGETS: ChallengeTargets = {
   exerciseMinutes: 90,
@@ -237,14 +248,14 @@ const DEFAULT_TARGETS: ChallengeTargets = {
 }
 
 const DEFAULT_RULES: RuleConfig[] = [
-  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable' },
-  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable' },
-  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting' },
-  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable' },
-  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting' },
-  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting' },
-  { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting' },
-  { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting' },
+  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'physical' },
+  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'physical' },
+  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'physical' },
+  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'physical' },
+  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'physical' },
+  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'physical' },
+  { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting', category: 'mental' },
+  { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting', category: 'mental' },
 ]
 
 const DEFAULT_SETTINGS: ChallengeSettings = {
@@ -323,8 +334,40 @@ function isIsoDate(value: unknown): value is string {
     && !Number.isNaN(new Date(`${value}T12:00:00`).getTime())
 }
 
-function isRuleKey(value: unknown): value is RuleKey {
-  return DEFAULT_RULES.some((rule) => rule.key === value)
+function isBuiltInRuleKey(value: unknown): value is BuiltInRuleKey {
+  return typeof value === 'string' && BUILT_IN_RULE_KEYS.includes(value as BuiltInRuleKey)
+}
+
+function isCustomRuleKey(value: unknown): value is CustomRuleKey {
+  return typeof value === 'string' && /^custom-[a-z0-9-]{6,80}$/.test(value)
+}
+
+function normalizeRuleKey(value: unknown): RuleKey | null {
+  if (isBuiltInRuleKey(value) || isCustomRuleKey(value)) return value
+  return null
+}
+
+function normalizeRuleCategory(value: unknown, fallback: RuleCategory): RuleCategory {
+  return value === 'physical' || value === 'mental' ? value : fallback
+}
+
+function normalizeRuleWeight(value: unknown, fallback: RuleWeight): RuleWeight {
+  return value === 'nonNegotiable' || value === 'supporting' ? value : fallback
+}
+
+function makeCustomRuleKey(): CustomRuleKey {
+  return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function makeCustomRule(category: RuleCategory): RuleConfig {
+  return {
+    key: makeCustomRuleKey(),
+    label: category === 'physical' ? 'New Physical Rule' : 'New Mental Rule',
+    icon: category === 'physical' ? '◆' : '✦',
+    enabled: true,
+    weight: 'supporting',
+    category,
+  }
 }
 
 function normalizeTarget(value: unknown, fallback: number, min: number): number {
@@ -378,6 +421,14 @@ function normalizeWorkoutLogs(value: unknown): WorkoutLog[] {
     .map((item, index) => normalizeWorkoutLog(item, index))
     .filter((item): item is WorkoutLog => item !== null)
     .slice(0, MAX_WORKOUT_LOGS)
+}
+
+function normalizeRuleCompletionMap(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, complete]) => isCustomRuleKey(key) && typeof complete === 'boolean'),
+  )
 }
 
 function workoutMinutesTotal(workouts: WorkoutLog[]): number {
@@ -437,7 +488,7 @@ function timestampIsAfter(value: string | null, baseline: string | null): boolea
 }
 
 function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): string {
-  const legacyLabels: Partial<Record<RuleKey, string[]>> = {
+  const legacyLabels: Partial<Record<BuiltInRuleKey, string[]>> = {
     exercise: ['90 min Exercise'],
     foodLogged: ['Log Food Honestly', 'Food honestly logged', 'Done Eating for the Day'],
     calories: ['Calories On Target'],
@@ -446,7 +497,7 @@ function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): strin
     sleep: ['Sleep Goal'],
   }
 
-  if (legacyLabels[defaultRule.key]?.includes(storedLabel)) return defaultRule.label
+  if (isBuiltInRuleKey(defaultRule.key) && legacyLabels[defaultRule.key]?.includes(storedLabel)) return defaultRule.label
   return storedLabel || defaultRule.label
 }
 
@@ -470,7 +521,8 @@ function normalizeSettings(value: unknown): ChallengeSettings {
   for (const storedRule of storedRules) {
     if (storedRule && typeof storedRule === 'object') {
       const rule = storedRule as Partial<RuleConfig>
-      if (isRuleKey(rule.key)) storedRuleByKey.set(rule.key, rule)
+      const key = normalizeRuleKey(rule.key)
+      if (key) storedRuleByKey.set(key, rule)
     }
   }
 
@@ -489,11 +541,34 @@ function normalizeSettings(value: unknown): ChallengeSettings {
       label,
       icon,
       enabled: typeof storedRule?.enabled === 'boolean' ? storedRule.enabled : defaultRule.enabled,
-      weight: storedRule?.weight === 'nonNegotiable' || storedRule?.weight === 'supporting'
-        ? storedRule.weight
-        : defaultRule.weight,
+      weight: normalizeRuleWeight(storedRule?.weight, defaultRule.weight),
+      category: normalizeRuleCategory(storedRule?.category, defaultRule.category),
+      deleted: storedRule?.deleted === true,
     }
   })
+  const customRules = storedRules.reduce<RuleConfig[]>((normalizedRules, storedRule) => {
+    if (!storedRule || typeof storedRule !== 'object') return normalizedRules
+    const rule = storedRule as Partial<RuleConfig>
+    const key = normalizeRuleKey(rule.key)
+    if (!key || !isCustomRuleKey(key)) return normalizedRules
+    const label = typeof rule.label === 'string' && rule.label.trim()
+      ? rule.label.trim()
+      : 'Custom Rule'
+    const icon = typeof rule.icon === 'string' && rule.icon.trim()
+      ? rule.icon.trim().slice(0, 2)
+      : '◆'
+
+    normalizedRules.push({
+      key,
+      label,
+      icon,
+      enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
+      weight: normalizeRuleWeight(rule.weight, 'supporting'),
+      category: normalizeRuleCategory(rule.category, 'mental'),
+      deleted: rule.deleted === true,
+    })
+    return normalizedRules
+  }, [])
 
   const today = todayIso()
   const hasLegacyDefaultDates = candidate.startDate === LEGACY_DEFAULT_START_DATE && candidate.endDate === LEGACY_DEFAULT_END_DATE
@@ -511,7 +586,7 @@ function normalizeSettings(value: unknown): ChallengeSettings {
     startDate,
     endDate,
     targets,
-    rules,
+    rules: [...rules, ...customRules],
   }
 }
 
@@ -551,6 +626,7 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
     weightPounds: normalizeOptionalNumber(candidate.weightPounds, 50, 700),
     readTenPages: candidate.readTenPages === true,
     journaled: candidate.journaled === true,
+    ruleCompletions: normalizeRuleCompletionMap(candidate.ruleCompletions),
     mood: normalizeBoundedNumber(candidate.mood, 3, 1, 5),
     energy: normalizeBoundedNumber(candidate.energy, 3, 1, 5),
     hunger: normalizeBoundedNumber(candidate.hunger, 3, 1, 5),
@@ -628,6 +704,7 @@ function makeEmptyEntry(date: string): DailyEntry {
     weightPounds: null,
     readTenPages: false,
     journaled: false,
+    ruleCompletions: {},
     mood: 3,
     energy: 3,
     hunger: 3,
@@ -684,8 +761,12 @@ function getTrackingDates(settings: ChallengeSettings, throughDate = selectableE
   return Array.from({ length: trackingLength(settings, throughDate) }, (_, index) => addDays(settings.startDate, index))
 }
 
+function getScoredRules(settings: ChallengeSettings): RuleConfig[] {
+  return settings.rules.filter((rule) => rule.deleted !== true)
+}
+
 function getEnabledRules(settings: ChallengeSettings): RuleConfig[] {
-  return settings.rules.filter((rule) => rule.enabled)
+  return getScoredRules(settings).filter((rule) => rule.enabled)
 }
 
 function ruleWeightValue(rule: RuleConfig): number {
@@ -712,6 +793,8 @@ function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: ChallengeSetti
       return entry.readTenPages
     case 'journal':
       return entry.journaled
+    default:
+      return entry.ruleCompletions?.[rule] === true
   }
 }
 
@@ -1046,7 +1129,8 @@ function csvCell(value: string | number | boolean | null | undefined): string {
 }
 
 function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
-  const ruleColumns = settings.rules.map((rule) => `rule_${rule.key}`)
+  const csvRules = getScoredRules(settings)
+  const ruleColumns = csvRules.map((rule) => `rule_${rule.key}`)
   const headers = [
     'date',
     'tracking_day',
@@ -1082,7 +1166,7 @@ function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
       stats?.percent ?? '',
       stats?.completed ?? '',
       stats?.total ?? '',
-      ...settings.rules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
+      ...csvRules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
       entry.finalizedAt,
       getExerciseMinutes(entry),
       formatWorkoutSummary(entry.workouts),
@@ -2284,6 +2368,14 @@ function App() {
       case 'journal':
         updateEntry({ journaled: next })
         break
+      default:
+        updateEntry({
+          ruleCompletions: {
+            ...entry.ruleCompletions,
+            [key]: next,
+          },
+        })
+        break
     }
   }
 
@@ -3049,6 +3141,16 @@ function SettingsView({
     })
   }
 
+  function addRule(category: RuleCategory) {
+    update({
+      rules: [...settings.rules, makeCustomRule(category)],
+    })
+  }
+
+  function removeRule(key: RuleKey) {
+    updateRule(key, { enabled: false, deleted: true })
+  }
+
   function updateStartDate(startDate: string) {
     update({
       startDate,
@@ -3191,39 +3293,73 @@ function SettingsView({
 
       <section className="panel form-panel">
         <SectionTitle number="6" title="Scored Rules" />
-        <div className="settings-rule-list">
-          {settings.rules.map((rule) => (
-            <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
-              <label className="symbol-field">
-                <span>Icon</span>
-                <input
-                  value={rule.icon}
-                  maxLength={2}
-                  onChange={(event) => updateRule(rule.key, { icon: event.target.value })}
-                  aria-label={`${rule.label} icon`}
-                />
-              </label>
-              <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
-              <div className="settings-rule-controls">
-                <label className="mini-check-field">
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })}
-                  />
-                  <span>Active</span>
-                </label>
-                <label className="weight-field">
-                  <span>Weight</span>
-                  <select value={rule.weight} onChange={(event) => updateRule(rule.key, { weight: event.target.value as RuleWeight })}>
-                    <option value="nonNegotiable">Non-negotiable</option>
-                    <option value="supporting">Supporting</option>
-                  </select>
-                </label>
-              </div>
-            </article>
-          ))}
+        <div className="rule-glossary">
+          <span><strong>Scored</strong> counts toward today’s percent and streaks.</span>
+          <span><strong>Non-negotiable</strong> counts double.</span>
+          <span><strong>Supporting</strong> counts once.</span>
+          <span><strong>Active</strong> counts now; inactive stays saved for later.</span>
         </div>
+        {RULE_CATEGORIES.map((category) => {
+          const categoryRules = getScoredRules(settings).filter((rule) => rule.category === category.key)
+
+          return (
+            <div className="settings-rule-category" key={category.key}>
+              <div className="settings-rule-category-header">
+                <div>
+                  <p className="eyebrow">{category.label}</p>
+                  <h3>{category.label} Rules</h3>
+                </div>
+                <button className="secondary-button compact-button" type="button" onClick={() => addRule(category.key)}>
+                  {category.addLabel}
+                </button>
+              </div>
+              <div className="settings-rule-list">
+                {categoryRules.length === 0 && <p className="empty-rule-category">{category.emptyLabel}</p>}
+                {categoryRules.map((rule) => (
+                  <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
+                    <label className="symbol-field">
+                      <span>Icon</span>
+                      <input
+                        value={rule.icon}
+                        maxLength={2}
+                        onChange={(event) => updateRule(rule.key, { icon: event.target.value })}
+                        aria-label={`${rule.label} icon`}
+                      />
+                    </label>
+                    <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
+                    <div className="settings-rule-controls">
+                      <label className="mini-check-field">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled}
+                          onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })}
+                        />
+                        <span>Active</span>
+                      </label>
+                      <label className="weight-field">
+                        <span>Weight</span>
+                        <select value={rule.weight} onChange={(event) => updateRule(rule.key, { weight: event.target.value as RuleWeight })}>
+                          <option value="nonNegotiable">Non-negotiable</option>
+                          <option value="supporting">Supporting</option>
+                        </select>
+                      </label>
+                      <label className="weight-field">
+                        <span>Group</span>
+                        <select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value as RuleCategory })}>
+                          <option value="physical">Physical</option>
+                          <option value="mental">Mental</option>
+                        </select>
+                      </label>
+                      <button className="danger-button" type="button" onClick={() => removeRule(rule.key)}>
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </section>
     </div>
   )
