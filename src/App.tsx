@@ -321,6 +321,17 @@ type ChallengeTemplate = {
   note: string
 }
 
+type FriendsTab = 'overview' | 'network' | 'squads' | 'challenges' | 'leaderboard'
+
+type FriendActivityFeedItem = {
+  id: string
+  title: string
+  detail: string
+  meta: string
+  tone: 'success' | 'pending' | 'neutral'
+  sortAt: string
+}
+
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
@@ -430,6 +441,14 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     scoringMode: 'shared',
     note: 'Short shared-rule reset challenge.',
   },
+]
+
+const FRIENDS_TABS: { key: FriendsTab; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'network', label: 'Network' },
+  { key: 'squads', label: 'Squads' },
+  { key: 'challenges', label: 'Challenges' },
+  { key: 'leaderboard', label: 'Leaderboard' },
 ]
 
 const TUTORIAL_STEPS = [
@@ -4124,6 +4143,100 @@ function CheckIn({
   )
 }
 
+function sortLeaderboardRows(rows: LeaderboardRow[]): LeaderboardRow[] {
+  return [...rows].sort((a, b) => {
+    const aSummary = a.summary
+    const bSummary = b.summary
+    return (bSummary?.weeklyCompletion ?? 0) - (aSummary?.weeklyCompletion ?? 0)
+      || (bSummary?.averageCompletion ?? 0) - (aSummary?.averageCompletion ?? 0)
+      || (bSummary?.currentStreak ?? 0) - (aSummary?.currentStreak ?? 0)
+      || a.displayName.localeCompare(b.displayName)
+  })
+}
+
+function getSquadLeaderboardRows(squad: FriendSquadView, leaderboardRows: LeaderboardRow[]): LeaderboardRow[] {
+  const squadMemberIds = new Set(squad.members.map((member) => member.userId))
+  return sortLeaderboardRows(
+    leaderboardRows.filter((row) => row.isCurrentUser || squadMemberIds.has(row.userId)),
+  )
+}
+
+function formatActivityDate(value: string): string {
+  const date = value.slice(0, 10)
+  return isIsoDate(date) ? formatShortDate(date) : 'Recently'
+}
+
+function buildFriendActivityFeed({
+  leaderboardRows,
+  friendRequests,
+  friendChallenges,
+  friendSquads,
+}: {
+  leaderboardRows: LeaderboardRow[]
+  friendRequests: FriendRequest[]
+  friendChallenges: FriendChallengeView[]
+  friendSquads: FriendSquadView[]
+}): FriendActivityFeedItem[] {
+  const feed: FriendActivityFeedItem[] = []
+
+  for (const request of friendRequests) {
+    feed.push({
+      id: `request-${request.userA}-${request.userB}`,
+      title: request.direction === 'incoming' ? 'Friend request received' : 'Friend request sent',
+      detail: request.direction === 'incoming'
+        ? `${request.displayName} wants to connect.`
+        : `Waiting for ${request.displayName} to respond.`,
+      meta: formatActivityDate(request.createdAt),
+      tone: 'pending',
+      sortAt: request.createdAt,
+    })
+  }
+
+  for (const squad of friendSquads) {
+    feed.push({
+      id: `squad-${squad.id}`,
+      title: `${squad.name} squad`,
+      detail: squad.members.length === 0
+        ? 'No active members yet.'
+        : `${squad.members.length} ${squad.members.length === 1 ? 'member' : 'members'} ready for challenges.`,
+      meta: formatActivityDate(squad.updatedAt),
+      tone: squad.members.length > 0 ? 'success' : 'neutral',
+      sortAt: squad.updatedAt,
+    })
+  }
+
+  for (const challenge of friendChallenges) {
+    const acceptedCount = challenge.participants.filter((participant) => participant.status === 'accepted').length
+    const pendingCount = challenge.participants.filter((participant) => participant.status === 'pending').length
+    feed.push({
+      id: `challenge-${challenge.id}`,
+      title: challenge.currentUserStatus === 'pending' && !challenge.isCreator ? 'Challenge invite waiting' : challenge.name,
+      detail: challenge.currentUserStatus === 'pending' && !challenge.isCreator
+        ? `Accept or decline ${challenge.name}.`
+        : `${acceptedCount} active · ${pendingCount} invited.`,
+      meta: `${formatShortDate(challenge.startDate)} - ${formatShortDate(challenge.endDate)}`,
+      tone: challenge.currentUserStatus === 'pending' && !challenge.isCreator ? 'pending' : 'neutral',
+      sortAt: challenge.updatedAt,
+    })
+  }
+
+  for (const row of leaderboardRows) {
+    if (row.isCurrentUser || !row.summary) continue
+    feed.push({
+      id: `summary-${row.userId}-${row.summary.updatedAt}`,
+      title: `${row.displayName} published a score`,
+      detail: `${formatSummaryMetric(row.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)} last 7 days.`,
+      meta: formatActivityDate(row.summary.updatedAt),
+      tone: 'success',
+      sortAt: row.summary.updatedAt,
+    })
+  }
+
+  return feed
+    .sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime())
+    .slice(0, 10)
+}
+
 function FriendsView({
   configured,
   user,
@@ -4190,6 +4303,7 @@ function FriendsView({
   const incomingRequests = friendRequests.filter((request) => request.direction === 'incoming')
   const outgoingRequests = friendRequests.filter((request) => request.direction === 'outgoing')
   const acceptedFriends = leaderboardRows.filter((row) => !row.isCurrentUser)
+  const [activeFriendsTab, setActiveFriendsTab] = useState<FriendsTab>('overview')
   const [challengeTemplateId, setChallengeTemplateId] = useState(CHALLENGE_TEMPLATES[1]?.id ?? 'custom')
   const [challengeName, setChallengeName] = useState('No Zero Days')
   const [challengeStartDate, setChallengeStartDate] = useState(todayIso())
@@ -4198,6 +4312,13 @@ function FriendsView({
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
   const [squadName, setSquadName] = useState('Training Squad')
   const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
+  const activityFeed = useMemo(() => buildFriendActivityFeed({
+    leaderboardRows,
+    friendRequests,
+    friendChallenges,
+    friendSquads,
+  }), [leaderboardRows, friendRequests, friendChallenges, friendSquads])
+  const pendingCount = incomingRequests.length + friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
 
   function toggleChallengeInvite(userId: string) {
     setChallengeInviteIds((current) => (
@@ -4302,6 +4423,31 @@ function FriendsView({
         <p>Accept requests, then compare last-7-day completion, average score, streaks, and logged days.</p>
       </section>
 
+      <section className="friends-command-center" aria-label="Friends sections">
+        <div className="friends-tabs" role="tablist" aria-label="Friends sections">
+          {FRIENDS_TABS.map((tab) => (
+            <button
+              className={activeFriendsTab === tab.key ? 'active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={activeFriendsTab === tab.key}
+              key={tab.key}
+              onClick={() => setActiveFriendsTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="friends-stat-grid">
+          <span><small>Friends</small><strong>{acceptedFriends.length}</strong></span>
+          <span><small>Squads</small><strong>{friendSquads.length}</strong></span>
+          <span><small>Challenges</small><strong>{friendChallenges.length}</strong></span>
+          <span><small>Needs action</small><strong>{pendingCount}</strong></span>
+        </div>
+      </section>
+
+      {activeFriendsTab === 'overview' && (
+        <>
       <section className="panel friends-profile-panel">
         <div className="section-heading">
           <div>
@@ -4368,6 +4514,21 @@ function FriendsView({
         <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
       </section>
 
+      <section className="panel friend-activity-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Activity</p>
+            <h2>Squad feed</h2>
+          </div>
+          <span>{activityFeed.length}</span>
+        </div>
+        <FriendActivityFeed items={activityFeed} />
+      </section>
+        </>
+      )}
+
+      {activeFriendsTab === 'network' && (
+        <>
       <section className="panel add-friend-panel">
         <div className="section-heading">
           <div>
@@ -4416,7 +4577,11 @@ function FriendsView({
           </div>
         )}
       </section>
+        </>
+      )}
 
+      {activeFriendsTab === 'squads' && (
+        <>
       <section className="panel friend-squads-panel">
         <div className="section-heading">
           <div>
@@ -4460,6 +4625,7 @@ function FriendsView({
               <FriendSquadCard
                 key={squad.id}
                 squad={squad}
+                leaderboardRows={leaderboardRows}
                 busy={busy}
                 onUseForChallenge={() => applySquadToChallenge(squad)}
                 onDelete={() => onDeleteSquad(squad.id)}
@@ -4468,7 +4634,11 @@ function FriendsView({
           </div>
         )}
       </section>
+        </>
+      )}
 
+      {activeFriendsTab === 'challenges' && (
+        <>
       <section className="panel friend-challenges-panel">
         <div className="section-heading">
           <div>
@@ -4550,7 +4720,10 @@ function FriendsView({
           </div>
         )}
       </section>
+        </>
+      )}
 
+      {activeFriendsTab === 'leaderboard' && (
       <section className="panel leaderboard-panel">
         <div className="section-heading">
           <div>
@@ -4569,6 +4742,7 @@ function FriendsView({
           </div>
         )}
       </section>
+      )}
     </div>
   )
 }
@@ -4608,17 +4782,42 @@ function FriendRequestCard({
   )
 }
 
+function FriendActivityFeed({ items }: { items: FriendActivityFeedItem[] }) {
+  if (items.length === 0) {
+    return <p className="empty-leaderboard">No squad or friend activity yet.</p>
+  }
+
+  return (
+    <div className="activity-list">
+      {items.map((item) => (
+        <article className={`activity-card ${item.tone}`} key={item.id}>
+          <div className="activity-dot" />
+          <div>
+            <strong>{item.title}</strong>
+            <p>{item.detail}</p>
+          </div>
+          <small>{item.meta}</small>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function FriendSquadCard({
   squad,
+  leaderboardRows,
   busy,
   onUseForChallenge,
   onDelete,
 }: {
   squad: FriendSquadView
+  leaderboardRows: LeaderboardRow[]
   busy: boolean
   onUseForChallenge: () => void
   onDelete: () => void
 }) {
+  const squadLeaderboardRows = getSquadLeaderboardRows(squad, leaderboardRows)
+
   return (
     <article className="squad-card">
       <div className="squad-card-main">
@@ -4636,6 +4835,21 @@ function FriendSquadCard({
           </div>
         )}
       </div>
+      {squadLeaderboardRows.length > 0 && (
+        <div className="squad-leaderboard">
+          <small>Squad leaderboard</small>
+          {squadLeaderboardRows.map((row, index) => (
+            <article className={`squad-leaderboard-row ${row.isCurrentUser ? 'is-you' : ''}`} key={row.userId}>
+              <b>{index + 1}</b>
+              <div>
+                <strong>{row.displayName}</strong>
+                <span>{formatSummaryMetric(row.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)} last 7 days</span>
+              </div>
+              <em>{formatSummaryMetric(row.summary, 'showStreak', (summary) => `${summary.currentStreak} streak`)}</em>
+            </article>
+          ))}
+        </div>
+      )}
       <div className="squad-card-actions">
         <button className="secondary-button compact-button" type="button" onClick={onUseForChallenge} disabled={busy || squad.members.length === 0}>
           Use for Challenge

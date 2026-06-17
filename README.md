@@ -24,7 +24,15 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Friends list with invite-code requests
 - Friend request accept/decline flow
 - Share-safe leaderboard competition
+- Friend privacy controls for published stats
+- Better invite sharing with copy/share text
 - Invite-only custom friend challenges
+- Challenge templates for common competition formats
+- Private challenge squads
+- Squad-specific leaderboards
+- Friend and squad activity feed
+- Tabbed Friends dashboard
+- Password reset flow
 - Local daily notification reminders
 - Automatic localStorage persistence
 - PWA icons
@@ -77,9 +85,17 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, and invite-only friend challenges use separate Supabase tables for profiles, friendships, challenge summaries, challenge definitions, and challenge participants. Friends can compare completion, streak, and logged-day stats, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, private squads, and invite-only friend challenges use separate Supabase tables for profiles, friendships, challenge summaries, squad definitions, squad members, challenge definitions, and challenge participants. Friends can compare completion, streak, and logged-day stats according to each user's privacy settings, but raw entries, reflections, weight, and calories are not shared.
 
 ## Next recommended milestones
 
-1. Challenge groups or small private squads
-2. Friend-versus-friend weekly challenge history
+1. Challenge detail view with full participant history, settings, pending invites, and score publishing state.
+2. Friend-versus-friend weekly challenge history and completed challenge archive.
+3. Editable squads so members can be added or removed after creation.
+4. Challenge invite management for adding friends after a challenge starts.
+5. Notification-style in-app badges for pending friend and challenge requests.
+6. Richer activity feed backed by stored events instead of derived current data.
+7. Full challenge templates with preset rule/target overrides, not just name, dates, and scoring mode.
+8. Friend profile pages with recent scores, shared squads, and head-to-head stats.
+9. Optional comments/reactions on published challenge scores.
+10. Performance cleanup with route-level or feature-level code splitting if the bundle keeps growing.
