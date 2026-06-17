@@ -1,11 +1,53 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, ChangeEvent } from 'react'
+import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
   challengeTemplateById,
   normalizeScoreReaction,
 } from './social'
+import {
+  BUILT_IN_RULE_KEYS,
+  DAY_IN_MS,
+  DEFAULT_PRIVACY_SETTINGS,
+  DEFAULT_SETTINGS,
+  DEFAULT_SYNC_META,
+  MAX_TRACKING_DAYS,
+  addDays,
+  clampDate,
+  completionStats,
+  countCloudOnlyEntries,
+  dayNumber,
+  daysBetween,
+  downloadTextFile,
+  formatDate,
+  formatDateTime,
+  formatMonthLabel,
+  formatShortDate,
+  getEnabledRules,
+  getExerciseMinutes,
+  getLoggedDates,
+  getTrackingDates,
+  isEntryFinalized,
+  isIsoDate,
+  makeEmptyEntry,
+  makeEmptyWorkout,
+  mergeCloudOnlyEntries,
+  normalizeBoundedNumber,
+  normalizeCloudSnapshot,
+  normalizeEntries,
+  normalizePrivacySettings,
+  normalizeReminderSettings,
+  normalizeSettings,
+  normalizeSyncMeta,
+  normalizeText,
+  ruleComplete,
+  sanitizeFilenamePart,
+  selectableEndDate,
+  timestampIsAfter,
+  todayIso,
+  trackingLength,
+} from './tracker'
 import {
   SUPABASE_FRIEND_EVENT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
@@ -22,16 +64,13 @@ import {
 import type {
   AccountDataExport,
   AppNotice,
-  BackupPayload,
   BuiltInRuleKey,
   ChallengeSettings,
   ChallengeSummary,
-  ChallengeTargets,
   ChallengeTemplate,
   CloudSnapshot,
   CreateFriendChallengeInput,
   CreateFriendSquadInput,
-  CustomRuleKey,
   DailyEntry,
   DataStatus,
   EntryMap,
@@ -57,32 +96,23 @@ import type {
   LeaderboardRow,
   PrivacySettings,
   ReminderSettings,
-  RuleCategoryConfig,
-  RuleCategoryKey,
   RuleConfig,
   RuleKey,
-  RuleWeight,
   ScoreReaction,
   SyncConflict,
   SyncMeta,
   UpdateFriendSquadInput,
   View,
-  WorkoutLog,
 } from './types'
 import {
   AppNoticeToast,
-  CheckField,
   NavButton,
-  NumberField,
-  RatingField,
-  SectionTitle,
-  SelectField,
-  TextArea,
-  TextField,
 } from './ui'
 
+const CheckInView = lazy(() => import('./features/CheckInView'))
 const FriendsView = lazy(() => import('./features/FriendsView'))
 const ProgressView = lazy(() => import('./features/ProgressView'))
+const SettingsView = lazy(() => import('./features/SettingsView'))
 
 const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
@@ -90,67 +120,6 @@ const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
 const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
 const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v1'
 const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
-const DAY_IN_MS = 86_400_000
-const MAX_TRACKING_DAYS = 3650
-const MAX_WORKOUT_LOGS = 12
-const MAX_WORKOUT_MINUTES = 300
-const MAX_DAILY_EXERCISE_MINUTES = 600
-const LEGACY_DEFAULT_START_DATE = '2026-07-01'
-const LEGACY_DEFAULT_END_DATE = '2026-07-31'
-const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
-const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
-const BUILT_IN_RULE_KEYS: BuiltInRuleKey[] = ['exercise', 'sober', 'foodLogged', 'calories', 'protein', 'water', 'sleep', 'reading', 'journal']
-const DEFAULT_RULE_CATEGORIES: RuleCategoryConfig[] = [
-  { key: 'activity', label: 'Activity' },
-  { key: 'exercise', label: 'Exercise' },
-  { key: 'mental', label: 'Mental' },
-]
-
-const DEFAULT_TARGETS: ChallengeTargets = {
-  exerciseMinutes: 90,
-  calories: 2200,
-  proteinGrams: 140,
-  waterLiters: 3,
-  sleepHours: 7.5,
-}
-
-const DEFAULT_RULES: RuleConfig[] = [
-  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'exercise' },
-  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'activity' },
-  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'activity' },
-  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'activity' },
-  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'activity' },
-  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'activity' },
-  { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting', category: 'mental' },
-  { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting', category: 'mental' },
-]
-
-const DEFAULT_SETTINGS: ChallengeSettings = {
-  title: 'God Mode July',
-  startDate: todayIso(),
-  endDate: addDays(todayIso(), 365),
-  targets: DEFAULT_TARGETS,
-  categories: DEFAULT_RULE_CATEGORIES,
-  rules: DEFAULT_RULES,
-}
-
-const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
-  enabled: false,
-  time: '20:30',
-  message: 'Log today before the day gets away from you.',
-}
-
-const DEFAULT_SYNC_META: SyncMeta = {
-  lastCloudUpdatedAt: null,
-  lastLocalChangeAt: null,
-}
-
-const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
-  showWeeklyCompletion: true,
-  showAverageCompletion: true,
-  showStreak: true,
-  showLoggedDays: true,
-}
 
 const TUTORIAL_STEPS = [
   {
@@ -179,586 +148,6 @@ const TUTORIAL_STEPS = [
     body: 'Copy your invite code, accept requests, save private squads, publish scores, and create friend challenges.',
   },
 ]
-
-function addDays(date: string, amount: number): string {
-  const parsed = new Date(`${date}T12:00:00`)
-  parsed.setDate(parsed.getDate() + amount)
-  return parsed.toISOString().slice(0, 10)
-}
-
-function daysBetween(startDate: string, endDate: string): number {
-  const start = new Date(`${startDate}T12:00:00`).getTime()
-  const end = new Date(`${endDate}T12:00:00`).getTime()
-  return Math.floor((end - start) / DAY_IN_MS)
-}
-
-function isIsoDate(value: unknown): value is string {
-  return typeof value === 'string'
-    && /^\d{4}-\d{2}-\d{2}$/.test(value)
-    && !Number.isNaN(new Date(`${value}T12:00:00`).getTime())
-}
-
-function isBuiltInRuleKey(value: unknown): value is BuiltInRuleKey {
-  return typeof value === 'string' && BUILT_IN_RULE_KEYS.includes(value as BuiltInRuleKey)
-}
-
-function isCustomRuleKey(value: unknown): value is CustomRuleKey {
-  return typeof value === 'string' && /^custom-[a-z0-9-]{6,80}$/.test(value)
-}
-
-function normalizeRuleKey(value: unknown): RuleKey | null {
-  if (isBuiltInRuleKey(value) || isCustomRuleKey(value)) return value
-  return null
-}
-
-function normalizeCategoryKey(value: unknown, fallback: RuleCategoryKey): RuleCategoryKey {
-  if (value === 'physical') return fallback
-  if (typeof value !== 'string') return fallback
-  const key = value.trim().toLowerCase()
-  return /^[a-z0-9-]{2,80}$/.test(key) ? key : fallback
-}
-
-function normalizeCategoryLabel(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback
-  const trimmed = value.trim().replace(/\s+/g, ' ')
-  return trimmed ? trimmed.slice(0, 32) : fallback
-}
-
-function slugifyCategoryLabel(label: string): string {
-  return label
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-}
-
-function makeCategoryKey(label: string, existingKeys: Set<string>): RuleCategoryKey {
-  const base = slugifyCategoryLabel(label) || 'custom'
-  let key = base
-  let suffix = 2
-  while (existingKeys.has(key)) {
-    key = `${base}-${suffix}`
-    suffix += 1
-  }
-  return key
-}
-
-function categoryLabelFromKey(key: RuleCategoryKey): string {
-  return key
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Custom'
-}
-
-function normalizeRuleWeight(value: unknown, fallback: RuleWeight): RuleWeight {
-  return value === 'nonNegotiable' || value === 'supporting' ? value : fallback
-}
-
-function makeCustomRuleKey(): CustomRuleKey {
-  return `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function makeCustomRule(category: RuleCategoryConfig): RuleConfig {
-  return {
-    key: makeCustomRuleKey(),
-    label: `New ${category.label} Rule`,
-    icon: category.key === 'mental' ? '✦' : category.key === 'exercise' ? '◆' : '◈',
-    enabled: true,
-    weight: 'supporting',
-    category: category.key,
-  }
-}
-
-function normalizeTarget(value: unknown, fallback: number, min: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(parsed) || parsed < min) return fallback
-  return parsed
-}
-
-function normalizeOptionalNumber(value: unknown, min: number, max = Number.POSITIVE_INFINITY): number | null {
-  if (value === null || value === undefined || value === '') return null
-  const parsed = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(parsed)) return null
-  return Math.min(max, Math.max(min, parsed))
-}
-
-function normalizeBoundedNumber(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.min(max, Math.max(min, parsed))
-}
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function normalizeWorkoutType(value: unknown): string {
-  if (typeof value !== 'string') return DEFAULT_WORKOUT_TYPE
-  const trimmed = value.trim()
-  return trimmed || DEFAULT_WORKOUT_TYPE
-}
-
-function makeWorkoutId(): string {
-  return `workout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function normalizeWorkoutLog(value: unknown, index: number): WorkoutLog | null {
-  if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<WorkoutLog>
-  const id = typeof candidate.id === 'string' && candidate.id.trim()
-    ? candidate.id.trim()
-    : `workout-${index + 1}`
-  const type = normalizeWorkoutType(candidate.type)
-  const minutes = normalizeBoundedNumber(candidate.minutes, 0, 0, MAX_WORKOUT_MINUTES)
-
-  return { id, type, minutes }
-}
-
-function normalizeWorkoutLogs(value: unknown): WorkoutLog[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((item, index) => normalizeWorkoutLog(item, index))
-    .filter((item): item is WorkoutLog => item !== null)
-    .slice(0, MAX_WORKOUT_LOGS)
-}
-
-function normalizeRuleCompletionMap(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key, complete]) => isCustomRuleKey(key) && typeof complete === 'boolean'),
-  )
-}
-
-function workoutMinutesTotal(workouts: WorkoutLog[]): number {
-  return Math.min(
-    MAX_DAILY_EXERCISE_MINUTES,
-    workouts.reduce((sum, workout) => sum + workout.minutes, 0),
-  )
-}
-
-function getExerciseMinutes(entry: DailyEntry): number {
-  const workouts = Array.isArray(entry.workouts) ? entry.workouts : []
-  return workouts.length > 0 ? workoutMinutesTotal(workouts) : entry.exerciseMinutes
-}
-
-function makeLegacyWorkout(minutes: number): WorkoutLog {
-  return {
-    id: 'legacy-exercise-total',
-    type: 'Workout',
-    minutes,
-  }
-}
-
-function makeEmptyWorkout(): WorkoutLog {
-  return {
-    id: makeWorkoutId(),
-    type: DEFAULT_WORKOUT_TYPE,
-    minutes: 0,
-  }
-}
-
-function formatWorkoutSummary(workouts: WorkoutLog[] = []): string {
-  const completedWorkouts = workouts.filter((workout) => workout.minutes > 0)
-  if (completedWorkouts.length === 0) return ''
-  return completedWorkouts
-    .map((workout) => `${workout.type} ${workout.minutes} min`)
-    .join('; ')
-}
-
-function normalizeTimestamp(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length === 0) return null
-  const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString()
-}
-
-function normalizeSyncMeta(value: unknown): SyncMeta {
-  const candidate = value && typeof value === 'object' ? value as Partial<SyncMeta> : {}
-  return {
-    lastCloudUpdatedAt: normalizeTimestamp(candidate.lastCloudUpdatedAt),
-    lastLocalChangeAt: normalizeTimestamp(candidate.lastLocalChangeAt),
-  }
-}
-
-function normalizePrivacySettings(value: unknown): PrivacySettings {
-  const candidate = value && typeof value === 'object' ? value as Partial<PrivacySettings> : {}
-  return {
-    showWeeklyCompletion: typeof candidate.showWeeklyCompletion === 'boolean' ? candidate.showWeeklyCompletion : DEFAULT_PRIVACY_SETTINGS.showWeeklyCompletion,
-    showAverageCompletion: typeof candidate.showAverageCompletion === 'boolean' ? candidate.showAverageCompletion : DEFAULT_PRIVACY_SETTINGS.showAverageCompletion,
-    showStreak: typeof candidate.showStreak === 'boolean' ? candidate.showStreak : DEFAULT_PRIVACY_SETTINGS.showStreak,
-    showLoggedDays: typeof candidate.showLoggedDays === 'boolean' ? candidate.showLoggedDays : DEFAULT_PRIVACY_SETTINGS.showLoggedDays,
-  }
-}
-
-function timestampIsAfter(value: string | null, baseline: string | null): boolean {
-  if (!value) return false
-  if (!baseline) return true
-  return new Date(value).getTime() > new Date(baseline).getTime()
-}
-
-function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): string {
-  const legacyLabels: Partial<Record<BuiltInRuleKey, string[]>> = {
-    exercise: ['90 min Exercise'],
-    foodLogged: ['Log Food Honestly', 'Food honestly logged', 'Done Eating for the Day'],
-    calories: ['Calories On Target'],
-    protein: ['Protein Goal'],
-    water: ['Water Goal'],
-    sleep: ['Sleep Goal'],
-  }
-
-  if (isBuiltInRuleKey(defaultRule.key) && legacyLabels[defaultRule.key]?.includes(storedLabel)) return defaultRule.label
-  return storedLabel || defaultRule.label
-}
-
-function normalizeRuleCategories(value: unknown, rules: RuleConfig[]): RuleCategoryConfig[] {
-  const categoriesByKey = new Map<string, RuleCategoryConfig>()
-
-  for (const category of DEFAULT_RULE_CATEGORIES) {
-    categoriesByKey.set(category.key, category)
-  }
-
-  if (Array.isArray(value)) {
-    for (const rawCategory of value) {
-      if (!rawCategory || typeof rawCategory !== 'object') continue
-      const category = rawCategory as Partial<RuleCategoryConfig>
-      const labelFallback = typeof category.key === 'string' ? categoryLabelFromKey(category.key) : 'Custom'
-      const label = normalizeCategoryLabel(category.label, labelFallback)
-      const keyFallback = makeCategoryKey(label, new Set(categoriesByKey.keys()))
-      const key = normalizeCategoryKey(category.key, keyFallback)
-      categoriesByKey.set(key, { key, label })
-    }
-  }
-
-  for (const rule of rules) {
-    const key = normalizeCategoryKey(rule.category, 'activity')
-    if (!categoriesByKey.has(key)) {
-      categoriesByKey.set(key, { key, label: categoryLabelFromKey(key) })
-    }
-  }
-
-  return Array.from(categoriesByKey.values())
-}
-
-function normalizeSettings(value: unknown): ChallengeSettings {
-  const candidate = value && typeof value === 'object' ? value as Partial<ChallengeSettings> : {}
-  const targetsCandidate = candidate.targets && typeof candidate.targets === 'object'
-    ? candidate.targets as Partial<ChallengeTargets>
-    : {}
-
-  const targets: ChallengeTargets = {
-    exerciseMinutes: normalizeTarget(targetsCandidate.exerciseMinutes, DEFAULT_TARGETS.exerciseMinutes, 1),
-    calories: normalizeTarget(targetsCandidate.calories, DEFAULT_TARGETS.calories, 1),
-    proteinGrams: normalizeTarget(targetsCandidate.proteinGrams, DEFAULT_TARGETS.proteinGrams, 1),
-    waterLiters: normalizeTarget(targetsCandidate.waterLiters, DEFAULT_TARGETS.waterLiters, 0.1),
-    sleepHours: normalizeTarget(targetsCandidate.sleepHours, DEFAULT_TARGETS.sleepHours, 0.25),
-  }
-
-  const storedRules = Array.isArray(candidate.rules) ? candidate.rules : []
-  const storedRuleByKey = new Map<RuleKey, Partial<RuleConfig>>()
-
-  for (const storedRule of storedRules) {
-    if (storedRule && typeof storedRule === 'object') {
-      const rule = storedRule as Partial<RuleConfig>
-      const key = normalizeRuleKey(rule.key)
-      if (key) storedRuleByKey.set(key, rule)
-    }
-  }
-
-  const rules = DEFAULT_RULES.map((defaultRule) => {
-    const storedRule = storedRuleByKey.get(defaultRule.key)
-    const storedLabel = typeof storedRule?.label === 'string' && storedRule.label.trim()
-      ? storedRule.label.trim()
-      : ''
-    const label = normalizeRuleLabel(defaultRule, storedLabel)
-    const icon = typeof storedRule?.icon === 'string' && storedRule.icon.trim()
-      ? storedRule.icon.trim().slice(0, 2)
-      : defaultRule.icon
-
-    return {
-      key: defaultRule.key,
-      label,
-      icon,
-      enabled: typeof storedRule?.enabled === 'boolean' ? storedRule.enabled : defaultRule.enabled,
-      weight: normalizeRuleWeight(storedRule?.weight, defaultRule.weight),
-      category: normalizeCategoryKey(storedRule?.category, defaultRule.category),
-      deleted: storedRule?.deleted === true,
-    }
-  })
-  const customRules = storedRules.reduce<RuleConfig[]>((normalizedRules, storedRule) => {
-    if (!storedRule || typeof storedRule !== 'object') return normalizedRules
-    const rule = storedRule as Partial<RuleConfig>
-    const key = normalizeRuleKey(rule.key)
-    if (!key || !isCustomRuleKey(key)) return normalizedRules
-    const label = typeof rule.label === 'string' && rule.label.trim()
-      ? rule.label.trim()
-      : 'Custom Rule'
-    const icon = typeof rule.icon === 'string' && rule.icon.trim()
-      ? rule.icon.trim().slice(0, 2)
-      : '◆'
-
-    normalizedRules.push({
-      key,
-      label,
-      icon,
-      enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
-      weight: normalizeRuleWeight(rule.weight, 'supporting'),
-      category: normalizeCategoryKey(rule.category, 'activity'),
-      deleted: rule.deleted === true,
-    })
-    return normalizedRules
-  }, [])
-  const allRules = [...rules, ...customRules]
-  const categories = normalizeRuleCategories(candidate.categories, allRules)
-
-  const today = todayIso()
-  const hasLegacyDefaultDates = candidate.startDate === LEGACY_DEFAULT_START_DATE && candidate.endDate === LEGACY_DEFAULT_END_DATE
-  let startDate = hasLegacyDefaultDates
-    ? today
-    : isIsoDate(candidate.startDate) ? candidate.startDate : today
-  let endDate = isIsoDate(candidate.endDate) && !hasLegacyDefaultDates ? candidate.endDate : addDays(startDate, 365)
-  if (endDate < startDate) endDate = startDate
-  if (daysBetween(startDate, endDate) >= MAX_TRACKING_DAYS) endDate = addDays(startDate, MAX_TRACKING_DAYS - 1)
-
-  return {
-    title: typeof candidate.title === 'string' && candidate.title.trim()
-      ? candidate.title.trim()
-      : DEFAULT_SETTINGS.title,
-    startDate,
-    endDate,
-    targets,
-    categories,
-    rules: allRules,
-  }
-}
-
-function normalizeReminderSettings(value: unknown): ReminderSettings {
-  const candidate = value && typeof value === 'object' ? value as Partial<ReminderSettings> : {}
-  const time = typeof candidate.time === 'string' && /^\d{2}:\d{2}$/.test(candidate.time)
-    ? candidate.time
-    : DEFAULT_REMINDER_SETTINGS.time
-
-  return {
-    enabled: candidate.enabled === true,
-    time,
-    message: typeof candidate.message === 'string' && candidate.message.trim()
-      ? candidate.message.trim()
-      : DEFAULT_REMINDER_SETTINGS.message,
-  }
-}
-
-function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null {
-  const candidate = value && typeof value === 'object' ? value as Partial<DailyEntry> : {}
-  const date = isIsoDate(candidate.date) ? candidate.date : fallbackDate
-  if (!isIsoDate(date)) return null
-  const legacyExerciseMinutes = normalizeBoundedNumber(candidate.exerciseMinutes, 0, 0, MAX_DAILY_EXERCISE_MINUTES)
-  const workouts = normalizeWorkoutLogs(candidate.workouts)
-  const exerciseMinutes = workouts.length > 0 ? workoutMinutesTotal(workouts) : legacyExerciseMinutes
-
-  return {
-    date,
-    exerciseMinutes,
-    workouts: workouts.length > 0 ? workouts : legacyExerciseMinutes > 0 ? [makeLegacyWorkout(legacyExerciseMinutes)] : [],
-    sober: candidate.sober === true,
-    foodLogged: candidate.foodLogged === true,
-    finalizedAt: normalizeTimestamp(candidate.finalizedAt),
-    calories: normalizeOptionalNumber(candidate.calories, 0, 10000),
-    proteinGrams: normalizeOptionalNumber(candidate.proteinGrams, 0, 500),
-    waterLiters: normalizeOptionalNumber(candidate.waterLiters, 0, 15),
-    weightPounds: normalizeOptionalNumber(candidate.weightPounds, 50, 700),
-    readTenPages: candidate.readTenPages === true,
-    journaled: candidate.journaled === true,
-    ruleCompletions: normalizeRuleCompletionMap(candidate.ruleCompletions),
-    mood: normalizeBoundedNumber(candidate.mood, 3, 1, 5),
-    energy: normalizeBoundedNumber(candidate.energy, 3, 1, 5),
-    hunger: normalizeBoundedNumber(candidate.hunger, 3, 1, 5),
-    sleepHours: normalizeOptionalNumber(candidate.sleepHours, 0, 24),
-    wentWell: normalizeText(candidate.wentWell),
-    difficult: normalizeText(candidate.difficult),
-  }
-}
-
-function normalizeEntries(value: unknown): EntryMap {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-
-  const entries: EntryMap = {}
-  for (const [date, rawEntry] of Object.entries(value)) {
-    const entry = normalizeEntry(rawEntry, date)
-    if (entry) entries[entry.date] = entry
-  }
-
-  return entries
-}
-
-function normalizeCloudSnapshot(row: unknown): CloudSnapshot | null {
-  const candidate = row && typeof row === 'object'
-    ? row as { settings?: unknown; entries?: unknown; updated_at?: unknown }
-    : null
-  if (!candidate) return null
-
-  return {
-    settings: normalizeSettings(candidate.settings),
-    entries: normalizeEntries(candidate.entries),
-    updatedAt: normalizeTimestamp(candidate.updated_at),
-  }
-}
-
-function mergeCloudOnlyEntries(localEntries: EntryMap, cloudEntries: EntryMap): EntryMap {
-  return normalizeEntries({
-    ...cloudEntries,
-    ...localEntries,
-  })
-}
-
-function countCloudOnlyEntries(localEntries: EntryMap, cloudEntries: EntryMap): number {
-  return Object.keys(cloudEntries).filter((date) => !localEntries[date]).length
-}
-
-function todayIso(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 10)
-}
-
-function selectableEndDate(settings: ChallengeSettings): string {
-  const today = todayIso()
-  return today < settings.startDate ? settings.startDate : today
-}
-
-function clampDate(date: string, settings: ChallengeSettings): string {
-  if (date < settings.startDate) return settings.startDate
-  const endDate = selectableEndDate(settings)
-  if (date > endDate) return endDate
-  return date
-}
-
-function makeEmptyEntry(date: string): DailyEntry {
-  return {
-    date,
-    exerciseMinutes: 0,
-    workouts: [],
-    sober: false,
-    foodLogged: false,
-    finalizedAt: null,
-    calories: null,
-    proteinGrams: null,
-    waterLiters: null,
-    weightPounds: null,
-    readTenPages: false,
-    journaled: false,
-    ruleCompletions: {},
-    mood: 3,
-    energy: 3,
-    hunger: 3,
-    sleepHours: null,
-    wentWell: '',
-    difficult: '',
-  }
-}
-
-function isEntryFinalized(entry: DailyEntry): boolean {
-  return typeof entry.finalizedAt === 'string' && entry.finalizedAt.length > 0
-}
-
-function formatDate(date: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(new Date(`${date}T12:00:00`))
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-function formatShortDate(date: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(`${date}T12:00:00`))
-}
-
-function formatMonthLabel(date: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(`${date}T12:00:00`))
-}
-
-function dayNumber(date: string, settings: ChallengeSettings): number {
-  return daysBetween(settings.startDate, date) + 1
-}
-
-function trackingLength(settings: ChallengeSettings, throughDate = selectableEndDate(settings)): number {
-  return daysBetween(settings.startDate, throughDate) + 1
-}
-
-function getTrackingDates(settings: ChallengeSettings, throughDate = selectableEndDate(settings)): string[] {
-  return Array.from({ length: trackingLength(settings, throughDate) }, (_, index) => addDays(settings.startDate, index))
-}
-
-function getScoredRules(settings: ChallengeSettings): RuleConfig[] {
-  return settings.rules.filter((rule) => rule.deleted !== true)
-}
-
-function getEnabledRules(settings: ChallengeSettings): RuleConfig[] {
-  return getScoredRules(settings).filter((rule) => rule.enabled)
-}
-
-function ruleWeightValue(rule: RuleConfig): number {
-  return rule.weight === 'nonNegotiable' ? 2 : 1
-}
-
-function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: ChallengeSettings): boolean {
-  switch (rule) {
-    case 'exercise':
-      return getExerciseMinutes(entry) >= settings.targets.exerciseMinutes
-    case 'sober':
-      return entry.sober
-    case 'foodLogged':
-      return entry.foodLogged
-    case 'calories':
-      return typeof entry.calories === 'number' && entry.calories > 0 && entry.calories <= settings.targets.calories
-    case 'protein':
-      return (entry.proteinGrams ?? 0) >= settings.targets.proteinGrams
-    case 'water':
-      return (entry.waterLiters ?? 0) >= settings.targets.waterLiters
-    case 'sleep':
-      return (entry.sleepHours ?? 0) >= settings.targets.sleepHours
-    case 'reading':
-      return entry.readTenPages
-    case 'journal':
-      return entry.journaled
-    default:
-      return entry.ruleCompletions?.[rule] === true
-  }
-}
-
-function completionStats(entry: DailyEntry, settings: ChallengeSettings) {
-  const activeRules = getEnabledRules(settings)
-  const totalWeight = activeRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
-  const completedRules = activeRules.filter((rule) => ruleComplete(entry, rule.key, settings))
-  const completedWeight = completedRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
-
-  return {
-    completed: completedRules.length,
-    total: activeRules.length,
-    percent: totalWeight === 0 ? 0 : Math.round((completedWeight / totalWeight) * 100),
-  }
-}
-
-function getLoggedDates(entries: EntryMap, settings: ChallengeSettings): string[] {
-  const endDate = selectableEndDate(settings)
-  return Object.keys(entries)
-    .filter((date) => date >= settings.startDate && date <= endDate)
-    .sort()
-}
 
 function leaderboardThroughDate(entries: EntryMap, settings: ChallengeSettings): string {
   const today = todayIso()
@@ -1209,28 +598,6 @@ function calendarCellLabel(date: string, settings: ChallengeSettings): string {
   return String(day)
 }
 
-function sanitizeFilenamePart(value: string): string {
-  const cleaned = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-
-  return cleaned || 'challenge'
-}
-
-function downloadTextFile(filename: string, mimeType: string, text: string): void {
-  const blob = new Blob([text], { type: mimeType })
-  const url = window.URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
-}
-
 async function copyTextToClipboard(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -1282,102 +649,6 @@ async function consumeAuthRedirectSession(): Promise<User | null> {
   }
 
   return null
-}
-
-function makeBackupPayload(settings: ChallengeSettings, entries: EntryMap): BackupPayload {
-  return {
-    app: 'god-mode-july',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    settings: normalizeSettings(settings),
-    entries: normalizeEntries(entries),
-  }
-}
-
-function csvCell(value: string | number | boolean | null | undefined): string {
-  if (value === null || value === undefined) return ''
-  const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-}
-
-function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
-  const csvRules = getScoredRules(settings)
-  const ruleColumns = csvRules.map((rule) => `rule_${rule.key}`)
-  const headers = [
-    'date',
-    'tracking_day',
-    'completion_percent',
-    'completed_rules',
-    'total_rules',
-    ...ruleColumns,
-    'finalized_at',
-    'exercise_minutes',
-    'workout_log',
-    'sober',
-    'calories',
-    'protein_grams',
-    'water_liters',
-    'weight_pounds',
-    'read_ten_pages',
-    'journaled',
-    'mood',
-    'energy',
-    'hunger',
-    'sleep_hours',
-    'went_well',
-    'difficult',
-  ]
-
-  const rows = Object.keys(entries).sort().map((date) => {
-    const entry = entries[date]
-    const inChallenge = date >= settings.startDate && date <= selectableEndDate(settings)
-    const stats = inChallenge ? completionStats(entry, settings) : null
-    return [
-      entry.date,
-      inChallenge ? dayNumber(date, settings) : '',
-      stats?.percent ?? '',
-      stats?.completed ?? '',
-      stats?.total ?? '',
-      ...csvRules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
-      entry.finalizedAt,
-      getExerciseMinutes(entry),
-      formatWorkoutSummary(entry.workouts),
-      Number(entry.sober),
-      entry.calories,
-      entry.proteinGrams,
-      entry.waterLiters,
-      entry.weightPounds,
-      Number(entry.readTenPages),
-      Number(entry.journaled),
-      entry.mood,
-      entry.energy,
-      entry.hunger,
-      entry.sleepHours,
-      entry.wentWell,
-      entry.difficult,
-    ]
-  })
-
-  return [headers, ...rows]
-    .map((row) => row.map(csvCell).join(','))
-    .join('\n')
-}
-
-async function readBackupFile(file: File): Promise<BackupPayload> {
-  const text = await file.text()
-  const parsed = JSON.parse(text) as unknown
-  const candidate = parsed && typeof parsed === 'object' ? parsed as Partial<BackupPayload> : null
-  if (!candidate || !('settings' in candidate) || !('entries' in candidate)) {
-    throw new Error('Choose a JSON backup exported from this app.')
-  }
-
-  return {
-    app: 'god-mode-july',
-    version: 1,
-    exportedAt: typeof candidate.exportedAt === 'string' ? candidate.exportedAt : new Date().toISOString(),
-    settings: normalizeSettings(candidate.settings),
-    entries: normalizeEntries(candidate.entries),
-  }
 }
 
 function App() {
@@ -3503,7 +2774,7 @@ function App() {
       case 'exercise':
         if (next) {
           const workout = {
-            id: makeWorkoutId(),
+            ...makeEmptyWorkout(),
             type: 'Workout',
             minutes: settings.targets.exerciseMinutes,
           }
@@ -3637,14 +2908,22 @@ function App() {
         )}
 
         {view === 'check-in' && (
-          <CheckIn
-            entry={entry}
-            settings={settings}
-            isFinalized={entryFinalized}
-            onUpdate={updateEntryIfUnlocked}
-            onFinalizeDay={finalizeSelectedDay}
-            onUnlockDay={unlockSelectedDay}
-          />
+          <Suspense fallback={(
+            <section className="panel focus-panel">
+              <p className="eyebrow">Loading</p>
+              <h2>Opening Check-In.</h2>
+              <p>Preparing today’s inputs.</p>
+            </section>
+          )}>
+            <CheckInView
+              entry={entry}
+              settings={settings}
+              isFinalized={entryFinalized}
+              onUpdate={updateEntryIfUnlocked}
+              onFinalizeDay={finalizeSelectedDay}
+              onUnlockDay={unlockSelectedDay}
+            />
+          </Suspense>
         )}
         {view === 'calendar' && (
           <CalendarView
@@ -3714,40 +2993,48 @@ function App() {
           </Suspense>
         )}
         {view === 'settings' && (
-          <SettingsView
-            settings={settings}
-            entries={entries}
-            reminderSettings={reminderSettings}
-            reminderStatus={reminderStatus}
-            cloudConfigured={isSupabaseConfigured}
-            cloudStatus={cloudStatus}
-            cloudBusy={cloudBusy}
-            cloudUpdatedAt={cloudUpdatedAt}
-            syncConflict={syncConflict}
-            user={user}
-            authEmail={authEmail}
-            authPassword={authPassword}
-            onSettingsChange={updateSettings}
-            onDataImport={replaceData}
-            onReminderChange={updateReminder}
-            onRequestReminderPermission={requestReminderPermission}
-            onAuthEmailChange={setAuthEmail}
-            onAuthPasswordChange={setAuthPassword}
-            onSignInWithPassword={signInWithPassword}
-            onCreatePasswordAccount={createPasswordAccount}
-            onSetAccountPassword={setAccountPassword}
-            onSendMagicLink={sendMagicLink}
-            onSendPasswordReset={sendPasswordReset}
-            onSignOut={signOut}
-            onPushCloud={pushCloudData}
-            onPullCloud={pullCloudData}
-            onExportAccountData={exportAccountData}
-            onDeleteCloudAccountData={deleteCloudAccountData}
-            onUseCloudVersion={useCloudConflictVersion}
-            onKeepLocalVersion={keepLocalConflictVersion}
-            onMergeCloudEntries={mergeConflictEntries}
-            onDismissConflict={dismissSyncConflict}
-          />
+          <Suspense fallback={(
+            <section className="panel focus-panel">
+              <p className="eyebrow">Loading</p>
+              <h2>Opening Settings.</h2>
+              <p>Preparing tracker controls.</p>
+            </section>
+          )}>
+            <SettingsView
+              settings={settings}
+              entries={entries}
+              reminderSettings={reminderSettings}
+              reminderStatus={reminderStatus}
+              cloudConfigured={isSupabaseConfigured}
+              cloudStatus={cloudStatus}
+              cloudBusy={cloudBusy}
+              cloudUpdatedAt={cloudUpdatedAt}
+              syncConflict={syncConflict}
+              user={user}
+              authEmail={authEmail}
+              authPassword={authPassword}
+              onSettingsChange={updateSettings}
+              onDataImport={replaceData}
+              onReminderChange={updateReminder}
+              onRequestReminderPermission={requestReminderPermission}
+              onAuthEmailChange={setAuthEmail}
+              onAuthPasswordChange={setAuthPassword}
+              onSignInWithPassword={signInWithPassword}
+              onCreatePasswordAccount={createPasswordAccount}
+              onSetAccountPassword={setAccountPassword}
+              onSendMagicLink={sendMagicLink}
+              onSendPasswordReset={sendPasswordReset}
+              onSignOut={signOut}
+              onPushCloud={pushCloudData}
+              onPullCloud={pullCloudData}
+              onExportAccountData={exportAccountData}
+              onDeleteCloudAccountData={deleteCloudAccountData}
+              onUseCloudVersion={useCloudConflictVersion}
+              onKeepLocalVersion={keepLocalConflictVersion}
+              onMergeCloudEntries={mergeConflictEntries}
+              onDismissConflict={dismissSyncConflict}
+            />
+          </Suspense>
         )}
       </main>
 
@@ -3943,702 +3230,6 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
       <small>{label}</small>
       <strong>{value}</strong>
     </article>
-  )
-}
-
-function CheckIn({
-  entry,
-  settings,
-  isFinalized,
-  onUpdate,
-  onFinalizeDay,
-  onUnlockDay,
-}: {
-  entry: DailyEntry
-  settings: ChallengeSettings
-  isFinalized: boolean
-  onUpdate: (patch: Partial<DailyEntry>) => void
-  onFinalizeDay: () => void
-  onUnlockDay: () => void
-}) {
-  const workoutLogs = Array.isArray(entry.workouts) ? entry.workouts : []
-  const workoutTotal = getExerciseMinutes(entry)
-  const workoutProgress = Math.min(100, Math.round((workoutTotal / settings.targets.exerciseMinutes) * 100))
-
-  function updateWorkouts(nextWorkouts: WorkoutLog[]) {
-    const workouts = normalizeWorkoutLogs(nextWorkouts)
-    onUpdate({
-      workouts,
-      exerciseMinutes: workoutMinutesTotal(workouts),
-    })
-  }
-
-  function updateWorkout(id: string, patch: Partial<WorkoutLog>) {
-    updateWorkouts(workoutLogs.map((workout) => workout.id === id ? { ...workout, ...patch } : workout))
-  }
-
-  function addWorkout() {
-    if (workoutLogs.length >= MAX_WORKOUT_LOGS) return
-    updateWorkouts([...workoutLogs, makeEmptyWorkout()])
-  }
-
-  function removeWorkout(id: string) {
-    updateWorkouts(workoutLogs.filter((workout) => workout.id !== id))
-  }
-
-  return (
-    <div className="page-stack">
-      <section className="page-intro">
-        <p className="eyebrow">{isFinalized ? 'Finalized' : 'Daily input'}</p>
-        <h2>Check-In</h2>
-        <p>{isFinalized && entry.finalizedAt ? `Locked ${formatDateTime(entry.finalizedAt)}.` : 'Track the facts. Honest data is more useful than a perfect score.'}</p>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="1" title="Workout" />
-        <div className="workout-summary">
-          <div>
-            <strong>{workoutTotal} / {settings.targets.exerciseMinutes} min</strong>
-            <span>{workoutProgress}% of daily workout target</span>
-          </div>
-          <button className="secondary-button compact-button" type="button" onClick={addWorkout} disabled={isFinalized || workoutLogs.length >= MAX_WORKOUT_LOGS}>
-            Add Exercise
-          </button>
-        </div>
-        {workoutLogs.length === 0 ? (
-          <p className="empty-workout-log">Add a workout entry to count minutes toward your exercise rule.</p>
-        ) : (
-          <div className="workout-log-list">
-            {workoutLogs.map((workout) => (
-              <article className="workout-log-row" key={workout.id}>
-                <SelectField
-                  disabled={isFinalized}
-                  label="Type"
-                  value={workout.type}
-                  options={WORKOUT_TYPES}
-                  onChange={(type) => updateWorkout(workout.id, { type })}
-                />
-                <NumberField
-                  disabled={isFinalized}
-                  label="Minutes"
-                  value={workout.minutes}
-                  min={0}
-                  max={MAX_WORKOUT_MINUTES}
-                  step={5}
-                  onChange={(value) => updateWorkout(workout.id, { minutes: value ?? 0 })}
-                  suffix="min"
-                />
-                <button className="ghost-button workout-remove-button" type="button" onClick={() => removeWorkout(workout.id)} disabled={isFinalized}>
-                  Remove
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="2" title="Nutrition" />
-        <div className="field-grid">
-          <NumberField disabled={isFinalized} label={`Calories (${settings.targets.calories} kcal target)`} value={entry.calories} min={0} max={10000} onChange={(value) => onUpdate({ calories: value })} suffix="kcal" />
-          <NumberField disabled={isFinalized} label={`Protein (${settings.targets.proteinGrams} g goal)`} value={entry.proteinGrams} min={0} max={500} onChange={(value) => onUpdate({ proteinGrams: value })} suffix="g" />
-          <NumberField disabled={isFinalized} label={`Water (${settings.targets.waterLiters} L goal)`} value={entry.waterLiters} min={0} max={15} step={0.1} onChange={(value) => onUpdate({ waterLiters: value })} suffix="L" />
-          <NumberField disabled={isFinalized} label="Weight" value={entry.weightPounds} min={50} max={700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value })} suffix="lb" />
-        </div>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="3" title="Discipline" />
-        <CheckField disabled={isFinalized} label="Sober" checked={entry.sober} onChange={(checked) => onUpdate({ sober: checked })} />
-        <CheckField disabled={isFinalized} label="Read 10 pages" checked={entry.readTenPages} onChange={(checked) => onUpdate({ readTenPages: checked })} />
-        <CheckField disabled={isFinalized} label="Journal completed" checked={entry.journaled} onChange={(checked) => onUpdate({ journaled: checked })} />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="4" title="Body + Mind" />
-        <NumberField disabled={isFinalized} label={`Sleep hours (${settings.targets.sleepHours} hr target)`} value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
-        <div className="rating-grid">
-          <RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} />
-          <RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} />
-          <RatingField disabled={isFinalized} label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} />
-        </div>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="5" title="Reflection" />
-        <TextArea disabled={isFinalized} label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} />
-        <TextArea disabled={isFinalized} label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="6" title="Finalize" />
-        {isFinalized ? (
-          <button className="secondary-button" type="button" onClick={onUnlockDay}>
-            Unlock Day
-          </button>
-        ) : (
-          <button className="primary-button" type="button" onClick={onFinalizeDay}>
-            Finalize Day
-          </button>
-        )}
-      </section>
-
-      <p className="autosave-note">{isFinalized ? 'This day is locked until you unlock it.' : 'Changes save automatically on this device.'}</p>
-    </div>
-  )
-}
-
-function SettingsView({
-  settings,
-  entries,
-  reminderSettings,
-  reminderStatus,
-  cloudConfigured,
-  cloudStatus,
-  cloudBusy,
-  cloudUpdatedAt,
-  syncConflict,
-  user,
-  authEmail,
-  authPassword,
-  onSettingsChange,
-  onDataImport,
-  onReminderChange,
-  onRequestReminderPermission,
-  onAuthEmailChange,
-  onAuthPasswordChange,
-  onSignInWithPassword,
-  onCreatePasswordAccount,
-  onSetAccountPassword,
-  onSendMagicLink,
-  onSendPasswordReset,
-  onSignOut,
-  onPushCloud,
-  onPullCloud,
-  onExportAccountData,
-  onDeleteCloudAccountData,
-  onUseCloudVersion,
-  onKeepLocalVersion,
-  onMergeCloudEntries,
-  onDismissConflict,
-}: {
-  settings: ChallengeSettings
-  entries: EntryMap
-  reminderSettings: ReminderSettings
-  reminderStatus: DataStatus
-  cloudConfigured: boolean
-  cloudStatus: DataStatus
-  cloudBusy: boolean
-  cloudUpdatedAt: string | null
-  syncConflict: SyncConflict | null
-  user: User | null
-  authEmail: string
-  authPassword: string
-  onSettingsChange: (settings: ChallengeSettings) => void
-  onDataImport: (settings: ChallengeSettings, entries: EntryMap) => void
-  onReminderChange: (settings: ReminderSettings) => void
-  onRequestReminderPermission: () => void
-  onAuthEmailChange: (email: string) => void
-  onAuthPasswordChange: (password: string) => void
-  onSignInWithPassword: () => void
-  onCreatePasswordAccount: () => void
-  onSetAccountPassword: () => void
-  onSendMagicLink: () => void
-  onSendPasswordReset: () => void
-  onSignOut: () => void
-  onPushCloud: () => void
-  onPullCloud: () => void
-  onExportAccountData: () => void
-  onDeleteCloudAccountData: () => void
-  onUseCloudVersion: () => void
-  onKeepLocalVersion: () => void
-  onMergeCloudEntries: () => void
-  onDismissConflict: () => void
-}) {
-  const activeRuleCount = getEnabledRules(settings).length
-  const entryCount = Object.keys(entries).length
-  const [dataStatus, setDataStatus] = useState<DataStatus>({
-    tone: 'neutral',
-    message: `${entryCount} saved ${entryCount === 1 ? 'entry' : 'entries'}`,
-  })
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const categories = settings.categories.length > 0 ? settings.categories : DEFAULT_RULE_CATEGORIES
-
-  function update(patch: Partial<ChallengeSettings>) {
-    onSettingsChange(normalizeSettings({ ...settings, ...patch }))
-  }
-
-  function updateTargets(patch: Partial<ChallengeTargets>) {
-    update({ targets: { ...settings.targets, ...patch } })
-  }
-
-  function updateRule(key: RuleKey, patch: Partial<RuleConfig>) {
-    update({
-      rules: settings.rules.map((rule) => rule.key === key ? { ...rule, ...patch } : rule),
-    })
-  }
-
-  function addRule(category: RuleCategoryConfig) {
-    update({
-      rules: [...settings.rules, makeCustomRule(category)],
-    })
-  }
-
-  function addCategory() {
-    const label = normalizeCategoryLabel(newCategoryName, '')
-    if (!label) return
-    const key = makeCategoryKey(label, new Set(categories.map((category) => category.key)))
-    update({
-      categories: [...categories, { key, label }],
-    })
-    setNewCategoryName('')
-  }
-
-  function removeRule(key: RuleKey) {
-    updateRule(key, { enabled: false, deleted: true })
-  }
-
-  function updateStartDate(startDate: string) {
-    update({
-      startDate,
-      endDate: settings.endDate < startDate ? startDate : settings.endDate,
-    })
-  }
-
-  function exportJsonBackup() {
-    const payload = makeBackupPayload(settings, entries)
-    const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-backup.json`
-    downloadTextFile(filename, 'application/json;charset=utf-8', JSON.stringify(payload, null, 2))
-    const count = Object.keys(payload.entries).length
-    setDataStatus({
-      tone: 'success',
-      message: `JSON backup exported with ${count} ${count === 1 ? 'entry' : 'entries'}.`,
-    })
-  }
-
-  function exportCsv() {
-    const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-entries.csv`
-    downloadTextFile(filename, 'text/csv;charset=utf-8', entriesToCsv(entries, settings))
-    setDataStatus({
-      tone: 'success',
-      message: `CSV exported with ${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}.`,
-    })
-  }
-
-  async function importJsonBackup(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.currentTarget
-    const file = input.files?.[0]
-    if (!file) return
-
-    try {
-      const backup = await readBackupFile(file)
-      const count = Object.keys(backup.entries).length
-      const shouldImport = window.confirm(
-        `Import ${count} ${count === 1 ? 'entry' : 'entries'} from ${file.name}? This replaces current local settings and entries.`,
-      )
-
-      if (!shouldImport) {
-        setDataStatus({ tone: 'neutral', message: 'Import canceled.' })
-        return
-      }
-
-      onDataImport(backup.settings, backup.entries)
-      setDataStatus({
-        tone: 'success',
-        message: `Imported ${count} ${count === 1 ? 'entry' : 'entries'} and tracker settings.`,
-      })
-    } catch (error) {
-      setDataStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not import that backup file.',
-      })
-    } finally {
-      input.value = ''
-    }
-  }
-
-  return (
-    <div className="page-stack">
-      <section className="page-intro">
-        <p className="eyebrow">Milestone 4</p>
-        <h2>Settings</h2>
-        <p>Ongoing tracker · {activeRuleCount} scored rules</p>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="1" title="Data" />
-        <div className="data-actions">
-          <button className="secondary-button" type="button" onClick={exportJsonBackup}>
-            Export JSON
-          </button>
-          <label className="secondary-button file-import-label">
-            <span>Import JSON</span>
-            <input type="file" accept="application/json,.json" onChange={importJsonBackup} />
-          </label>
-          <button className="secondary-button" type="button" onClick={exportCsv}>
-            Export CSV
-          </button>
-        </div>
-        <p className={`data-status ${dataStatus.tone}`}>{dataStatus.message}</p>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="2" title="Cloud Sync" />
-        <CloudSyncPanel
-          configured={cloudConfigured}
-          user={user}
-          status={cloudStatus}
-          busy={cloudBusy}
-          updatedAt={cloudUpdatedAt}
-          conflict={syncConflict}
-          authEmail={authEmail}
-          authPassword={authPassword}
-          onAuthEmailChange={onAuthEmailChange}
-          onAuthPasswordChange={onAuthPasswordChange}
-          onSignInWithPassword={onSignInWithPassword}
-          onCreatePasswordAccount={onCreatePasswordAccount}
-          onSetAccountPassword={onSetAccountPassword}
-          onSendMagicLink={onSendMagicLink}
-          onSendPasswordReset={onSendPasswordReset}
-          onSignOut={onSignOut}
-          onPushCloud={onPushCloud}
-          onPullCloud={onPullCloud}
-          onExportAccountData={onExportAccountData}
-          onDeleteCloudAccountData={onDeleteCloudAccountData}
-          onUseCloudVersion={onUseCloudVersion}
-          onKeepLocalVersion={onKeepLocalVersion}
-          onMergeCloudEntries={onMergeCloudEntries}
-          onDismissConflict={onDismissConflict}
-        />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="3" title="Reminders" />
-        <ReminderPanel
-          settings={reminderSettings}
-          status={reminderStatus}
-          onChange={onReminderChange}
-          onRequestPermission={onRequestReminderPermission}
-        />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="4" title="Tracker" />
-        <TextField label="Title" value={settings.title} onChange={(title) => update({ title })} />
-        <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="5" title="Targets" />
-        <div className="field-grid">
-          <NumberField label="Exercise target" value={settings.targets.exerciseMinutes} min={1} max={300} onChange={(value) => value !== null && updateTargets({ exerciseMinutes: value })} suffix="min" />
-          <NumberField label="Calorie target" value={settings.targets.calories} min={1} max={10000} onChange={(value) => value !== null && updateTargets({ calories: value })} suffix="kcal" />
-          <NumberField label="Protein target" value={settings.targets.proteinGrams} min={1} max={500} onChange={(value) => value !== null && updateTargets({ proteinGrams: value })} suffix="g" />
-          <NumberField label="Water target" value={settings.targets.waterLiters} min={0.1} max={15} step={0.1} onChange={(value) => value !== null && updateTargets({ waterLiters: value })} suffix="L" />
-          <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
-        </div>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="6" title="Scored Rules" />
-        <div className="rule-glossary">
-          <span><strong>Scored</strong> counts toward today’s percent and streaks.</span>
-          <span><strong>Non-negotiable</strong> counts double.</span>
-          <span><strong>Supporting</strong> counts once.</span>
-          <span><strong>Active</strong> counts now; inactive stays saved for later.</span>
-        </div>
-        <div className="category-create-row">
-          <TextField label="New category" value={newCategoryName} onChange={setNewCategoryName} />
-          <button className="secondary-button" type="button" onClick={addCategory} disabled={!newCategoryName.trim()}>
-            Add Category
-          </button>
-        </div>
-        {categories.map((category) => {
-          const categoryRules = getScoredRules(settings).filter((rule) => rule.category === category.key)
-
-          return (
-            <div className="settings-rule-category" key={category.key}>
-              <div className="settings-rule-category-header">
-                <div>
-                  <p className="eyebrow">{category.label}</p>
-                  <h3>{category.label} Rules</h3>
-                </div>
-                <button className="secondary-button compact-button" type="button" onClick={() => addRule(category)}>
-                  Add Rule
-                </button>
-              </div>
-              <div className="settings-rule-list">
-                {categoryRules.length === 0 && <p className="empty-rule-category">No {category.label.toLowerCase()} rules yet.</p>}
-                {categoryRules.map((rule) => (
-                  <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
-                    <label className="symbol-field">
-                      <span>Icon</span>
-                      <input
-                        value={rule.icon}
-                        maxLength={2}
-                        onChange={(event) => updateRule(rule.key, { icon: event.target.value })}
-                        aria-label={`${rule.label} icon`}
-                      />
-                    </label>
-                    <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
-                    <div className="settings-rule-controls">
-                      <label className="mini-check-field">
-                        <input
-                          type="checkbox"
-                          checked={rule.enabled}
-                          onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })}
-                        />
-                        <span>Active</span>
-                      </label>
-                      <label className="weight-field">
-                        <span>Weight</span>
-                        <select value={rule.weight} onChange={(event) => updateRule(rule.key, { weight: event.target.value as RuleWeight })}>
-                          <option value="nonNegotiable">Non-negotiable</option>
-                          <option value="supporting">Supporting</option>
-                        </select>
-                      </label>
-                      <label className="weight-field">
-                        <span>Group</span>
-                        <select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value })}>
-                          {categories.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button className="danger-button" type="button" onClick={() => removeRule(rule.key)}>
-                        Remove
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </section>
-    </div>
-  )
-}
-
-function CloudSyncPanel({
-  configured,
-  user,
-  status,
-  busy,
-  updatedAt,
-  conflict,
-  authEmail,
-  authPassword,
-  onAuthEmailChange,
-  onAuthPasswordChange,
-  onSignInWithPassword,
-  onCreatePasswordAccount,
-  onSetAccountPassword,
-  onSendMagicLink,
-  onSendPasswordReset,
-  onSignOut,
-  onPushCloud,
-  onPullCloud,
-  onExportAccountData,
-  onDeleteCloudAccountData,
-  onUseCloudVersion,
-  onKeepLocalVersion,
-  onMergeCloudEntries,
-  onDismissConflict,
-}: {
-  configured: boolean
-  user: User | null
-  status: DataStatus
-  busy: boolean
-  updatedAt: string | null
-  conflict: SyncConflict | null
-  authEmail: string
-  authPassword: string
-  onAuthEmailChange: (email: string) => void
-  onAuthPasswordChange: (password: string) => void
-  onSignInWithPassword: () => void
-  onCreatePasswordAccount: () => void
-  onSetAccountPassword: () => void
-  onSendMagicLink: () => void
-  onSendPasswordReset: () => void
-  onSignOut: () => void
-  onPushCloud: () => void
-  onPullCloud: () => void
-  onExportAccountData: () => void
-  onDeleteCloudAccountData: () => void
-  onUseCloudVersion: () => void
-  onKeepLocalVersion: () => void
-  onMergeCloudEntries: () => void
-  onDismissConflict: () => void
-}) {
-  const updatedLabel = updatedAt
-    ? new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(updatedAt))
-    : 'Not synced yet'
-  const conflictCloudLabel = conflict?.cloud.updatedAt
-    ? new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(conflict.cloud.updatedAt))
-    : null
-  const conflictLocalLabel = conflict?.localChangedAt
-    ? new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(conflict.localChangedAt))
-    : null
-
-  if (!configured) {
-    return (
-      <div className="cloud-panel">
-        <p className="cloud-copy">Supabase is not configured for this build. Add the Vite env vars, run the SQL schema, and redeploy to turn on sign-in and multi-device sync.</p>
-        <p className="data-status neutral">Local tracking, backups, and CSV export still work.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="cloud-panel">
-      {user ? (
-        <>
-          <div className="sync-account-row">
-            <div>
-              <small>Signed in</small>
-              <strong>{user.email}</strong>
-            </div>
-            <button className="ghost-button" type="button" onClick={onSignOut} disabled={busy}>
-              Sign out
-            </button>
-          </div>
-          <div className="data-actions">
-            <button className="secondary-button" type="button" onClick={onPushCloud} disabled={busy}>
-              Push Local
-            </button>
-            <button className="secondary-button" type="button" onClick={onPullCloud} disabled={busy}>
-              Pull Cloud
-            </button>
-          </div>
-          <p className="cloud-updated">Cloud snapshot: {updatedLabel}</p>
-          <div className="account-data-panel">
-            <div>
-              <small>Password sign-in</small>
-              <p>Set or update the password for this account so you can sign in without magic links.</p>
-            </div>
-            <div className="password-update-actions">
-              <TextField label="New Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
-              <button className="secondary-button" type="button" onClick={onSetAccountPassword} disabled={busy}>
-                Set Password
-              </button>
-            </div>
-          </div>
-          <div className="account-data-panel">
-            <div>
-              <small>Account data</small>
-              <p>Export or delete the cloud records this app stores for your signed-in account.</p>
-            </div>
-            <div className="account-data-actions">
-              <button className="secondary-button" type="button" onClick={onExportAccountData} disabled={busy}>
-                Export Account Data
-              </button>
-              <button className="danger-button" type="button" onClick={onDeleteCloudAccountData} disabled={busy}>
-                Delete Cloud Data
-              </button>
-            </div>
-          </div>
-          {conflict && (
-            <div className="sync-conflict-panel">
-              <div>
-                <p className="eyebrow">Sync conflict</p>
-                <h3>Choose a version</h3>
-                <p>{conflict.message}</p>
-                <small>
-                  Cloud: {conflictCloudLabel ?? 'unknown'} · This device: {conflictLocalLabel ?? 'unsynced local data'}
-                </small>
-              </div>
-              <div className="sync-conflict-actions">
-                <button className="secondary-button" type="button" onClick={onMergeCloudEntries} disabled={busy}>
-                  Merge Daily Entries
-                </button>
-                <button className="secondary-button" type="button" onClick={onUseCloudVersion} disabled={busy}>
-                  Use Cloud
-                </button>
-                <button className="secondary-button" type="button" onClick={onKeepLocalVersion} disabled={busy}>
-                  Keep Local
-                </button>
-                <button className="ghost-button" type="button" onClick={onDismissConflict} disabled={busy}>
-                  Decide Later
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="auth-stack">
-          <div className="field-grid">
-            <TextField label="Email" type="email" value={authEmail} onChange={onAuthEmailChange} />
-            <TextField label="Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
-          </div>
-          <div className="auth-actions">
-            <button className="secondary-button" type="button" onClick={onSignInWithPassword} disabled={busy}>
-              Sign In
-            </button>
-            <button className="secondary-button" type="button" onClick={onCreatePasswordAccount} disabled={busy}>
-              Create Account
-            </button>
-          </div>
-          <div className="auth-form">
-            <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy}>
-              Send Magic Link Backup
-            </button>
-            <button className="ghost-button" type="button" onClick={onSendPasswordReset} disabled={busy}>
-              Reset Password
-            </button>
-          </div>
-        </div>
-      )}
-      <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
-    </div>
-  )
-}
-
-function ReminderPanel({
-  settings,
-  status,
-  onChange,
-  onRequestPermission,
-}: {
-  settings: ReminderSettings
-  status: DataStatus
-  onChange: (settings: ReminderSettings) => void
-  onRequestPermission: () => void
-}) {
-  return (
-    <div className="reminder-panel">
-      <label className="check-field">
-        <span>Daily check-in reminder</span>
-        <input
-          type="checkbox"
-          checked={settings.enabled}
-          onChange={(event) => onChange({ ...settings, enabled: event.target.checked })}
-        />
-      </label>
-      <div className="field-grid">
-        <TextField label="Time" type="time" value={settings.time} onChange={(time) => onChange({ ...settings, time })} />
-        <TextField label="Message" value={settings.message} onChange={(message) => onChange({ ...settings, message })} />
-      </div>
-      <button className="secondary-button" type="button" onClick={onRequestPermission}>
-        Allow Local Notifications
-      </button>
-      <p className={`data-status ${status.tone}`}>{status.message}</p>
-    </div>
   )
 }
 

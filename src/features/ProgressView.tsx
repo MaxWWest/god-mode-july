@@ -2,20 +2,23 @@ import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import type {
   ChallengeSettings,
-  DailyEntry,
   EntryMap,
   PeriodRecap,
   ProgressPeriod,
-  RuleConfig,
-  RuleKey,
   RuleRate,
   TrendMetric,
   TrendPoint,
-  WorkoutLog,
 } from '../types'
-
-const DAY_IN_MS = 86_400_000
-const MAX_DAILY_EXERCISE_MINUTES = 600
+import {
+  addDays,
+  completionStats,
+  formatShortDate,
+  getEnabledRules,
+  getLoggedDates,
+  getTrackingDates,
+  ruleComplete,
+  selectableEndDate,
+} from '../tracker'
 
 const TREND_METRICS: TrendMetric[] = [
   {
@@ -55,104 +58,6 @@ const TREND_METRICS: TrendMetric[] = [
     getValue: (entry) => entry.mood,
   },
 ]
-
-function addDays(date: string, amount: number): string {
-  const parsed = new Date(`${date}T12:00:00`)
-  parsed.setDate(parsed.getDate() + amount)
-  return parsed.toISOString().slice(0, 10)
-}
-
-function daysBetween(startDate: string, endDate: string): number {
-  return Math.round((new Date(`${endDate}T12:00:00`).getTime() - new Date(`${startDate}T12:00:00`).getTime()) / DAY_IN_MS)
-}
-
-function todayIso(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 10)
-}
-
-function selectableEndDate(settings: ChallengeSettings): string {
-  const today = todayIso()
-  return today < settings.startDate ? settings.startDate : today
-}
-
-function trackingLength(settings: ChallengeSettings, throughDate = selectableEndDate(settings)): number {
-  return daysBetween(settings.startDate, throughDate) + 1
-}
-
-function getTrackingDates(settings: ChallengeSettings, throughDate = selectableEndDate(settings)): string[] {
-  return Array.from({ length: trackingLength(settings, throughDate) }, (_, index) => addDays(settings.startDate, index))
-}
-
-function workoutMinutesTotal(workouts: WorkoutLog[]): number {
-  return Math.min(
-    MAX_DAILY_EXERCISE_MINUTES,
-    workouts.reduce((sum, workout) => sum + workout.minutes, 0),
-  )
-}
-
-function getExerciseMinutes(entry: DailyEntry): number {
-  const workouts = Array.isArray(entry.workouts) ? entry.workouts : []
-  return workouts.length > 0 ? workoutMinutesTotal(workouts) : entry.exerciseMinutes
-}
-
-function getScoredRules(settings: ChallengeSettings): RuleConfig[] {
-  return settings.rules.filter((rule) => rule.deleted !== true)
-}
-
-function getEnabledRules(settings: ChallengeSettings): RuleConfig[] {
-  return getScoredRules(settings).filter((rule) => rule.enabled)
-}
-
-function ruleWeightValue(rule: RuleConfig): number {
-  return rule.weight === 'nonNegotiable' ? 2 : 1
-}
-
-function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: ChallengeSettings): boolean {
-  switch (rule) {
-    case 'exercise':
-      return getExerciseMinutes(entry) >= settings.targets.exerciseMinutes
-    case 'sober':
-      return entry.sober
-    case 'foodLogged':
-      return entry.foodLogged
-    case 'calories':
-      return typeof entry.calories === 'number' && entry.calories > 0 && entry.calories <= settings.targets.calories
-    case 'protein':
-      return (entry.proteinGrams ?? 0) >= settings.targets.proteinGrams
-    case 'water':
-      return (entry.waterLiters ?? 0) >= settings.targets.waterLiters
-    case 'sleep':
-      return (entry.sleepHours ?? 0) >= settings.targets.sleepHours
-    case 'reading':
-      return entry.readTenPages
-    case 'journal':
-      return entry.journaled
-    default:
-      return entry.ruleCompletions?.[rule] === true
-  }
-}
-
-function completionStats(entry: DailyEntry, settings: ChallengeSettings) {
-  const activeRules = getEnabledRules(settings)
-  const totalWeight = activeRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
-  const completedRules = activeRules.filter((rule) => ruleComplete(entry, rule.key, settings))
-  const completedWeight = completedRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
-
-  return {
-    completed: completedRules.length,
-    total: activeRules.length,
-    percent: totalWeight === 0 ? 0 : Math.round((completedWeight / totalWeight) * 100),
-  }
-}
-
-function getLoggedDates(entries: EntryMap, settings: ChallengeSettings): string[] {
-  const endDate = selectableEndDate(settings)
-  return Object.keys(entries)
-    .filter((date) => date >= settings.startDate && date <= endDate)
-    .sort()
-}
 
 function average(values: number[]): number | null {
   if (values.length === 0) return null
@@ -216,13 +121,6 @@ function buildPeriodRecap(entries: EntryMap, settings: ChallengeSettings, period
     weightChange: weights.length >= 2 ? weights[weights.length - 1] - weights[0] : null,
     reflectionCount: loggedEntries.filter((entry) => entry.wentWell.trim() || entry.difficult.trim()).length,
   }
-}
-
-function formatShortDate(date: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(`${date}T12:00:00`))
 }
 
 export default function ProgressView({ entries, settings }: { entries: EntryMap; settings: ChallengeSettings }) {

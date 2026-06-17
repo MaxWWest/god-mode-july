@@ -92,8 +92,9 @@ Friends, leaderboards, private squads, invite-only friend challenges, and the so
 - `src/types.ts` holds shared tracker, cloud sync, friends, squads, challenge, and feed types.
 - `src/ui.tsx` holds reusable field controls, section headers, app notices, icons, and bottom-nav buttons.
 - `src/social.ts` holds shared friend challenge templates, reactions, tabs, and social labels.
-- `src/features/FriendsView.tsx` and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
-- `src/App.tsx` still owns core tracker state, cloud sync, Settings, Calendar, and Check-In. The next cleanup step is to extract Settings and Check-In into feature modules.
+- `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
+- `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
+- `src/App.tsx` still owns core app state, Supabase side effects, sync flows, social mutations, Home, Calendar, and navigation. The next cleanup step is to extract Supabase/social data operations into service modules.
 
 Current social beta coverage:
 
@@ -113,5 +114,5 @@ Current social beta coverage:
 3. Add direct challenge links or invite codes so friends can join from a shared URL.
 4. Add comment threads or lightweight replies if score reactions become too limited.
 5. Add push notifications later if you decide closed-app reminders are worth the setup.
-6. Split Settings and Check-In into feature modules, then keep moving shared tracker helpers into smaller domain files.
+6. Split Supabase sync, friend requests, squads, and challenge mutations into service modules so `App.tsx` keeps shrinking.
 7. Add automated tests around Supabase row normalization, challenge templates, invite flows, and privacy-safe summaries.
