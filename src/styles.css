@@ -1456,6 +1456,7 @@ textarea:focus-visible {
 .friends-profile-panel,
 .add-friend-panel,
 .friend-requests-panel,
+.friend-squads-panel,
 .friend-challenges-panel,
 .leaderboard-panel {
   display: grid;
@@ -1559,6 +1560,72 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.squad-list {
+  display: grid;
+  gap: 10px;
+}
+
+.squad-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.squad-card-main {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.squad-card-main > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.squad-card-main strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.squad-card-main span,
+.squad-card-main p {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.squad-card-main p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.squad-member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.squad-member-list span {
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(156, 92, 255, 0.12);
+  color: #d9d1e5;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.squad-card-actions,
+.squad-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .challenge-create-panel,
 .challenge-card {
   display: grid;
@@ -1599,6 +1666,10 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.challenge-invite-picker > .squad-shortcuts {
+  display: flex;
 }
 
 .challenge-invite-option {
@@ -1906,8 +1977,13 @@ textarea:focus-visible {
   }
 
   .friend-request-card,
-  .friend-request-actions {
+  .friend-request-actions,
+  .squad-card-actions {
     grid-template-columns: 1fr;
+  }
+
+  .squad-card-actions {
+    display: grid;
   }
 
   .challenge-invite-picker > div {

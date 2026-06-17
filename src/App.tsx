@@ -7,6 +7,8 @@ import {
   SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_PROFILE_TABLE,
+  SUPABASE_SQUAD_MEMBER_TABLE,
+  SUPABASE_SQUAD_TABLE,
   SUPABASE_SUMMARY_TABLE,
   SUPABASE_TABLE,
   isSupabaseConfigured,
@@ -126,6 +128,8 @@ type AccountDataExport = {
     summary: ChallengeSummary | null
     friendChallenges: FriendChallenge[]
     friendChallengeParticipants: FriendChallengeParticipant[]
+    friendSquads: FriendSquad[]
+    friendSquadMembers: FriendSquadMember[]
   }
 }
 
@@ -268,12 +272,36 @@ type FriendChallengeView = FriendChallenge & {
   participants: FriendChallengeParticipantView[]
 }
 
+type FriendSquad = {
+  id: string
+  ownerId: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+type FriendSquadMember = {
+  squadId: string
+  userId: string
+  addedBy: string
+  createdAt: string
+}
+
+type FriendSquadView = FriendSquad & {
+  members: FriendProfile[]
+}
+
 type CreateFriendChallengeInput = {
   name: string
   startDate: string
   endDate: string
   scoringMode: FriendChallengeScoringMode
   inviteeIds: string[]
+}
+
+type CreateFriendSquadInput = {
+  name: string
+  memberIds: string[]
 }
 
 type InstallPromptEvent = Event & {
@@ -365,7 +393,7 @@ const TUTORIAL_STEPS = [
   {
     eyebrow: 'Step 5',
     title: 'Compete from Friends.',
-    body: 'Copy your invite code, accept requests, publish scores, and create private friend challenges.',
+    body: 'Copy your invite code, accept requests, save private squads, publish scores, and create friend challenges.',
   },
 ]
 
@@ -1236,6 +1264,15 @@ function isFriendChallengeSchemaError(error: unknown): boolean {
     || message.includes('column')
 }
 
+function isFriendSquadSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('god_mode_squads')
+    || message.includes('god_mode_squad_members')
+    || message.includes('relation')
+    || message.includes('column')
+}
+
 function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
   const candidate = row && typeof row === 'object'
     ? row as Record<string, unknown>
@@ -1299,6 +1336,35 @@ function normalizeFriendChallengeParticipantRow(row: unknown): FriendChallengePa
     summary: normalizeSummaryRow(candidate.summary),
     createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
     respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
+  }
+}
+
+function normalizeFriendSquadRow(row: unknown): FriendSquad | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.owner_id !== 'string') return null
+
+  return {
+    id: candidate.id,
+    ownerId: candidate.owner_id,
+    name: normalizeText(candidate.name).trim() || 'Challenge Squad',
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : new Date().toISOString(),
+  }
+}
+
+function normalizeFriendSquadMemberRow(row: unknown): FriendSquadMember | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.squad_id !== 'string' || typeof candidate.user_id !== 'string') return null
+
+  return {
+    squadId: candidate.squad_id,
+    userId: candidate.user_id,
+    addedBy: typeof candidate.added_by === 'string' ? candidate.added_by : candidate.user_id,
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
   }
 }
 
@@ -1574,6 +1640,7 @@ function App() {
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
   const [friendChallenges, setFriendChallenges] = useState<FriendChallengeView[]>([])
+  const [friendSquads, setFriendSquads] = useState<FriendSquadView[]>([])
   const [friendsBusy, setFriendsBusy] = useState(false)
   const [friendsStatus, setFriendsStatus] = useState<DataStatus>({
     tone: 'neutral',
@@ -1692,6 +1759,7 @@ function App() {
       setLeaderboardRows([])
       setFriendRequests([])
       setFriendChallenges([])
+      setFriendSquads([])
       setFriendsStatus({
         tone: 'neutral',
         message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
@@ -1925,6 +1993,8 @@ function App() {
 
     let friendChallenges: FriendChallenge[] = []
     let friendChallengeParticipants: FriendChallengeParticipant[] = []
+    let friendSquads: FriendSquad[] = []
+    let friendSquadMembers: FriendSquadMember[] = []
     const [myChallengeParticipantsResult, createdChallengesResult] = await Promise.all([
       supabase
         .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
@@ -1982,6 +2052,34 @@ function App() {
       }
     }
 
+    const { data: squadRows, error: squadError } = await supabase
+      .from(SUPABASE_SQUAD_TABLE)
+      .select('id, owner_id, name, created_at, updated_at')
+      .eq('owner_id', user.id)
+
+    if (squadError) {
+      if (!isFriendSquadSchemaError(squadError)) throw squadError
+    } else {
+      friendSquads = (squadRows ?? [])
+        .map(normalizeFriendSquadRow)
+        .filter((row): row is FriendSquad => row !== null)
+      const squadIds = friendSquads.map((squad) => squad.id)
+      if (squadIds.length > 0) {
+        const { data: memberRows, error: memberError } = await supabase
+          .from(SUPABASE_SQUAD_MEMBER_TABLE)
+          .select('squad_id, user_id, added_by, created_at')
+          .in('squad_id', squadIds)
+
+        if (memberError) {
+          if (!isFriendSquadSchemaError(memberError)) throw memberError
+        } else {
+          friendSquadMembers = (memberRows ?? [])
+            .map(normalizeFriendSquadMemberRow)
+            .filter((row): row is FriendSquadMember => row !== null)
+        }
+      }
+    }
+
     return {
       app: 'god-mode-july',
       exportType: 'account-data',
@@ -2003,6 +2101,8 @@ function App() {
         summary: normalizeSummaryRow(summaryResult.data),
         friendChallenges,
         friendChallengeParticipants,
+        friendSquads,
+        friendSquadMembers,
       },
     }
   }
@@ -2241,7 +2341,7 @@ function App() {
     if (!supabase || !user) return
 
     const confirmed = window.confirm(
-      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, friend challenges, and leaderboard summaries from Supabase? Local data on this device will stay.',
+      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, squads, friend challenges, and leaderboard summaries from Supabase? Local data on this device will stay.',
     )
     if (!confirmed) {
       setCloudStatus({ tone: 'neutral', message: 'Cloud data deletion canceled.' })
@@ -2261,6 +2361,18 @@ function App() {
         .delete()
         .eq('user_id', user.id)
       if (challengeParticipantDelete.error && !isFriendChallengeSchemaError(challengeParticipantDelete.error)) throw challengeParticipantDelete.error
+
+      const squadDelete = await supabase
+        .from(SUPABASE_SQUAD_TABLE)
+        .delete()
+        .eq('owner_id', user.id)
+      if (squadDelete.error && !isFriendSquadSchemaError(squadDelete.error)) throw squadDelete.error
+
+      const squadMemberDelete = await supabase
+        .from(SUPABASE_SQUAD_MEMBER_TABLE)
+        .delete()
+        .eq('user_id', user.id)
+      if (squadMemberDelete.error && !isFriendSquadSchemaError(squadMemberDelete.error)) throw squadMemberDelete.error
 
       const friendshipDelete = await supabase
         .from(SUPABASE_FRIENDSHIP_TABLE)
@@ -2295,6 +2407,7 @@ function App() {
       setLeaderboardRows([])
       setFriendRequests([])
       setFriendChallenges([])
+      setFriendSquads([])
       setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
       setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
     } catch (error) {
@@ -2526,6 +2639,8 @@ function App() {
         .sort((a, b) => a.direction.localeCompare(b.direction) || a.displayName.localeCompare(b.displayName))
 
       let challengeViews: FriendChallengeView[] = []
+      let squadViews: FriendSquadView[] = []
+      let squadSchemaReady = true
       const [myChallengeParticipantResult, createdChallengeResult] = await Promise.all([
         supabase
           .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
@@ -2648,12 +2763,66 @@ function App() {
           })
       }
 
+      const { data: squadRows, error: squadError } = await supabase
+        .from(SUPABASE_SQUAD_TABLE)
+        .select('id, owner_id, name, created_at, updated_at')
+        .eq('owner_id', user.id)
+
+      if (squadError) {
+        if (isFriendSquadSchemaError(squadError)) {
+          squadSchemaReady = false
+        } else {
+          throw squadError
+        }
+      } else {
+        const squads = (squadRows ?? [])
+          .map(normalizeFriendSquadRow)
+          .filter((squad): squad is FriendSquad => squad !== null)
+        const squadIds = squads.map((squad) => squad.id)
+        let squadMembers: FriendSquadMember[] = []
+
+        if (squadIds.length > 0) {
+          const { data: memberRows, error: memberError } = await supabase
+            .from(SUPABASE_SQUAD_MEMBER_TABLE)
+            .select('squad_id, user_id, added_by, created_at')
+            .in('squad_id', squadIds)
+
+          if (memberError) {
+            if (isFriendSquadSchemaError(memberError)) {
+              squadSchemaReady = false
+            } else {
+              throw memberError
+            }
+          } else {
+            squadMembers = (memberRows ?? [])
+              .map(normalizeFriendSquadMemberRow)
+              .filter((member): member is FriendSquadMember => member !== null)
+          }
+        }
+
+        squadViews = squadSchemaReady
+          ? squads
+            .map((squad) => ({
+              ...squad,
+              members: squadMembers
+                .filter((member) => member.squadId === squad.id && acceptedFriendIds.includes(member.userId))
+                .map((member) => profilesByUserId.get(member.userId))
+                .filter((memberProfile): memberProfile is FriendProfile => memberProfile !== undefined)
+                .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+            } satisfies FriendSquadView))
+            .sort((a, b) => a.name.localeCompare(b.name))
+          : []
+      }
+
       setLeaderboardRows(rows)
       setFriendRequests(requests)
       setFriendChallenges(challengeViews)
+      setFriendSquads(squadViews)
       setFriendsStatus({
-        tone: 'success',
-        message: `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${requests.length} pending · ${challengeViews.length} challenges.`,
+        tone: squadSchemaReady ? 'success' : 'neutral',
+        message: squadSchemaReady
+          ? `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${squadViews.length} ${squadViews.length === 1 ? 'squad' : 'squads'} · ${requests.length} pending · ${challengeViews.length} challenges.`
+          : 'Friends loaded. Run the updated Supabase schema to enable squads.',
       })
     } catch (error) {
       setFriendsStatus({
@@ -2856,6 +3025,115 @@ function App() {
       setFriendsStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not update friend request.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function createFriendSquad(input: CreateFriendSquadInput) {
+    if (!supabase || !user) return
+
+    const name = input.name.trim()
+    if (!name) {
+      setFriendsStatus({ tone: 'error', message: 'Squad name cannot be empty.' })
+      return
+    }
+
+    const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
+    const memberIds = Array.from(new Set(input.memberIds)).filter((memberId) => acceptedFriendIds.has(memberId))
+    if (memberIds.length === 0) {
+      setFriendsStatus({ tone: 'error', message: 'Choose at least one accepted friend for the squad.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      const { data: squadRow, error: squadError } = await supabase
+        .from(SUPABASE_SQUAD_TABLE)
+        .insert({
+          owner_id: user.id,
+          name,
+          updated_at: new Date().toISOString(),
+        })
+        .select('id, owner_id, name, created_at, updated_at')
+        .single()
+
+      if (squadError) {
+        if (isFriendSquadSchemaError(squadError)) {
+          throw new Error('Run the updated Supabase schema to enable squads.')
+        }
+        throw squadError
+      }
+
+      const squad = normalizeFriendSquadRow(squadRow)
+      if (!squad) throw new Error('Could not create the squad.')
+
+      const { error: memberError } = await supabase
+        .from(SUPABASE_SQUAD_MEMBER_TABLE)
+        .insert(memberIds.map((memberId) => ({
+          squad_id: squad.id,
+          user_id: memberId,
+          added_by: user.id,
+        })))
+
+      if (memberError) {
+        await supabase
+          .from(SUPABASE_SQUAD_TABLE)
+          .delete()
+          .eq('id', squad.id)
+          .eq('owner_id', user.id)
+
+        if (isFriendSquadSchemaError(memberError)) {
+          throw new Error('Run the updated Supabase schema to enable squads.')
+        }
+        throw memberError
+      }
+
+      setFriendsStatus({ tone: 'success', message: `${squad.name} squad created.` })
+      showAppNotice('Squad created.')
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not create the squad.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function deleteFriendSquad(squadId: string) {
+    if (!supabase || !user) return
+
+    const squad = friendSquads.find((item) => item.id === squadId)
+    const confirmed = window.confirm(`Delete ${squad?.name ?? 'this squad'}? Challenges already created will stay.`)
+    if (!confirmed) {
+      setFriendsStatus({ tone: 'neutral', message: 'Squad deletion canceled.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      const { error } = await supabase
+        .from(SUPABASE_SQUAD_TABLE)
+        .delete()
+        .eq('id', squadId)
+        .eq('owner_id', user.id)
+
+      if (error) {
+        if (isFriendSquadSchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable squads.')
+        }
+        throw error
+      }
+
+      setFriendsStatus({ tone: 'success', message: 'Squad deleted.' })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not delete the squad.',
       })
     } finally {
       setFriendsBusy(false)
@@ -3260,6 +3538,7 @@ function App() {
             leaderboardRows={leaderboardRows}
             friendRequests={friendRequests}
             friendChallenges={friendChallenges}
+            friendSquads={friendSquads}
             status={friendsStatus}
             busy={friendsBusy}
             onDisplayNameChange={setDisplayNameDraft}
@@ -3269,6 +3548,8 @@ function App() {
             onAddFriend={sendFriendRequestByInviteCode}
             onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
             onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
+            onCreateSquad={createFriendSquad}
+            onDeleteSquad={deleteFriendSquad}
             onCreateChallenge={createFriendChallenge}
             onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
             onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
@@ -3672,6 +3953,7 @@ function FriendsView({
   leaderboardRows,
   friendRequests,
   friendChallenges,
+  friendSquads,
   status,
   busy,
   onDisplayNameChange,
@@ -3681,6 +3963,8 @@ function FriendsView({
   onAddFriend,
   onAcceptRequest,
   onDeclineRequest,
+  onCreateSquad,
+  onDeleteSquad,
   onCreateChallenge,
   onAcceptChallenge,
   onDeclineChallenge,
@@ -3697,6 +3981,7 @@ function FriendsView({
   leaderboardRows: LeaderboardRow[]
   friendRequests: FriendRequest[]
   friendChallenges: FriendChallengeView[]
+  friendSquads: FriendSquadView[]
   status: DataStatus
   busy: boolean
   onDisplayNameChange: (value: string) => void
@@ -3706,6 +3991,8 @@ function FriendsView({
   onAddFriend: () => void
   onAcceptRequest: (userId: string) => void
   onDeclineRequest: (userId: string) => void
+  onCreateSquad: (input: CreateFriendSquadInput) => void
+  onDeleteSquad: (squadId: string) => void
   onCreateChallenge: (input: CreateFriendChallengeInput) => void
   onAcceptChallenge: (challengeId: string) => void
   onDeclineChallenge: (challengeId: string) => void
@@ -3722,6 +4009,8 @@ function FriendsView({
   const [challengeEndDate, setChallengeEndDate] = useState(addDays(todayIso(), 6))
   const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>('personal')
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
+  const [squadName, setSquadName] = useState('Training Squad')
+  const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
 
   function toggleChallengeInvite(userId: string) {
     setChallengeInviteIds((current) => (
@@ -3729,6 +4018,27 @@ function FriendsView({
         ? current.filter((id) => id !== userId)
         : [...current, userId]
     ))
+  }
+
+  function toggleSquadMember(userId: string) {
+    setSquadMemberIds((current) => (
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    ))
+  }
+
+  function applySquadToChallenge(squad: FriendSquadView) {
+    const memberIds = squad.members.map((member) => member.userId)
+    setChallengeInviteIds((current) => Array.from(new Set([...current, ...memberIds])))
+  }
+
+  function submitSquad() {
+    const acceptedFriendIds = new Set(acceptedFriends.map((friend) => friend.userId))
+    onCreateSquad({
+      name: squadName,
+      memberIds: squadMemberIds.filter((userId) => acceptedFriendIds.has(userId)),
+    })
   }
 
   function submitChallenge() {
@@ -3867,6 +4177,58 @@ function FriendsView({
         )}
       </section>
 
+      <section className="panel friend-squads-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Challenge squads</p>
+            <h2>Small private groups</h2>
+          </div>
+          <span>{friendSquads.length}</span>
+        </div>
+        <div className="challenge-create-panel">
+          <div className="field-grid">
+            <TextField label="Squad name" value={squadName} onChange={setSquadName} />
+          </div>
+          <div className="challenge-invite-picker">
+            <small>Squad members</small>
+            {acceptedFriends.length === 0 ? (
+              <p>No accepted friends yet.</p>
+            ) : (
+              <div>
+                {acceptedFriends.map((friend) => (
+                  <label className="challenge-invite-option" key={friend.userId}>
+                    <input
+                      type="checkbox"
+                      checked={squadMemberIds.includes(friend.userId)}
+                      onChange={() => toggleSquadMember(friend.userId)}
+                    />
+                    <span>{friend.displayName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <button className="secondary-button" type="button" onClick={submitSquad} disabled={busy || !squadName.trim() || squadMemberIds.length === 0}>
+            Create Squad
+          </button>
+        </div>
+        {friendSquads.length === 0 ? (
+          <p className="empty-leaderboard">No squads yet. Save a group once, then use it when creating challenges.</p>
+        ) : (
+          <div className="squad-list">
+            {friendSquads.map((squad) => (
+              <FriendSquadCard
+                key={squad.id}
+                squad={squad}
+                busy={busy}
+                onUseForChallenge={() => applySquadToChallenge(squad)}
+                onDelete={() => onDeleteSquad(squad.id)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel friend-challenges-panel">
         <div className="section-heading">
           <div>
@@ -3890,6 +4252,15 @@ function FriendsView({
           </div>
           <div className="challenge-invite-picker">
             <small>Invite friends</small>
+            {friendSquads.length > 0 && (
+              <div className="squad-shortcuts">
+                {friendSquads.map((squad) => (
+                  <button className="ghost-button" type="button" key={squad.id} onClick={() => applySquadToChallenge(squad)} disabled={busy || squad.members.length === 0}>
+                    Use {squad.name}
+                  </button>
+                ))}
+              </div>
+            )}
             {acceptedFriends.length === 0 ? (
               <p>No accepted friends yet.</p>
             ) : (
@@ -3982,6 +4353,46 @@ function FriendRequestCard({
       ) : (
         <span className="request-badge">Pending</span>
       )}
+    </article>
+  )
+}
+
+function FriendSquadCard({
+  squad,
+  busy,
+  onUseForChallenge,
+  onDelete,
+}: {
+  squad: FriendSquadView
+  busy: boolean
+  onUseForChallenge: () => void
+  onDelete: () => void
+}) {
+  return (
+    <article className="squad-card">
+      <div className="squad-card-main">
+        <div>
+          <strong>{squad.name}</strong>
+          <span>{squad.members.length} {squad.members.length === 1 ? 'member' : 'members'}</span>
+        </div>
+        {squad.members.length === 0 ? (
+          <p>No active members. Add accepted friends to a new squad.</p>
+        ) : (
+          <div className="squad-member-list">
+            {squad.members.map((member) => (
+              <span key={member.userId}>{member.displayName}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="squad-card-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onUseForChallenge} disabled={busy || squad.members.length === 0}>
+          Use for Challenge
+        </button>
+        <button className="ghost-button" type="button" onClick={onDelete} disabled={busy}>
+          Delete
+        </button>
+      </div>
     </article>
   )
 }

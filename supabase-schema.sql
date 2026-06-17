@@ -172,6 +172,107 @@ create policy "Users can remove their friendships"
   for delete
   using (auth.uid() = user_a or auth.uid() = user_b);
 
+create table if not exists public.god_mode_squads (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.god_mode_squad_members (
+  squad_id uuid not null references public.god_mode_squads(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  added_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (squad_id, user_id)
+);
+
+alter table public.god_mode_squads enable row level security;
+alter table public.god_mode_squad_members enable row level security;
+
+drop policy if exists "Users can read their owned squads" on public.god_mode_squads;
+create policy "Users can read their owned squads"
+  on public.god_mode_squads
+  for select
+  using (auth.uid() = owner_id);
+
+drop policy if exists "Users can create their owned squads" on public.god_mode_squads;
+create policy "Users can create their owned squads"
+  on public.god_mode_squads
+  for insert
+  with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can update their owned squads" on public.god_mode_squads;
+create policy "Users can update their owned squads"
+  on public.god_mode_squads
+  for update
+  using (auth.uid() = owner_id)
+  with check (auth.uid() = owner_id);
+
+drop policy if exists "Users can delete their owned squads" on public.god_mode_squads;
+create policy "Users can delete their owned squads"
+  on public.god_mode_squads
+  for delete
+  using (auth.uid() = owner_id);
+
+drop policy if exists "Users can read owned squad members" on public.god_mode_squad_members;
+create policy "Users can read owned squad members"
+  on public.god_mode_squad_members
+  for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.god_mode_squads squad
+      where squad.id = god_mode_squad_members.squad_id
+        and squad.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Squad owners can add accepted friends" on public.god_mode_squad_members;
+create policy "Squad owners can add accepted friends"
+  on public.god_mode_squad_members
+  for insert
+  with check (
+    auth.uid() = added_by
+    and user_id <> auth.uid()
+    and exists (
+      select 1
+      from public.god_mode_squads squad
+      where squad.id = god_mode_squad_members.squad_id
+        and squad.owner_id = auth.uid()
+    )
+    and exists (
+      select 1
+      from public.god_mode_friendships friendship
+      where friendship.status = 'accepted'
+        and (
+          (
+            friendship.user_a = auth.uid()
+            and friendship.user_b = god_mode_squad_members.user_id
+          ) or (
+            friendship.user_b = auth.uid()
+            and friendship.user_a = god_mode_squad_members.user_id
+          )
+        )
+    )
+  );
+
+drop policy if exists "Users can remove owned squad members" on public.god_mode_squad_members;
+create policy "Users can remove owned squad members"
+  on public.god_mode_squad_members
+  for delete
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.god_mode_squads squad
+      where squad.id = god_mode_squad_members.squad_id
+        and squad.owner_id = auth.uid()
+    )
+  );
+
 create table if not exists public.god_mode_challenge_summaries (
   user_id uuid primary key references auth.users(id) on delete cascade,
   challenge_title text not null,
