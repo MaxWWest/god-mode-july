@@ -24,7 +24,6 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Friend request accept/decline flow
 - Share-safe leaderboard competition
 - Local daily notification reminders
-- Closed-app push reminders through Vercel Cron and Web Push
 - Automatic localStorage persistence
 - PWA icons
 
@@ -77,8 +76,6 @@ VITE_SUPABASE_ANON_KEY
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
 Friends and leaderboards use separate Supabase tables for profiles, friendships, and challenge summaries. Friends can compare completion, streak, and logged-day stats, but raw entries, reflections, weight, and calories are not shared.
-
-Closed-app reminders use Web Push. The browser stores a device subscription, Supabase stores that subscription for the signed-in user, and Vercel Cron calls `/api/send-reminders` to send reminders when each device reaches its saved local time.
 
 ## Next recommended milestones
 

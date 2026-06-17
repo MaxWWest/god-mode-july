@@ -5,7 +5,6 @@ import { loadFromStorage, saveToStorage } from './storage'
 import {
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_PROFILE_TABLE,
-  SUPABASE_PUSH_TABLE,
   SUPABASE_SUMMARY_TABLE,
   SUPABASE_TABLE,
   isSupabaseConfigured,
@@ -111,7 +110,6 @@ type AccountDataExport = {
     profile: FriendProfile | null
     friendships: FriendshipRow[]
     summary: ChallengeSummary | null
-    pushSubscriptions: PushReminderSubscription[]
   }
 }
 
@@ -163,19 +161,6 @@ type ReminderSettings = {
   enabled: boolean
   time: string
   message: string
-}
-
-type PushReminderSubscription = {
-  endpoint: string
-  subscription: PushSubscriptionJSON | Record<string, unknown>
-  title: string
-  message: string
-  reminderTime: string
-  timezone: string
-  enabled: boolean
-  lastSentDate: string | null
-  lastError: string | null
-  updatedAt: string | null
 }
 
 type FriendProfile = {
@@ -242,8 +227,6 @@ const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
 const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
-const isPushBackendConfigured = Boolean(isSupabaseConfigured && VAPID_PUBLIC_KEY)
 
 const DEFAULT_TARGETS: ChallengeTargets = {
   exerciseMinutes: 90,
@@ -544,28 +527,6 @@ function normalizeReminderSettings(value: unknown): ReminderSettings {
     message: typeof candidate.message === 'string' && candidate.message.trim()
       ? candidate.message.trim()
       : DEFAULT_REMINDER_SETTINGS.message,
-  }
-}
-
-function normalizePushReminderRow(row: unknown): PushReminderSubscription | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.endpoint !== 'string') return null
-
-  return {
-    endpoint: candidate.endpoint,
-    subscription: candidate.subscription && typeof candidate.subscription === 'object'
-      ? candidate.subscription as PushSubscriptionJSON
-      : {},
-    title: normalizeText(candidate.title) || DEFAULT_SETTINGS.title,
-    message: normalizeText(candidate.message) || DEFAULT_REMINDER_SETTINGS.message,
-    reminderTime: typeof candidate.reminder_time === 'string' ? candidate.reminder_time.slice(0, 5) : DEFAULT_REMINDER_SETTINGS.time,
-    timezone: normalizeText(candidate.timezone) || 'UTC',
-    enabled: candidate.enabled !== false,
-    lastSentDate: isIsoDate(candidate.last_sent_date) ? candidate.last_sent_date : null,
-    lastError: typeof candidate.last_error === 'string' ? candidate.last_error : null,
-    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : null,
   }
 }
 
@@ -1068,19 +1029,6 @@ async function consumeAuthRedirectSession(): Promise<User | null> {
   return null
 }
 
-function urlBase64ToArrayBuffer(value: string): ArrayBuffer {
-  const padding = '='.repeat((4 - value.length % 4) % 4)
-  const base64 = `${value}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
-  const rawData = window.atob(base64)
-  const output = new Uint8Array(new ArrayBuffer(rawData.length))
-
-  for (let index = 0; index < rawData.length; index += 1) {
-    output[index] = rawData.charCodeAt(index)
-  }
-
-  return output.buffer
-}
-
 function makeBackupPayload(settings: ChallengeSettings, entries: EntryMap): BackupPayload {
   return {
     app: 'god-mode-july',
@@ -1216,11 +1164,6 @@ function App() {
     tone: 'neutral',
     message: 'Local reminders run while the app is open.',
   })
-  const [pushReminderBusy, setPushReminderBusy] = useState(false)
-  const [pushReminderStatus, setPushReminderStatus] = useState<DataStatus>({
-    tone: 'neutral',
-    message: isPushBackendConfigured ? 'Sign in to enable closed-app reminders.' : 'Add push env vars to enable closed-app reminders.',
-  })
   const [friendProfile, setFriendProfile] = useState<FriendProfile | null>(null)
   const [displayNameDraft, setDisplayNameDraft] = useState('')
   const [inviteCodeDraft, setInviteCodeDraft] = useState('')
@@ -1318,17 +1261,9 @@ function App() {
         tone: 'neutral',
         message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
       })
-      setPushReminderStatus({
-        tone: 'neutral',
-        message: isPushBackendConfigured ? 'Sign in to enable closed-app reminders.' : 'Add push env vars to enable closed-app reminders.',
-      })
       return
     }
 
-    setPushReminderStatus({
-      tone: 'neutral',
-      message: isPushBackendConfigured ? 'Enable closed-app push for this device.' : 'Add push env vars to enable closed-app reminders.',
-    })
     void refreshFriendsData()
   }, [user])
 
@@ -1370,36 +1305,6 @@ function App() {
       if (intervalId) window.clearInterval(intervalId)
     }
   }, [reminderSettings, settings.title])
-
-  useEffect(() => {
-    if (!supabase || !user || !isPushBackendConfigured || !reminderSettings.enabled) return
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-
-    let isMounted = true
-
-    async function syncExistingPushSubscription() {
-      try {
-        const registration = await navigator.serviceWorker.getRegistration()
-        const subscription = await registration?.pushManager.getSubscription()
-        if (!subscription) return
-
-        await savePushReminderSubscription(subscription)
-        if (isMounted) {
-          setPushReminderStatus({ tone: 'success', message: `Closed-app push reminder updated for ${reminderSettings.time}.` })
-        }
-      } catch {
-        if (isMounted) {
-          setPushReminderStatus({ tone: 'error', message: 'Could not update the closed-app push reminder.' })
-        }
-      }
-    }
-
-    void syncExistingPushSubscription()
-
-    return () => {
-      isMounted = false
-    }
-  }, [user, reminderSettings.enabled, reminderSettings.time, reminderSettings.message, settings.title])
 
   useEffect(() => {
     const onBeforeInstallPrompt = (event: Event) => {
@@ -1556,7 +1461,6 @@ function App() {
       profileResult,
       friendshipResult,
       summaryResult,
-      pushResult,
     ] = await Promise.all([
       supabase
         .from(SUPABASE_TABLE)
@@ -1577,17 +1481,12 @@ function App() {
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle(),
-      supabase
-        .from(SUPABASE_PUSH_TABLE)
-        .select('endpoint, subscription, title, message, reminder_time, timezone, enabled, last_sent_date, last_error, updated_at')
-        .eq('user_id', user.id),
     ])
 
     if (snapshotResult.error) throw snapshotResult.error
     if (profileResult.error) throw profileResult.error
     if (friendshipResult.error) throw friendshipResult.error
     if (summaryResult.error) throw summaryResult.error
-    if (pushResult.error) throw pushResult.error
 
     return {
       app: 'god-mode-july',
@@ -1608,9 +1507,6 @@ function App() {
           .map(normalizeFriendshipRow)
           .filter((row): row is FriendshipRow => row !== null),
         summary: normalizeSummaryRow(summaryResult.data),
-        pushSubscriptions: (pushResult.data ?? [])
-          .map(normalizePushReminderRow)
-          .filter((row): row is PushReminderSubscription => row !== null),
       },
     }
   }
@@ -1822,7 +1718,7 @@ function App() {
     if (!supabase || !user) return
 
     const confirmed = window.confirm(
-      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, leaderboard summary, and push reminder subscriptions from Supabase? Local data on this device will stay.',
+      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, and leaderboard summary from Supabase? Local data on this device will stay.',
     )
     if (!confirmed) {
       setCloudStatus({ tone: 'neutral', message: 'Cloud data deletion canceled.' })
@@ -1836,12 +1732,6 @@ function App() {
         .delete()
         .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
       if (friendshipDelete.error) throw friendshipDelete.error
-
-      const pushDelete = await supabase
-        .from(SUPABASE_PUSH_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (pushDelete.error) throw pushDelete.error
 
       const summaryDelete = await supabase
         .from(SUPABASE_SUMMARY_TABLE)
@@ -1870,7 +1760,6 @@ function App() {
       setLeaderboardRows([])
       setFriendRequests([])
       setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
-      setPushReminderStatus({ tone: 'neutral', message: 'Cloud push reminders deleted.' })
       setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
     } catch (error) {
       setCloudStatus({
@@ -1964,139 +1853,6 @@ function App() {
       setReminderStatus({ tone: 'success', message: `Reminder scheduled for ${reminderSettings.time}.` })
     } else {
       setReminderStatus({ tone: 'error', message: 'Notifications were not allowed.' })
-    }
-  }
-
-  async function readyServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
-    if (!('serviceWorker' in navigator)) {
-      throw new Error('This browser does not support service workers.')
-    }
-
-    let timeoutId: number | undefined
-    const timeout = new Promise<never>((_, reject) => {
-      timeoutId = window.setTimeout(() => {
-        reject(new Error('Service worker is not ready yet. Try again from the deployed PWA after a refresh.'))
-      }, 10_000)
-    })
-
-    try {
-      return await Promise.race([navigator.serviceWorker.ready, timeout])
-    } finally {
-      if (timeoutId) window.clearTimeout(timeoutId)
-    }
-  }
-
-  async function savePushReminderSubscription(subscription: PushSubscription) {
-    if (!supabase || !user) throw new Error('Sign in before enabling closed-app reminders.')
-
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-    const { error } = await supabase
-      .from(SUPABASE_PUSH_TABLE)
-      .upsert({
-        endpoint: subscription.endpoint,
-        user_id: user.id,
-        subscription: subscription.toJSON(),
-        title: settings.title,
-        message: reminderSettings.message,
-        reminder_time: reminderSettings.time,
-        timezone,
-        enabled: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'endpoint' })
-
-    if (error) throw error
-  }
-
-  async function enablePushReminder() {
-    if (!supabase || !user) {
-      setPushReminderStatus({ tone: 'error', message: 'Sign in before enabling closed-app reminders.' })
-      return
-    }
-
-    if (!isPushBackendConfigured || !VAPID_PUBLIC_KEY) {
-      setPushReminderStatus({ tone: 'error', message: 'Add the push reminder env vars, redeploy, and try again.' })
-      return
-    }
-
-    if (!('Notification' in window)) {
-      setPushReminderStatus({ tone: 'error', message: 'This browser does not support notifications.' })
-      return
-    }
-
-    if (!('PushManager' in window)) {
-      setPushReminderStatus({ tone: 'error', message: 'This browser does not support push reminders.' })
-      return
-    }
-
-    setPushReminderBusy(true)
-    try {
-      const permission = Notification.permission === 'granted'
-        ? 'granted'
-        : await Notification.requestPermission()
-
-      if (permission !== 'granted') {
-        setPushReminderStatus({ tone: 'error', message: 'Notifications were not allowed.' })
-        return
-      }
-
-      const registration = await readyServiceWorkerRegistration()
-      const existingSubscription = await registration.pushManager.getSubscription()
-      const subscription = existingSubscription ?? await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToArrayBuffer(VAPID_PUBLIC_KEY),
-      })
-
-      await savePushReminderSubscription(subscription)
-      updateReminder({ ...reminderSettings, enabled: true })
-      setReminderStatus({ tone: 'success', message: `Local reminder scheduled for ${reminderSettings.time}.` })
-      setPushReminderStatus({ tone: 'success', message: `Closed-app push reminder enabled for ${reminderSettings.time}.` })
-    } catch (error) {
-      setPushReminderStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not enable closed-app reminders.',
-      })
-    } finally {
-      setPushReminderBusy(false)
-    }
-  }
-
-  async function disablePushReminder() {
-    if (!supabase || !user) {
-      setPushReminderStatus({ tone: 'error', message: 'Sign in before changing closed-app reminders.' })
-      return
-    }
-
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setPushReminderStatus({ tone: 'error', message: 'This browser does not support push reminders.' })
-      return
-    }
-
-    setPushReminderBusy(true)
-    try {
-      const registration = await navigator.serviceWorker.getRegistration()
-      const subscription = await registration?.pushManager.getSubscription()
-
-      if (!subscription) {
-        setPushReminderStatus({ tone: 'neutral', message: 'No push reminder subscription found on this device.' })
-        return
-      }
-
-      const { error } = await supabase
-        .from(SUPABASE_PUSH_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-        .eq('endpoint', subscription.endpoint)
-      if (error) throw error
-
-      await subscription.unsubscribe()
-      setPushReminderStatus({ tone: 'neutral', message: 'Closed-app push reminder disabled on this device.' })
-    } catch (error) {
-      setPushReminderStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not disable closed-app reminders.',
-      })
-    } finally {
-      setPushReminderBusy(false)
     }
   }
 
@@ -2639,9 +2395,6 @@ function App() {
             entries={entries}
             reminderSettings={reminderSettings}
             reminderStatus={reminderStatus}
-            pushReminderStatus={pushReminderStatus}
-            pushReminderBusy={pushReminderBusy}
-            pushBackendConfigured={isPushBackendConfigured}
             cloudConfigured={isSupabaseConfigured}
             cloudStatus={cloudStatus}
             cloudBusy={cloudBusy}
@@ -2654,8 +2407,6 @@ function App() {
             onDataImport={replaceData}
             onReminderChange={updateReminder}
             onRequestReminderPermission={requestReminderPermission}
-            onEnablePushReminder={enablePushReminder}
-            onDisablePushReminder={disablePushReminder}
             onAuthEmailChange={setAuthEmail}
             onAuthPasswordChange={setAuthPassword}
             onSignInWithPassword={signInWithPassword}
@@ -3192,9 +2943,6 @@ function SettingsView({
   entries,
   reminderSettings,
   reminderStatus,
-  pushReminderStatus,
-  pushReminderBusy,
-  pushBackendConfigured,
   cloudConfigured,
   cloudStatus,
   cloudBusy,
@@ -3207,8 +2955,6 @@ function SettingsView({
   onDataImport,
   onReminderChange,
   onRequestReminderPermission,
-  onEnablePushReminder,
-  onDisablePushReminder,
   onAuthEmailChange,
   onAuthPasswordChange,
   onSignInWithPassword,
@@ -3228,9 +2974,6 @@ function SettingsView({
   entries: EntryMap
   reminderSettings: ReminderSettings
   reminderStatus: DataStatus
-  pushReminderStatus: DataStatus
-  pushReminderBusy: boolean
-  pushBackendConfigured: boolean
   cloudConfigured: boolean
   cloudStatus: DataStatus
   cloudBusy: boolean
@@ -3243,8 +2986,6 @@ function SettingsView({
   onDataImport: (settings: ChallengeSettings, entries: EntryMap) => void
   onReminderChange: (settings: ReminderSettings) => void
   onRequestReminderPermission: () => void
-  onEnablePushReminder: () => void
-  onDisablePushReminder: () => void
   onAuthEmailChange: (email: string) => void
   onAuthPasswordChange: (password: string) => void
   onSignInWithPassword: () => void
@@ -3398,14 +3139,8 @@ function SettingsView({
         <ReminderPanel
           settings={reminderSettings}
           status={reminderStatus}
-          pushStatus={pushReminderStatus}
-          pushBusy={pushReminderBusy}
-          pushConfigured={pushBackendConfigured}
-          signedIn={Boolean(user)}
           onChange={onReminderChange}
           onRequestPermission={onRequestReminderPermission}
-          onEnablePushReminder={onEnablePushReminder}
-          onDisablePushReminder={onDisablePushReminder}
         />
       </section>
 
@@ -3639,28 +3374,14 @@ function CloudSyncPanel({
 function ReminderPanel({
   settings,
   status,
-  pushStatus,
-  pushBusy,
-  pushConfigured,
-  signedIn,
   onChange,
   onRequestPermission,
-  onEnablePushReminder,
-  onDisablePushReminder,
 }: {
   settings: ReminderSettings
   status: DataStatus
-  pushStatus: DataStatus
-  pushBusy: boolean
-  pushConfigured: boolean
-  signedIn: boolean
   onChange: (settings: ReminderSettings) => void
   onRequestPermission: () => void
-  onEnablePushReminder: () => void
-  onDisablePushReminder: () => void
 }) {
-  const pushReady = pushConfigured && signedIn
-
   return (
     <div className="reminder-panel">
       <label className="check-field">
@@ -3679,15 +3400,6 @@ function ReminderPanel({
         Allow Local Notifications
       </button>
       <p className={`data-status ${status.tone}`}>{status.message}</p>
-      <div className="push-reminder-actions">
-        <button className="secondary-button" type="button" onClick={onEnablePushReminder} disabled={pushBusy || !pushReady}>
-          Enable Closed-App Push
-        </button>
-        <button className="ghost-button" type="button" onClick={onDisablePushReminder} disabled={pushBusy || !signedIn}>
-          Disable Push
-        </button>
-      </div>
-      <p className={`data-status ${pushStatus.tone}`}>{pushBusy ? 'Working...' : pushStatus.message}</p>
     </div>
   )
 }
