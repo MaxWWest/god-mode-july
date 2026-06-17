@@ -15,372 +15,73 @@ import {
   isSupabaseConfigured,
   supabase,
 } from './supabase'
-
-type View = 'home' | 'check-in' | 'calendar' | 'progress' | 'friends' | 'settings'
-type BuiltInRuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protein' | 'water' | 'sleep' | 'reading' | 'journal'
-type CustomRuleKey = `custom-${string}`
-type RuleKey = BuiltInRuleKey | CustomRuleKey
-type RuleWeight = 'nonNegotiable' | 'supporting'
-type RuleCategoryKey = string
-
-type RuleCategoryConfig = {
-  key: RuleCategoryKey
-  label: string
-}
-
-type RuleConfig = {
-  key: RuleKey
-  label: string
-  icon: string
-  enabled: boolean
-  weight: RuleWeight
-  category: RuleCategoryKey
-  deleted?: boolean
-}
-
-type ChallengeTargets = {
-  exerciseMinutes: number
-  calories: number
-  proteinGrams: number
-  waterLiters: number
-  sleepHours: number
-}
-
-type ChallengeSettings = {
-  title: string
-  startDate: string
-  endDate: string
-  targets: ChallengeTargets
-  categories: RuleCategoryConfig[]
-  rules: RuleConfig[]
-}
-
-type DailyEntry = {
-  date: string
-  exerciseMinutes: number
-  workouts: WorkoutLog[]
-  sober: boolean
-  foodLogged: boolean
-  finalizedAt: string | null
-  calories: number | null
-  proteinGrams: number | null
-  waterLiters: number | null
-  weightPounds: number | null
-  readTenPages: boolean
-  journaled: boolean
-  ruleCompletions: Record<string, boolean>
-  mood: number
-  energy: number
-  hunger: number
-  sleepHours: number | null
-  wentWell: string
-  difficult: string
-}
-
-type WorkoutLog = {
-  id: string
-  type: string
-  minutes: number
-}
-
-type EntryMap = Record<string, DailyEntry>
-
-type BackupPayload = {
-  app: 'god-mode-july'
-  version: 1
-  exportedAt: string
-  settings: ChallengeSettings
-  entries: EntryMap
-}
-
-type SyncMeta = {
-  lastCloudUpdatedAt: string | null
-  lastLocalChangeAt: string | null
-}
-
-type CloudSnapshot = {
-  settings: ChallengeSettings
-  entries: EntryMap
-  updatedAt: string | null
-}
-
-type SyncConflict = {
-  cloud: CloudSnapshot
-  localChangedAt: string | null
-  message: string
-}
-
-type AccountDataExport = {
-  app: 'god-mode-july'
-  exportType: 'account-data'
-  exportedAt: string
-  user: {
-    id: string
-    email: string | null
-  }
-  local: {
-    settings: ChallengeSettings
-    entries: EntryMap
-    privacy: PrivacySettings
-  }
-  cloud: {
-    snapshot: CloudSnapshot | null
-    profile: FriendProfile | null
-    friendships: FriendshipRow[]
-    summary: ChallengeSummary | null
-    friendChallenges: FriendChallenge[]
-    friendChallengeParticipants: FriendChallengeParticipant[]
-    friendSquads: FriendSquad[]
-    friendSquadMembers: FriendSquadMember[]
-    friendEvents: FriendEvent[]
-  }
-}
-
-type DataStatus = {
-  tone: 'success' | 'error' | 'neutral'
-  message: string
-}
-
-type AppNotice = {
-  id: number
-  tone: 'success' | 'error' | 'neutral'
-  message: string
-}
-
-type PrivacySettings = {
-  showWeeklyCompletion: boolean
-  showAverageCompletion: boolean
-  showStreak: boolean
-  showLoggedDays: boolean
-}
-
-type RuleRate = RuleConfig & {
-  rate: number
-}
-
-type ProgressPeriod = 'week' | 'month'
-
-type PeriodRecap = {
-  label: string
-  startDate: string
-  endDate: string
-  totalDays: number
-  loggedDays: number
-  averageCompletion: number
-  bestRule: RuleRate | null
-  weakestRule: RuleRate | null
-  averageSleep: number | null
-  averageCalories: number | null
-  averageMood: number | null
-  weightChange: number | null
-  reflectionCount: number
-}
-
-type TrendMetricKey = 'weight' | 'sleep' | 'calories' | 'mood'
-
-type TrendMetric = {
-  key: TrendMetricKey
-  label: string
-  unit: string
-  color: string
-  emptyLabel: string
-  format: (value: number) => string
-  getValue: (entry: DailyEntry) => number | null
-}
-
-type TrendPoint = {
-  date: string
-  value: number
-}
-
-type ReminderSettings = {
-  enabled: boolean
-  time: string
-  message: string
-}
-
-type FriendProfile = {
-  userId: string
-  displayName: string
-  inviteCode: string
-}
-
-type ChallengeSummary = {
-  userId: string
-  challengeTitle: string
-  startDate: string
-  endDate: string
-  loggedDays: number
-  totalDays: number
-  averageCompletion: number
-  weeklyCompletion: number
-  currentStreak: number
-  longestStreak: number
-  lastLoggedDate: string | null
-  updatedAt: string
-  privacy: PrivacySettings
-  note?: string
-  reaction?: ScoreReaction | null
-}
-
-type LeaderboardRow = FriendProfile & {
-  summary: ChallengeSummary | null
-  isCurrentUser: boolean
-}
-
-type FriendshipStatus = 'pending' | 'accepted' | 'declined'
-
-type FriendshipRow = {
-  userA: string
-  userB: string
-  createdBy: string
-  requestedBy: string
-  status: FriendshipStatus
-  createdAt: string
-  respondedAt: string | null
-}
-
-type FriendRequest = FriendProfile & {
-  userA: string
-  userB: string
-  requestedBy: string
-  direction: 'incoming' | 'outgoing'
-  createdAt: string
-}
-
-type FriendChallengeScoringMode = 'personal' | 'shared'
-type FriendChallengeParticipantStatus = 'pending' | 'accepted' | 'declined'
-type ScoreReaction = 'locked-in' | 'comeback' | 'streak' | 'respect'
-
-type FriendChallenge = {
-  id: string
-  creatorId: string
-  name: string
-  startDate: string
-  endDate: string
-  scoringMode: FriendChallengeScoringMode
-  settings: ChallengeSettings
-  createdAt: string
-  updatedAt: string
-}
-
-type FriendChallengeParticipant = {
-  challengeId: string
-  userId: string
-  invitedBy: string
-  status: FriendChallengeParticipantStatus
-  summary: ChallengeSummary | null
-  createdAt: string
-  respondedAt: string | null
-}
-
-type FriendChallengeParticipantView = FriendProfile & {
-  invitedBy: string
-  status: FriendChallengeParticipantStatus
-  summary: ChallengeSummary | null
-  createdAt: string
-  respondedAt: string | null
-  isCurrentUser: boolean
-}
-
-type FriendChallengeView = FriendChallenge & {
-  currentUserStatus: FriendChallengeParticipantStatus
-  isCreator: boolean
-  participants: FriendChallengeParticipantView[]
-}
-
-type FriendSquad = {
-  id: string
-  ownerId: string
-  name: string
-  createdAt: string
-  updatedAt: string
-}
-
-type FriendSquadMember = {
-  squadId: string
-  userId: string
-  addedBy: string
-  createdAt: string
-}
-
-type FriendSquadView = FriendSquad & {
-  members: FriendProfile[]
-}
-
-type CreateFriendChallengeInput = {
-  name: string
-  startDate: string
-  endDate: string
-  scoringMode: FriendChallengeScoringMode
-  inviteeIds: string[]
-  templateId?: string
-}
-
-type CreateFriendSquadInput = {
-  name: string
-  memberIds: string[]
-}
-
-type UpdateFriendSquadInput = CreateFriendSquadInput & {
-  squadId: string
-}
-
-type InviteFriendChallengeInput = {
-  challengeId: string
-  inviteeIds: string[]
-}
-
-type ChallengeTemplate = {
-  id: string
-  name: string
-  durationDays: number
-  scoringMode: FriendChallengeScoringMode
-  note: string
-  targetOverrides?: Partial<ChallengeTargets>
-  ruleOverrides?: Partial<Record<BuiltInRuleKey, Partial<Pick<RuleConfig, 'enabled' | 'weight' | 'category'>>>>
-}
-
-type FriendsTab = 'overview' | 'network' | 'squads' | 'challenges' | 'leaderboard'
-
-type FriendEventType =
-  | 'friend_request_sent'
-  | 'friend_request_accepted'
-  | 'friend_request_declined'
-  | 'squad_created'
-  | 'squad_updated'
-  | 'squad_deleted'
-  | 'challenge_created'
-  | 'challenge_invites_sent'
-  | 'challenge_invite_accepted'
-  | 'challenge_invite_declined'
-  | 'challenge_score_published'
-  | 'leaderboard_score_published'
-
-type FriendEvent = {
-  id: string
-  actorId: string
-  targetUserId: string | null
-  challengeId: string | null
-  squadId: string | null
-  eventType: FriendEventType
-  metadata: Record<string, unknown>
-  createdAt: string
-}
-
-type FriendActivityFeedItem = {
-  id: string
-  title: string
-  detail: string
-  meta: string
-  tone: 'success' | 'pending' | 'neutral'
-  sortAt: string
-}
-
-type InstallPromptEvent = Event & {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
-}
+import type {
+  AccountDataExport,
+  AppNotice,
+  BackupPayload,
+  BuiltInRuleKey,
+  ChallengeSettings,
+  ChallengeSummary,
+  ChallengeTargets,
+  ChallengeTemplate,
+  CloudSnapshot,
+  CreateFriendChallengeInput,
+  CreateFriendSquadInput,
+  CustomRuleKey,
+  DailyEntry,
+  DataStatus,
+  EntryMap,
+  FriendActivityFeedItem,
+  FriendChallenge,
+  FriendChallengeParticipant,
+  FriendChallengeParticipantStatus,
+  FriendChallengeParticipantView,
+  FriendChallengeScoringMode,
+  FriendChallengeView,
+  FriendEvent,
+  FriendEventType,
+  FriendProfile,
+  FriendRequest,
+  FriendSquad,
+  FriendSquadMember,
+  FriendSquadView,
+  FriendshipRow,
+  FriendshipStatus,
+  FriendsTab,
+  InstallPromptEvent,
+  InviteFriendChallengeInput,
+  LeaderboardRow,
+  PeriodRecap,
+  PrivacySettings,
+  ProgressPeriod,
+  ReminderSettings,
+  RuleCategoryConfig,
+  RuleCategoryKey,
+  RuleConfig,
+  RuleKey,
+  RuleRate,
+  RuleWeight,
+  ScoreReaction,
+  SyncConflict,
+  SyncMeta,
+  TrendMetric,
+  TrendPoint,
+  UpdateFriendSquadInput,
+  View,
+  WorkoutLog,
+} from './types'
+import {
+  AppNoticeToast,
+  CheckField,
+  Icon,
+  NavButton,
+  NumberField,
+  RatingField,
+  SectionTitle,
+  SelectField,
+  TextArea,
+  TextField,
+} from './ui'
 
 const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
@@ -1904,23 +1605,6 @@ async function readBackupFile(file: File): Promise<BackupPayload> {
     settings: normalizeSettings(candidate.settings),
     entries: normalizeEntries(candidate.entries),
   }
-}
-
-function Icon({ name }: { name: 'home' | 'check' | 'calendar' | 'progress' | 'friends' | 'settings' }) {
-  const paths = {
-    home: <path d="M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9.5Z" />,
-    check: <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>,
-    calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></>,
-    progress: <><path d="M5 20V10M12 20V4M19 20v-7" /><path d="M3 20h18" /></>,
-    friends: <><circle cx="8" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20a5 5 0 0 1 10 0" /><path d="M13.5 20a4 4 0 0 1 7.5 0" /></>,
-    settings: <><path d="M4 7h16M4 12h16M4 17h16" /><circle cx="9" cy="7" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="11" cy="17" r="2" /></>,
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {paths[name]}
-    </svg>
-  )
 }
 
 function App() {
@@ -4299,17 +3983,6 @@ function App() {
   )
 }
 
-function AppNoticeToast({ notice, onDismiss }: { notice: AppNotice; onDismiss: () => void }) {
-  return (
-    <div className={`app-notice ${notice.tone}`} role="status" aria-live="polite">
-      <span>{notice.message}</span>
-      <button type="button" onClick={onDismiss} aria-label="Dismiss notification">
-        x
-      </button>
-    </div>
-  )
-}
-
 function TutorialOverlay({
   step,
   onStepChange,
@@ -6679,159 +6352,6 @@ function ReminderPanel({
   )
 }
 
-function SectionTitle({ number, title }: { number: string; title: string }) {
-  return (
-    <div className="form-section-title">
-      <span>{number}</span>
-      <h3>{title}</h3>
-    </div>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  step = 1,
-  suffix,
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  value: number | null
-  min: number
-  max: number
-  step?: number
-  suffix: string
-  disabled?: boolean
-  onChange: (value: number | null) => void
-}) {
-  return (
-    <label className="number-field">
-      <span>{label}</span>
-      <div>
-        <input
-          type="number"
-          inputMode="decimal"
-          min={min}
-          max={max}
-          step={step}
-          value={value ?? ''}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
-        />
-        <small>{suffix}</small>
-      </div>
-    </label>
-  )
-}
-
-function TextField({
-  label,
-  value,
-  type = 'text',
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  value: string
-  type?: 'text' | 'date' | 'email' | 'password' | 'time'
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="text-field">
-      <span>{label}</span>
-      <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  )
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: string[]
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="select-field">
-      <span>{label}</span>
-      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-    </label>
-  )
-}
-
-function CheckField({
-  label,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  checked: boolean
-  disabled?: boolean
-  onChange: (checked: boolean) => void
-}) {
-  return (
-    <label className="check-field">
-      <span>{label}</span>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
-    </label>
-  )
-}
-
-function RatingField({
-  label,
-  value,
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  value: number
-  disabled?: boolean
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="rating-field">
-      <span>{label}</span>
-      <select value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))}>
-        {[1, 2, 3, 4, 5].map((number) => <option key={number} value={number}>{number}/5</option>)}
-      </select>
-    </label>
-  )
-}
-
-function TextArea({
-  label,
-  value,
-  placeholder,
-  disabled = false,
-  onChange,
-}: {
-  label: string
-  value: string
-  placeholder: string
-  disabled?: boolean
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="text-area-field">
-      <span>{label}</span>
-      <textarea value={value} placeholder={placeholder} rows={4} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  )
-}
-
 function CalendarView({
   entries,
   selectedDate,
@@ -7071,28 +6591,6 @@ function PeriodRecapRow({ recap }: { recap: PeriodRecap }) {
         <p>No check-ins logged for this period yet.</p>
       )}
     </article>
-  )
-}
-
-function NavButton({
-  label,
-  icon,
-  active,
-  badgeCount = 0,
-  onClick,
-}: {
-  label: string
-  icon: 'home' | 'check' | 'calendar' | 'progress' | 'friends' | 'settings'
-  active: boolean
-  badgeCount?: number
-  onClick: () => void
-}) {
-  return (
-    <button type="button" className={active ? 'active' : ''} onClick={onClick}>
-      <Icon name={icon} />
-      {badgeCount > 0 && <b className="nav-badge">{badgeCount}</b>}
-      <span>{label}</span>
-    </button>
   )
 }
 

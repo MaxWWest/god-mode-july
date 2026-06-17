@@ -87,6 +87,12 @@ See `DEPLOYMENT.md` for Supabase and hosting setup.
 
 Friends, leaderboards, private squads, invite-only friend challenges, and the social activity feed use separate Supabase tables for profiles, friendships, challenge summaries, squad definitions, squad members, challenge definitions, challenge participants, and friend events. Friends can compare completion, streak, and logged-day stats according to each user's privacy settings, but raw entries, reflections, weight, and calories are not shared.
 
+## Code organization
+
+- `src/types.ts` holds shared tracker, cloud sync, friends, squads, challenge, and feed types.
+- `src/ui.tsx` holds reusable field controls, section headers, app notices, icons, and bottom-nav buttons.
+- `src/App.tsx` still owns most feature logic and screens. The next cleanup step is to extract Friends, Settings, Progress, and Check-In into feature modules, then lazy-load the heavier feature views.
+
 Current social beta coverage:
 
 - Challenge detail panels with participants, pending invites, shared settings, publishing state, score notes, and reactions.
@@ -105,5 +111,5 @@ Current social beta coverage:
 3. Add direct challenge links or invite codes so friends can join from a shared URL.
 4. Add comment threads or lightweight replies if score reactions become too limited.
 5. Add push notifications later if you decide closed-app reminders are worth the setup.
-6. Split the large `App.tsx` into feature modules and add route-level or feature-level code splitting if the bundle keeps growing.
+6. Split Friends, Settings, Progress, and Check-In into feature modules, then add route-level or feature-level code splitting.
 7. Add automated tests around Supabase row normalization, challenge templates, invite flows, and privacy-safe summaries.
