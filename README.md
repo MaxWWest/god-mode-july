@@ -85,17 +85,25 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, private squads, and invite-only friend challenges use separate Supabase tables for profiles, friendships, challenge summaries, squad definitions, squad members, challenge definitions, and challenge participants. Friends can compare completion, streak, and logged-day stats according to each user's privacy settings, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, private squads, invite-only friend challenges, and the social activity feed use separate Supabase tables for profiles, friendships, challenge summaries, squad definitions, squad members, challenge definitions, challenge participants, and friend events. Friends can compare completion, streak, and logged-day stats according to each user's privacy settings, but raw entries, reflections, weight, and calories are not shared.
+
+Current social beta coverage:
+
+- Challenge detail panels with participants, pending invites, shared settings, publishing state, score notes, and reactions.
+- Active challenge lists plus a completed challenge archive for friend-versus-friend history.
+- Editable squads with roster changes after creation.
+- Challenge invite management for adding accepted friends after a challenge starts.
+- In-app badges for pending friend requests and challenge invites.
+- Stored social events for a richer friend/squad activity feed.
+- Challenge templates with preset target and scored-rule overrides.
+- Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 
 ## Next recommended milestones
 
-1. Challenge detail view with full participant history, settings, pending invites, and score publishing state.
-2. Friend-versus-friend weekly challenge history and completed challenge archive.
-3. Editable squads so members can be added or removed after creation.
-4. Challenge invite management for adding friends after a challenge starts.
-5. Notification-style in-app badges for pending friend and challenge requests.
-6. Richer activity feed backed by stored events instead of derived current data.
-7. Full challenge templates with preset rule/target overrides, not just name, dates, and scoring mode.
-8. Friend profile pages with recent scores, shared squads, and head-to-head stats.
-9. Optional comments/reactions on published challenge scores.
-10. Performance cleanup with route-level or feature-level code splitting if the bundle keeps growing.
+1. Add true per-day challenge history snapshots so detail pages can show daily timelines, not just latest published summaries.
+2. Add challenge/squad removal flows for individual participants and pending invites.
+3. Add direct challenge links or invite codes so friends can join from a shared URL.
+4. Add comment threads or lightweight replies if score reactions become too limited.
+5. Add push notifications later if you decide closed-app reminders are worth the setup.
+6. Split the large `App.tsx` into feature modules and add route-level or feature-level code splitting if the bundle keeps growing.
+7. Add automated tests around Supabase row normalization, challenge templates, invite flows, and privacy-safe summaries.

@@ -3,6 +3,7 @@ import type { CSSProperties, ChangeEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
+  SUPABASE_FRIEND_EVENT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
@@ -131,6 +132,7 @@ type AccountDataExport = {
     friendChallengeParticipants: FriendChallengeParticipant[]
     friendSquads: FriendSquad[]
     friendSquadMembers: FriendSquadMember[]
+    friendEvents: FriendEvent[]
   }
 }
 
@@ -217,6 +219,8 @@ type ChallengeSummary = {
   lastLoggedDate: string | null
   updatedAt: string
   privacy: PrivacySettings
+  note?: string
+  reaction?: ScoreReaction | null
 }
 
 type LeaderboardRow = FriendProfile & {
@@ -246,6 +250,7 @@ type FriendRequest = FriendProfile & {
 
 type FriendChallengeScoringMode = 'personal' | 'shared'
 type FriendChallengeParticipantStatus = 'pending' | 'accepted' | 'declined'
+type ScoreReaction = 'locked-in' | 'comeback' | 'streak' | 'respect'
 
 type FriendChallenge = {
   id: string
@@ -270,8 +275,11 @@ type FriendChallengeParticipant = {
 }
 
 type FriendChallengeParticipantView = FriendProfile & {
+  invitedBy: string
   status: FriendChallengeParticipantStatus
   summary: ChallengeSummary | null
+  createdAt: string
+  respondedAt: string | null
   isCurrentUser: boolean
 }
 
@@ -306,11 +314,21 @@ type CreateFriendChallengeInput = {
   endDate: string
   scoringMode: FriendChallengeScoringMode
   inviteeIds: string[]
+  templateId?: string
 }
 
 type CreateFriendSquadInput = {
   name: string
   memberIds: string[]
+}
+
+type UpdateFriendSquadInput = CreateFriendSquadInput & {
+  squadId: string
+}
+
+type InviteFriendChallengeInput = {
+  challengeId: string
+  inviteeIds: string[]
 }
 
 type ChallengeTemplate = {
@@ -319,9 +337,36 @@ type ChallengeTemplate = {
   durationDays: number
   scoringMode: FriendChallengeScoringMode
   note: string
+  targetOverrides?: Partial<ChallengeTargets>
+  ruleOverrides?: Partial<Record<BuiltInRuleKey, Partial<Pick<RuleConfig, 'enabled' | 'weight' | 'category'>>>>
 }
 
 type FriendsTab = 'overview' | 'network' | 'squads' | 'challenges' | 'leaderboard'
+
+type FriendEventType =
+  | 'friend_request_sent'
+  | 'friend_request_accepted'
+  | 'friend_request_declined'
+  | 'squad_created'
+  | 'squad_updated'
+  | 'squad_deleted'
+  | 'challenge_created'
+  | 'challenge_invites_sent'
+  | 'challenge_invite_accepted'
+  | 'challenge_invite_declined'
+  | 'challenge_score_published'
+  | 'leaderboard_score_published'
+
+type FriendEvent = {
+  id: string
+  actorId: string
+  targetUserId: string | null
+  challengeId: string | null
+  squadId: string | null
+  eventType: FriendEventType
+  metadata: Record<string, unknown>
+  createdAt: string
+}
 
 type FriendActivityFeedItem = {
   id: string
@@ -405,6 +450,13 @@ const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   showLoggedDays: true,
 }
 
+const SCORE_REACTIONS: { key: ScoreReaction; label: string }[] = [
+  { key: 'locked-in', label: 'Locked in' },
+  { key: 'comeback', label: 'Comeback' },
+  { key: 'streak', label: 'Streak' },
+  { key: 'respect', label: 'Respect' },
+]
+
 const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
   {
     id: 'custom',
@@ -419,6 +471,12 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     durationDays: 7,
     scoringMode: 'personal',
     note: 'One-week push using everyone’s own targets.',
+    ruleOverrides: {
+      exercise: { enabled: true, weight: 'nonNegotiable' },
+      protein: { enabled: true, weight: 'nonNegotiable' },
+      reading: { enabled: true, weight: 'supporting' },
+      journal: { enabled: true, weight: 'supporting' },
+    },
   },
   {
     id: 'lock-in-week',
@@ -426,6 +484,21 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     durationDays: 7,
     scoringMode: 'shared',
     note: 'Shared rules for a clean head-to-head week.',
+    targetOverrides: {
+      exerciseMinutes: 90,
+      proteinGrams: 140,
+      waterLiters: 3,
+      sleepHours: 7.5,
+    },
+    ruleOverrides: {
+      exercise: { enabled: true, weight: 'nonNegotiable' },
+      sober: { enabled: true, weight: 'nonNegotiable' },
+      protein: { enabled: true, weight: 'nonNegotiable' },
+      water: { enabled: true, weight: 'supporting' },
+      sleep: { enabled: true, weight: 'supporting' },
+      reading: { enabled: true, weight: 'supporting' },
+      journal: { enabled: true, weight: 'supporting' },
+    },
   },
   {
     id: 'month-sprint',
@@ -433,6 +506,14 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     durationDays: 30,
     scoringMode: 'personal',
     note: 'Longer personal-target challenge.',
+    ruleOverrides: {
+      exercise: { enabled: true, weight: 'nonNegotiable' },
+      protein: { enabled: true, weight: 'nonNegotiable' },
+      water: { enabled: true, weight: 'supporting' },
+      sleep: { enabled: true, weight: 'supporting' },
+      reading: { enabled: true, weight: 'supporting' },
+      journal: { enabled: true, weight: 'supporting' },
+    },
   },
   {
     id: 'sleep-reset',
@@ -440,6 +521,18 @@ const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     durationDays: 10,
     scoringMode: 'shared',
     note: 'Short shared-rule reset challenge.',
+    targetOverrides: {
+      exerciseMinutes: 45,
+      waterLiters: 3,
+      sleepHours: 8,
+    },
+    ruleOverrides: {
+      exercise: { enabled: true, weight: 'supporting' },
+      sober: { enabled: true, weight: 'supporting' },
+      water: { enabled: true, weight: 'supporting' },
+      sleep: { enabled: true, weight: 'nonNegotiable' },
+      journal: { enabled: true, weight: 'supporting' },
+    },
   },
 ]
 
@@ -1282,6 +1375,61 @@ function buildFriendChallengeSummary(
   }
 }
 
+function challengeTemplateById(templateId?: string): ChallengeTemplate {
+  return CHALLENGE_TEMPLATES.find((template) => template.id === templateId) ?? CHALLENGE_TEMPLATES[0]
+}
+
+function buildChallengeSettingsForTemplate(
+  baseSettings: ChallengeSettings,
+  templateId: string | undefined,
+  title: string,
+  startDate: string,
+  endDate: string,
+): ChallengeSettings {
+  const template = challengeTemplateById(templateId)
+  const targets = {
+    ...baseSettings.targets,
+    ...(template.targetOverrides ?? {}),
+  }
+  const rules = baseSettings.rules.map((rule) => {
+    const builtInKey = BUILT_IN_RULE_KEYS.includes(rule.key as BuiltInRuleKey) ? rule.key as BuiltInRuleKey : null
+    const override = builtInKey ? template.ruleOverrides?.[builtInKey] : undefined
+    return override ? { ...rule, ...override } : rule
+  })
+
+  return normalizeSettings({
+    ...baseSettings,
+    title,
+    startDate,
+    endDate,
+    targets,
+    rules,
+  })
+}
+
+function describeTemplateOverrides(template: ChallengeTemplate): string {
+  const targetCount = Object.keys(template.targetOverrides ?? {}).length
+  const activeRuleCount = Object.values(template.ruleOverrides ?? {}).filter((override) => override?.enabled === true).length
+  if (targetCount === 0 && activeRuleCount === 0) return template.note
+  const pieces = [
+    targetCount > 0 ? `${targetCount} target ${targetCount === 1 ? 'override' : 'overrides'}` : '',
+    activeRuleCount > 0 ? `${activeRuleCount} rule ${activeRuleCount === 1 ? 'preset' : 'presets'}` : '',
+  ].filter(Boolean)
+  return `${template.note} ${pieces.join(' · ')}.`
+}
+
+function isChallengeCompleted(challenge: Pick<FriendChallenge, 'endDate'>): boolean {
+  return challenge.endDate < todayIso()
+}
+
+function statusLabel(status: FriendChallengeParticipantStatus): string {
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function reactionLabel(reaction: ScoreReaction | null | undefined): string | null {
+  return SCORE_REACTIONS.find((item) => item.key === reaction)?.label ?? null
+}
+
 function generateInviteCode(userId: string): string {
   return `GM-${userId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
 }
@@ -1319,6 +1467,30 @@ function normalizeFriendChallengeParticipantStatus(value: unknown): FriendChalle
 
 function normalizeFriendChallengeScoringMode(value: unknown): FriendChallengeScoringMode {
   return value === 'shared' || value === 'personal' ? value : 'personal'
+}
+
+function normalizeScoreReaction(value: unknown): ScoreReaction | null {
+  return SCORE_REACTIONS.some((reaction) => reaction.key === value) ? value as ScoreReaction : null
+}
+
+function normalizeFriendEventType(value: unknown): FriendEventType {
+  switch (value) {
+    case 'friend_request_sent':
+    case 'friend_request_accepted':
+    case 'friend_request_declined':
+    case 'squad_created':
+    case 'squad_updated':
+    case 'squad_deleted':
+    case 'challenge_created':
+    case 'challenge_invites_sent':
+    case 'challenge_invite_accepted':
+    case 'challenge_invite_declined':
+    case 'challenge_score_published':
+    case 'leaderboard_score_published':
+      return value
+    default:
+      return 'leaderboard_score_published'
+  }
 }
 
 function normalizeFriendshipRow(row: unknown): FriendshipRow | null {
@@ -1370,6 +1542,16 @@ function isFriendSquadSchemaError(error: unknown): boolean {
     || message.includes('column')
 }
 
+function isFriendEventSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('god_mode_friend_events')
+    || message.includes('event_type')
+    || message.includes('metadata')
+    || message.includes('relation')
+    || message.includes('column')
+}
+
 function isSummarySchemaError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
   const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
@@ -1401,6 +1583,8 @@ function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
     lastLoggedDate: isIsoDate(candidate.last_logged_date) ? candidate.last_logged_date : isIsoDate(candidate.lastLoggedDate) ? candidate.lastLoggedDate : null,
     updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
     privacy: normalizePrivacySettings(candidate.privacy),
+    note: normalizeText(candidate.note).slice(0, 180),
+    reaction: normalizeScoreReaction(candidate.reaction),
   }
 }
 
@@ -1470,6 +1654,28 @@ function normalizeFriendSquadMemberRow(row: unknown): FriendSquadMember | null {
     squadId: candidate.squad_id,
     userId: candidate.user_id,
     addedBy: typeof candidate.added_by === 'string' ? candidate.added_by : candidate.user_id,
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+  }
+}
+
+function normalizeFriendEventRow(row: unknown): FriendEvent | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.actor_id !== 'string') return null
+
+  const metadata = candidate.metadata && typeof candidate.metadata === 'object' && !Array.isArray(candidate.metadata)
+    ? candidate.metadata as Record<string, unknown>
+    : {}
+
+  return {
+    id: candidate.id,
+    actorId: candidate.actor_id,
+    targetUserId: typeof candidate.target_user_id === 'string' ? candidate.target_user_id : null,
+    challengeId: typeof candidate.challenge_id === 'string' ? candidate.challenge_id : null,
+    squadId: typeof candidate.squad_id === 'string' ? candidate.squad_id : null,
+    eventType: normalizeFriendEventType(candidate.event_type),
+    metadata,
     createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
   }
 }
@@ -1748,6 +1954,7 @@ function App() {
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
   const [friendChallenges, setFriendChallenges] = useState<FriendChallengeView[]>([])
   const [friendSquads, setFriendSquads] = useState<FriendSquadView[]>([])
+  const [friendEvents, setFriendEvents] = useState<FriendEvent[]>([])
   const [friendsBusy, setFriendsBusy] = useState(false)
   const [friendsStatus, setFriendsStatus] = useState<DataStatus>({
     tone: 'neutral',
@@ -1873,6 +2080,7 @@ function App() {
       setFriendRequests([])
       setFriendChallenges([])
       setFriendSquads([])
+      setFriendEvents([])
       setFriendsStatus({
         tone: 'neutral',
         message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
@@ -2114,6 +2322,7 @@ function App() {
     let friendChallengeParticipants: FriendChallengeParticipant[] = []
     let friendSquads: FriendSquad[] = []
     let friendSquadMembers: FriendSquadMember[] = []
+    let friendEvents: FriendEvent[] = []
     const [myChallengeParticipantsResult, createdChallengesResult] = await Promise.all([
       supabase
         .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
@@ -2199,6 +2408,19 @@ function App() {
       }
     }
 
+    const { data: eventRows, error: eventError } = await supabase
+      .from(SUPABASE_FRIEND_EVENT_TABLE)
+      .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
+      .or(`actor_id.eq.${user.id},target_user_id.eq.${user.id}`)
+
+    if (eventError) {
+      if (!isFriendEventSchemaError(eventError)) throw eventError
+    } else {
+      friendEvents = (eventRows ?? [])
+        .map(normalizeFriendEventRow)
+        .filter((row): row is FriendEvent => row !== null)
+    }
+
     return {
       app: 'god-mode-july',
       exportType: 'account-data',
@@ -2223,6 +2445,7 @@ function App() {
         friendChallengeParticipants,
         friendSquads,
         friendSquadMembers,
+        friendEvents,
       },
     }
   }
@@ -2487,7 +2710,7 @@ function App() {
     if (!supabase || !user) return
 
     const confirmed = window.confirm(
-      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, squads, friend challenges, and leaderboard summaries from Supabase? Local data on this device will stay.',
+      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, squads, friend challenges, activity events, and leaderboard summaries from Supabase? Local data on this device will stay.',
     )
     if (!confirmed) {
       setCloudStatus({ tone: 'neutral', message: 'Cloud data deletion canceled.' })
@@ -2496,6 +2719,12 @@ function App() {
 
     setCloudBusy(true)
     try {
+      const friendEventDelete = await supabase
+        .from(SUPABASE_FRIEND_EVENT_TABLE)
+        .delete()
+        .or(`actor_id.eq.${user.id},target_user_id.eq.${user.id}`)
+      if (friendEventDelete.error && !isFriendEventSchemaError(friendEventDelete.error)) throw friendEventDelete.error
+
       const createdChallengeDelete = await supabase
         .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
         .delete()
@@ -2554,6 +2783,7 @@ function App() {
       setFriendRequests([])
       setFriendChallenges([])
       setFriendSquads([])
+      setFriendEvents([])
       setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
       setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
     } catch (error) {
@@ -2786,6 +3016,7 @@ function App() {
 
       let challengeViews: FriendChallengeView[] = []
       let squadViews: FriendSquadView[] = []
+      let eventRows: FriendEvent[] = []
       let squadSchemaReady = true
       const [myChallengeParticipantResult, createdChallengeResult] = await Promise.all([
         supabase
@@ -2881,8 +3112,11 @@ function App() {
                   userId: participant.userId,
                   displayName: participantProfile?.displayName ?? 'Challenger',
                   inviteCode: participantProfile?.inviteCode ?? '',
+                  invitedBy: participant.invitedBy,
                   status: participant.status,
                   summary: participant.summary,
+                  createdAt: participant.createdAt,
+                  respondedAt: participant.respondedAt,
                   isCurrentUser: participant.userId === user.id,
                 } satisfies FriendChallengeParticipantView
               })
@@ -2960,10 +3194,27 @@ function App() {
           : []
       }
 
+      const eventActorIds = Array.from(new Set([user.id, ...acceptedFriendIds]))
+      const { data: friendEventRows, error: friendEventError } = await supabase
+        .from(SUPABASE_FRIEND_EVENT_TABLE)
+        .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
+        .or(`actor_id.in.(${eventActorIds.join(',')}),target_user_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      if (friendEventError) {
+        if (!isFriendEventSchemaError(friendEventError)) throw friendEventError
+      } else {
+        eventRows = (friendEventRows ?? [])
+          .map(normalizeFriendEventRow)
+          .filter((event): event is FriendEvent => event !== null)
+      }
+
       setLeaderboardRows(rows)
       setFriendRequests(requests)
       setFriendChallenges(challengeViews)
       setFriendSquads(squadViews)
+      setFriendEvents(eventRows)
       setFriendsStatus({
         tone: squadSchemaReady ? 'success' : 'neutral',
         message: squadSchemaReady
@@ -3083,6 +3334,37 @@ function App() {
     }
   }
 
+  async function recordFriendEvent(
+    eventType: FriendEventType,
+    options: {
+      targetUserId?: string | null
+      challengeId?: string | null
+      squadId?: string | null
+      metadata?: Record<string, unknown>
+    } = {},
+  ) {
+    if (!supabase || !user) return
+
+    try {
+      const { error } = await supabase
+        .from(SUPABASE_FRIEND_EVENT_TABLE)
+        .insert({
+          actor_id: user.id,
+          target_user_id: options.targetUserId ?? null,
+          challenge_id: options.challengeId ?? null,
+          squad_id: options.squadId ?? null,
+          event_type: eventType,
+          metadata: options.metadata ?? {},
+        })
+
+      if (error && !isFriendEventSchemaError(error)) {
+        console.warn('Could not record friend event', error)
+      }
+    } catch (error) {
+      if (!isFriendEventSchemaError(error)) console.warn('Could not record friend event', error)
+    }
+  }
+
   async function sendFriendRequestByInviteCode() {
     if (!supabase || !user) return
 
@@ -3165,6 +3447,7 @@ function App() {
         }
         throw friendshipError
       }
+      await recordFriendEvent('friend_request_sent', { targetUserId: friendProfile.userId })
       setInviteCodeDraft('')
       setFriendsStatus({ tone: 'success', message: `Friend request sent to ${friendProfile.displayName}.` })
       await refreshFriendsData()
@@ -3208,6 +3491,9 @@ function App() {
       setFriendsStatus({
         tone: 'success',
         message: successMessage ?? (nextStatus === 'accepted' ? 'Friend request accepted.' : 'Friend request declined.'),
+      })
+      await recordFriendEvent(nextStatus === 'accepted' ? 'friend_request_accepted' : 'friend_request_declined', {
+        targetUserId: otherUserId,
       })
       await refreshFriendsData()
     } catch (error) {
@@ -3279,6 +3565,13 @@ function App() {
         throw memberError
       }
 
+      await recordFriendEvent('squad_created', {
+        squadId: squad.id,
+        metadata: {
+          squadName: squad.name,
+          memberCount: memberIds.length,
+        },
+      })
       setFriendsStatus({ tone: 'success', message: `${squad.name} squad created.` })
       showAppNotice('Squad created.')
       await refreshFriendsData()
@@ -3286,6 +3579,91 @@ function App() {
       setFriendsStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not create the squad.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function updateFriendSquad(input: UpdateFriendSquadInput) {
+    if (!supabase || !user) return
+
+    const name = input.name.trim()
+    if (!name) {
+      setFriendsStatus({ tone: 'error', message: 'Squad name cannot be empty.' })
+      return
+    }
+
+    const squad = friendSquads.find((item) => item.id === input.squadId)
+    if (!squad) {
+      setFriendsStatus({ tone: 'error', message: 'Could not find that squad.' })
+      return
+    }
+
+    const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
+    const memberIds = Array.from(new Set(input.memberIds)).filter((memberId) => acceptedFriendIds.has(memberId))
+
+    setFriendsBusy(true)
+    try {
+      const { error: squadError } = await supabase
+        .from(SUPABASE_SQUAD_TABLE)
+        .update({
+          name,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.squadId)
+        .eq('owner_id', user.id)
+
+      if (squadError) {
+        if (isFriendSquadSchemaError(squadError)) {
+          throw new Error('Run the updated Supabase schema to enable squads.')
+        }
+        throw squadError
+      }
+
+      const { error: deleteError } = await supabase
+        .from(SUPABASE_SQUAD_MEMBER_TABLE)
+        .delete()
+        .eq('squad_id', input.squadId)
+
+      if (deleteError) {
+        if (isFriendSquadSchemaError(deleteError)) {
+          throw new Error('Run the updated Supabase schema to enable squads.')
+        }
+        throw deleteError
+      }
+
+      if (memberIds.length > 0) {
+        const { error: memberError } = await supabase
+          .from(SUPABASE_SQUAD_MEMBER_TABLE)
+          .insert(memberIds.map((memberId) => ({
+            squad_id: input.squadId,
+            user_id: memberId,
+            added_by: user.id,
+          })))
+
+        if (memberError) {
+          if (isFriendSquadSchemaError(memberError)) {
+            throw new Error('Run the updated Supabase schema to enable squads.')
+          }
+          throw memberError
+        }
+      }
+
+      await recordFriendEvent('squad_updated', {
+        squadId: input.squadId,
+        metadata: {
+          squadName: name,
+          memberCount: memberIds.length,
+        },
+      })
+      setFriendsStatus({ tone: 'success', message: `${name} squad updated.` })
+      showAppNotice('Squad updated.')
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not update the squad.',
       })
     } finally {
       setFriendsBusy(false)
@@ -3317,6 +3695,12 @@ function App() {
         throw error
       }
 
+      await recordFriendEvent('squad_deleted', {
+        squadId,
+        metadata: {
+          squadName: squad?.name ?? 'Squad',
+        },
+      })
       setFriendsStatus({ tone: 'success', message: 'Squad deleted.' })
       await refreshFriendsData()
     } catch (error) {
@@ -3350,12 +3734,7 @@ function App() {
       const profile = await ensureFriendProfile()
       if (!profile) throw new Error('Could not load your friend profile.')
 
-      const challengeSettings = normalizeSettings({
-        ...settings,
-        title: name,
-        startDate: input.startDate,
-        endDate: input.endDate,
-      })
+      const challengeSettings = buildChallengeSettingsForTemplate(settings, input.templateId, name, input.startDate, input.endDate)
       const { data: challengeRow, error: challengeError } = await supabase
         .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
         .insert({
@@ -3411,6 +3790,14 @@ function App() {
         throw participantError
       }
 
+      await recordFriendEvent('challenge_created', {
+        challengeId: challenge.id,
+        metadata: {
+          challengeName: challenge.name,
+          inviteCount: inviteeIds.length,
+          templateId: input.templateId ?? 'custom',
+        },
+      })
       setFriendsStatus({
         tone: 'success',
         message: inviteeIds.length === 0
@@ -3422,6 +3809,72 @@ function App() {
       setFriendsStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not create the friend challenge.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function inviteFriendChallengeParticipants(input: InviteFriendChallengeInput) {
+    if (!supabase || !user) return
+
+    const challenge = friendChallenges.find((item) => item.id === input.challengeId)
+    if (!challenge) {
+      setFriendsStatus({ tone: 'error', message: 'Could not find that challenge.' })
+      return
+    }
+    if (!challenge.isCreator) {
+      setFriendsStatus({ tone: 'error', message: 'Only the challenge owner can invite more friends.' })
+      return
+    }
+
+    const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
+    const existingParticipantIds = new Set(challenge.participants.map((participant) => participant.userId))
+    const inviteeIds = Array.from(new Set(input.inviteeIds))
+      .filter((inviteeId) => acceptedFriendIds.has(inviteeId) && !existingParticipantIds.has(inviteeId))
+
+    if (inviteeIds.length === 0) {
+      setFriendsStatus({ tone: 'error', message: 'Choose accepted friends who are not already in the challenge.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      const { error } = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .insert(inviteeIds.map((inviteeId) => ({
+          challenge_id: challenge.id,
+          user_id: inviteeId,
+          invited_by: user.id,
+          status: 'pending',
+          summary: null,
+          responded_at: null,
+        })))
+
+      if (error) {
+        if (isFriendChallengeSchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw error
+      }
+
+      await recordFriendEvent('challenge_invites_sent', {
+        challengeId: challenge.id,
+        metadata: {
+          challengeName: challenge.name,
+          inviteCount: inviteeIds.length,
+        },
+      })
+      setFriendsStatus({
+        tone: 'success',
+        message: `${inviteeIds.length} ${inviteeIds.length === 1 ? 'friend was' : 'friends were'} invited to ${challenge.name}.`,
+      })
+      showAppNotice('Challenge invite sent.')
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not invite friends to the challenge.',
       })
     } finally {
       setFriendsBusy(false)
@@ -3463,6 +3916,12 @@ function App() {
         tone: 'success',
         message: nextStatus === 'accepted' ? 'Challenge invite accepted.' : 'Challenge invite declined.',
       })
+      await recordFriendEvent(nextStatus === 'accepted' ? 'challenge_invite_accepted' : 'challenge_invite_declined', {
+        challengeId,
+        metadata: {
+          challengeName: challenge?.name ?? 'Challenge',
+        },
+      })
       await refreshFriendsData()
     } catch (error) {
       setFriendsStatus({
@@ -3474,7 +3933,7 @@ function App() {
     }
   }
 
-  async function publishFriendChallengeScore(challengeId: string) {
+  async function publishFriendChallengeScore(challengeId: string, note = '', reaction: ScoreReaction | null = null) {
     if (!supabase || !user) return
 
     const challenge = friendChallenges.find((item) => item.id === challengeId)
@@ -3489,7 +3948,12 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const summary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
+      const cleanNote = note.trim().slice(0, 180)
+      const summary = {
+        ...buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings),
+        note: cleanNote,
+        reaction,
+      }
       const { error } = await supabase
         .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
         .update({
@@ -3507,6 +3971,14 @@ function App() {
         throw error
       }
 
+      await recordFriendEvent('challenge_score_published', {
+        challengeId,
+        metadata: {
+          challengeName: challenge.name,
+          note: cleanNote,
+          reaction,
+        },
+      })
       setFriendsStatus({ tone: 'success', message: `${challenge.name} score published.` })
       await refreshFriendsData()
     } catch (error) {
@@ -3551,6 +4023,9 @@ function App() {
           throw new Error('Run the updated Supabase schema to enable privacy settings.')
         }
         throw error
+      }
+      if (!silent) {
+        await recordFriendEvent('leaderboard_score_published')
       }
       await refreshFriendsData()
       if (!silent) setFriendsStatus({ tone: 'success', message: 'Leaderboard score published.' })
@@ -3621,6 +4096,9 @@ function App() {
     await installPrompt.userChoice
     setInstallPrompt(null)
   }
+
+  const friendsBadgeCount = friendRequests.filter((request) => request.direction === 'incoming').length
+    + friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
 
   return (
     <div className="app-shell">
@@ -3734,6 +4212,7 @@ function App() {
             friendRequests={friendRequests}
             friendChallenges={friendChallenges}
             friendSquads={friendSquads}
+            friendEvents={friendEvents}
             privacySettings={privacySettings}
             status={friendsStatus}
             busy={friendsBusy}
@@ -3747,8 +4226,10 @@ function App() {
             onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
             onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
             onCreateSquad={createFriendSquad}
+            onUpdateSquad={updateFriendSquad}
             onDeleteSquad={deleteFriendSquad}
             onCreateChallenge={createFriendChallenge}
+            onInviteChallengeParticipants={inviteFriendChallengeParticipants}
             onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
             onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
             onPublishChallengeScore={publishFriendChallengeScore}
@@ -3800,7 +4281,7 @@ function App() {
         <NavButton label="Check-In" icon="check" active={view === 'check-in'} onClick={() => setView('check-in')} />
         <NavButton label="Calendar" icon="calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
         <NavButton label="Progress" icon="progress" active={view === 'progress'} onClick={() => setView('progress')} />
-        <NavButton label="Friends" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} />
+        <NavButton label="Friends" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} badgeCount={friendsBadgeCount} />
         <NavButton label="Settings" icon="settings" active={view === 'settings'} onClick={() => setView('settings')} />
       </nav>
       {showTutorial && (
@@ -4237,6 +4718,132 @@ function buildFriendActivityFeed({
     .slice(0, 10)
 }
 
+function metadataString(metadata: Record<string, unknown>, key: string): string {
+  const value = metadata[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
+  const value = metadata[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function eventProfileName(userId: string | null, profilesByUserId: Map<string, FriendProfile>, currentUserId: string | null): string {
+  if (!userId) return 'Someone'
+  if (currentUserId && userId === currentUserId) return 'You'
+  return profilesByUserId.get(userId)?.displayName ?? 'A friend'
+}
+
+function buildStoredFriendActivityFeed({
+  friendEvents,
+  leaderboardRows,
+  friendChallenges,
+  friendSquads,
+  currentUserId,
+}: {
+  friendEvents: FriendEvent[]
+  leaderboardRows: LeaderboardRow[]
+  friendChallenges: FriendChallengeView[]
+  friendSquads: FriendSquadView[]
+  currentUserId: string | null
+}): FriendActivityFeedItem[] {
+  const profilesByUserId = new Map<string, FriendProfile>(
+    leaderboardRows.map((row) => [row.userId, {
+      userId: row.userId,
+      displayName: row.displayName,
+      inviteCode: row.inviteCode,
+    }]),
+  )
+  const challengesById = new Map(friendChallenges.map((challenge) => [challenge.id, challenge]))
+  const squadsById = new Map(friendSquads.map((squad) => [squad.id, squad]))
+
+  return friendEvents.map((event) => {
+    const actor = eventProfileName(event.actorId, profilesByUserId, currentUserId)
+    const target = eventProfileName(event.targetUserId, profilesByUserId, currentUserId)
+    const eventChallengeName = event.challengeId ? challengesById.get(event.challengeId)?.name ?? '' : ''
+    const eventSquadName = event.squadId ? squadsById.get(event.squadId)?.name ?? '' : ''
+    const challengeName = eventChallengeName || metadataString(event.metadata, 'challengeName') || 'Challenge'
+    const squadName = eventSquadName || metadataString(event.metadata, 'squadName') || 'Squad'
+    const inviteCount = metadataNumber(event.metadata, 'inviteCount')
+    const note = metadataString(event.metadata, 'note')
+    const reaction = reactionLabel(normalizeScoreReaction(event.metadata.reaction))
+    let title = 'Friend activity'
+    let detail = `${actor} updated something.`
+    let tone: FriendActivityFeedItem['tone'] = 'neutral'
+
+    switch (event.eventType) {
+      case 'friend_request_sent':
+        title = 'Friend request sent'
+        detail = `${actor} sent ${target} a friend request.`
+        tone = 'pending'
+        break
+      case 'friend_request_accepted':
+        title = 'Friend request accepted'
+        detail = `${actor} and ${target} are connected.`
+        tone = 'success'
+        break
+      case 'friend_request_declined':
+        title = 'Friend request declined'
+        detail = `${actor} declined a friend request.`
+        break
+      case 'squad_created':
+        title = `${squadName} squad created`
+        detail = `${actor} saved a private squad.`
+        tone = 'success'
+        break
+      case 'squad_updated':
+        title = `${squadName} squad updated`
+        detail = `${actor} changed the squad roster.`
+        tone = 'success'
+        break
+      case 'squad_deleted':
+        title = 'Squad deleted'
+        detail = `${actor} deleted ${squadName}.`
+        break
+      case 'challenge_created':
+        title = `${challengeName} created`
+        detail = inviteCount && inviteCount > 0
+          ? `${actor} invited ${inviteCount} ${inviteCount === 1 ? 'friend' : 'friends'}.`
+          : `${actor} created a friend challenge.`
+        tone = inviteCount && inviteCount > 0 ? 'pending' : 'success'
+        break
+      case 'challenge_invites_sent':
+        title = 'Challenge invites sent'
+        detail = `${actor} invited ${inviteCount ?? 0} ${inviteCount === 1 ? 'friend' : 'friends'} to ${challengeName}.`
+        tone = 'pending'
+        break
+      case 'challenge_invite_accepted':
+        title = 'Challenge invite accepted'
+        detail = `${actor} joined ${challengeName}.`
+        tone = 'success'
+        break
+      case 'challenge_invite_declined':
+        title = 'Challenge invite declined'
+        detail = `${actor} declined ${challengeName}.`
+        break
+      case 'challenge_score_published':
+        title = `${actor} published a challenge score`
+        detail = `${challengeName}${reaction ? ` · ${reaction}` : ''}${note ? ` · ${note}` : ''}`
+        tone = 'success'
+        break
+      case 'leaderboard_score_published':
+        title = `${actor} published a leaderboard score`
+        detail = 'Leaderboard stats were refreshed.'
+        tone = 'success'
+        break
+    }
+
+    return {
+      id: `event-${event.id}`,
+      title,
+      detail,
+      meta: formatActivityDate(event.createdAt),
+      tone,
+      sortAt: event.createdAt,
+    }
+  }).sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime()).slice(0, 20)
+}
+
 function FriendsView({
   configured,
   user,
@@ -4247,6 +4854,7 @@ function FriendsView({
   friendRequests,
   friendChallenges,
   friendSquads,
+  friendEvents,
   privacySettings,
   status,
   busy,
@@ -4260,8 +4868,10 @@ function FriendsView({
   onAcceptRequest,
   onDeclineRequest,
   onCreateSquad,
+  onUpdateSquad,
   onDeleteSquad,
   onCreateChallenge,
+  onInviteChallengeParticipants,
   onAcceptChallenge,
   onDeclineChallenge,
   onPublishChallengeScore,
@@ -4278,6 +4888,7 @@ function FriendsView({
   friendRequests: FriendRequest[]
   friendChallenges: FriendChallengeView[]
   friendSquads: FriendSquadView[]
+  friendEvents: FriendEvent[]
   privacySettings: PrivacySettings
   status: DataStatus
   busy: boolean
@@ -4291,11 +4902,13 @@ function FriendsView({
   onAcceptRequest: (userId: string) => void
   onDeclineRequest: (userId: string) => void
   onCreateSquad: (input: CreateFriendSquadInput) => void
+  onUpdateSquad: (input: UpdateFriendSquadInput) => void
   onDeleteSquad: (squadId: string) => void
   onCreateChallenge: (input: CreateFriendChallengeInput) => void
+  onInviteChallengeParticipants: (input: InviteFriendChallengeInput) => void
   onAcceptChallenge: (challengeId: string) => void
   onDeclineChallenge: (challengeId: string) => void
-  onPublishChallengeScore: (challengeId: string) => void
+  onPublishChallengeScore: (challengeId: string, note?: string, reaction?: ScoreReaction | null) => void
   onPublishSummary: () => void
   onRefresh: () => void
   onOpenSettings: () => void
@@ -4312,13 +4925,33 @@ function FriendsView({
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
   const [squadName, setSquadName] = useState('Training Squad')
   const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
-  const activityFeed = useMemo(() => buildFriendActivityFeed({
-    leaderboardRows,
-    friendRequests,
-    friendChallenges,
-    friendSquads,
-  }), [leaderboardRows, friendRequests, friendChallenges, friendSquads])
+  const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null)
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null)
+  const currentUserId = user?.id ?? null
+  const activityFeed = useMemo(() => (
+    friendEvents.length > 0
+      ? buildStoredFriendActivityFeed({
+        friendEvents,
+        leaderboardRows,
+        friendChallenges,
+        friendSquads,
+        currentUserId,
+      })
+      : buildFriendActivityFeed({
+        leaderboardRows,
+        friendRequests,
+        friendChallenges,
+        friendSquads,
+      })
+  ), [friendEvents, leaderboardRows, friendRequests, friendChallenges, friendSquads, currentUserId])
   const pendingCount = incomingRequests.length + friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
+  const networkBadgeCount = incomingRequests.length
+  const challengeBadgeCount = friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
+  const activeChallenges = friendChallenges.filter((challenge) => !isChallengeCompleted(challenge))
+  const completedChallenges = friendChallenges.filter(isChallengeCompleted)
+  const selectedChallenge = selectedChallengeId ? friendChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null : null
+  const selectedFriend = selectedFriendId ? acceptedFriends.find((friend) => friend.userId === selectedFriendId) ?? null : null
+  const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
 
   function toggleChallengeInvite(userId: string) {
     setChallengeInviteIds((current) => (
@@ -4375,6 +5008,7 @@ function FriendsView({
       endDate: challengeEndDate,
       scoringMode: challengeScoringMode,
       inviteeIds: challengeInviteIds.filter((userId) => acceptedFriendIds.has(userId)),
+      templateId: challengeTemplateId,
     })
   }
 
@@ -4425,18 +5059,22 @@ function FriendsView({
 
       <section className="friends-command-center" aria-label="Friends sections">
         <div className="friends-tabs" role="tablist" aria-label="Friends sections">
-          {FRIENDS_TABS.map((tab) => (
-            <button
-              className={activeFriendsTab === tab.key ? 'active' : ''}
-              type="button"
-              role="tab"
-              aria-selected={activeFriendsTab === tab.key}
-              key={tab.key}
-              onClick={() => setActiveFriendsTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {FRIENDS_TABS.map((tab) => {
+            const tabBadge = tab.key === 'network' ? networkBadgeCount : tab.key === 'challenges' ? challengeBadgeCount : 0
+            return (
+              <button
+                className={activeFriendsTab === tab.key ? 'active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={activeFriendsTab === tab.key}
+                key={tab.key}
+                onClick={() => setActiveFriendsTab(tab.key)}
+              >
+                {tab.label}
+                {tabBadge > 0 && <b className="inline-badge">{tabBadge}</b>}
+              </button>
+            )
+          })}
         </div>
         <div className="friends-stat-grid">
           <span><small>Friends</small><strong>{acceptedFriends.length}</strong></span>
@@ -4626,7 +5264,9 @@ function FriendsView({
                 key={squad.id}
                 squad={squad}
                 leaderboardRows={leaderboardRows}
+                acceptedFriends={acceptedFriends}
                 busy={busy}
+                onUpdate={(input) => onUpdateSquad(input)}
                 onUseForChallenge={() => applySquadToChallenge(squad)}
                 onDelete={() => onDeleteSquad(squad.id)}
               />
@@ -4657,7 +5297,7 @@ function FriendsView({
                 ))}
               </select>
             </label>
-            <p>{CHALLENGE_TEMPLATES.find((template) => template.id === challengeTemplateId)?.note ?? 'Start from a blank challenge.'}</p>
+            <p>{describeTemplateOverrides(challengeTemplateById(challengeTemplateId))}</p>
           </div>
           <div className="field-grid">
             <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
@@ -4703,21 +5343,76 @@ function FriendsView({
             Create Challenge
           </button>
         </div>
+        {selectedChallenge && (
+          <FriendChallengeDetail
+            challenge={selectedChallenge}
+            acceptedFriends={acceptedFriends}
+            busy={busy}
+            onClose={() => setSelectedChallengeId(null)}
+            onInviteMore={(inviteeIds) => onInviteChallengeParticipants({
+              challengeId: selectedChallenge.id,
+              inviteeIds,
+            })}
+            onPublish={(note, reaction) => onPublishChallengeScore(selectedChallenge.id, note, reaction)}
+          />
+        )}
         {friendChallenges.length === 0 ? (
           <p className="empty-leaderboard">No friend challenges yet.</p>
         ) : (
-          <div className="challenge-list">
-            {friendChallenges.map((challenge) => (
-              <FriendChallengeCard
-                key={challenge.id}
-                challenge={challenge}
-                busy={busy}
-                onAccept={() => onAcceptChallenge(challenge.id)}
-                onDecline={() => onDeclineChallenge(challenge.id)}
-                onPublish={() => onPublishChallengeScore(challenge.id)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="challenge-section">
+              <div className="section-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Active</p>
+                  <h3>Current challenges</h3>
+                </div>
+                <span>{activeChallenges.length}</span>
+              </div>
+              {activeChallenges.length === 0 ? (
+                <p className="empty-leaderboard">No active challenges right now.</p>
+              ) : (
+                <div className="challenge-list">
+                  {activeChallenges.map((challenge) => (
+                    <FriendChallengeCard
+                      key={challenge.id}
+                      challenge={challenge}
+                      busy={busy}
+                      onSelect={() => setSelectedChallengeId(challenge.id)}
+                      onAccept={() => onAcceptChallenge(challenge.id)}
+                      onDecline={() => onDeclineChallenge(challenge.id)}
+                      onPublish={() => onPublishChallengeScore(challenge.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="challenge-section">
+              <div className="section-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Archive</p>
+                  <h3>Completed challenges</h3>
+                </div>
+                <span>{completedChallenges.length}</span>
+              </div>
+              {completedChallenges.length === 0 ? (
+                <p className="empty-leaderboard">Completed friend-versus-friend history will collect here.</p>
+              ) : (
+                <div className="challenge-list">
+                  {completedChallenges.map((challenge) => (
+                    <FriendChallengeCard
+                      key={challenge.id}
+                      challenge={challenge}
+                      busy={busy}
+                      onSelect={() => setSelectedChallengeId(challenge.id)}
+                      onAccept={() => onAcceptChallenge(challenge.id)}
+                      onDecline={() => onDeclineChallenge(challenge.id)}
+                      onPublish={() => onPublishChallengeScore(challenge.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </section>
         </>
@@ -4732,12 +5427,26 @@ function FriendsView({
           </div>
           <span>{leaderboardRows.length}</span>
         </div>
+        {selectedFriend && (
+          <FriendProfileDetail
+            friend={selectedFriend}
+            currentUser={currentUserRow}
+            friendChallenges={friendChallenges}
+            friendSquads={friendSquads}
+            onClose={() => setSelectedFriendId(null)}
+          />
+        )}
         {leaderboardRows.length === 0 ? (
           <p className="empty-leaderboard">Publish your score to start the leaderboard.</p>
         ) : (
           <div className="leaderboard-list">
             {leaderboardRows.map((row, index) => (
-              <LeaderboardCard key={row.userId} row={row} rank={index + 1} />
+              <LeaderboardCard
+                key={row.userId}
+                row={row}
+                rank={index + 1}
+                onOpenProfile={row.isCurrentUser ? undefined : () => setSelectedFriendId(row.userId)}
+              />
             ))}
           </div>
         )}
@@ -4806,35 +5515,98 @@ function FriendActivityFeed({ items }: { items: FriendActivityFeedItem[] }) {
 function FriendSquadCard({
   squad,
   leaderboardRows,
+  acceptedFriends,
   busy,
+  onUpdate,
   onUseForChallenge,
   onDelete,
 }: {
   squad: FriendSquadView
   leaderboardRows: LeaderboardRow[]
+  acceptedFriends: LeaderboardRow[]
   busy: boolean
+  onUpdate: (input: UpdateFriendSquadInput) => void
   onUseForChallenge: () => void
   onDelete: () => void
 }) {
   const squadLeaderboardRows = getSquadLeaderboardRows(squad, leaderboardRows)
+  const [isEditing, setIsEditing] = useState(false)
+  const [draftName, setDraftName] = useState(squad.name)
+  const [draftMemberIds, setDraftMemberIds] = useState(squad.members.map((member) => member.userId))
+
+  function startEditing() {
+    setDraftName(squad.name)
+    setDraftMemberIds(squad.members.map((member) => member.userId))
+    setIsEditing(true)
+  }
+
+  function toggleDraftMember(userId: string) {
+    setDraftMemberIds((current) => (
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    ))
+  }
+
+  function saveSquad() {
+    onUpdate({
+      squadId: squad.id,
+      name: draftName,
+      memberIds: draftMemberIds,
+    })
+    setIsEditing(false)
+  }
 
   return (
     <article className="squad-card">
-      <div className="squad-card-main">
-        <div>
-          <strong>{squad.name}</strong>
-          <span>{squad.members.length} {squad.members.length === 1 ? 'member' : 'members'}</span>
-        </div>
-        {squad.members.length === 0 ? (
-          <p>No active members. Add accepted friends to a new squad.</p>
-        ) : (
-          <div className="squad-member-list">
-            {squad.members.map((member) => (
-              <span key={member.userId}>{member.displayName}</span>
-            ))}
+      {isEditing ? (
+        <div className="squad-edit-panel">
+          <TextField label="Squad name" value={draftName} onChange={setDraftName} />
+          <div className="challenge-invite-picker">
+            <small>Members</small>
+            {acceptedFriends.length === 0 ? (
+              <p>No accepted friends yet.</p>
+            ) : (
+              <div>
+                {acceptedFriends.map((friend) => (
+                  <label className="challenge-invite-option" key={friend.userId}>
+                    <input
+                      type="checkbox"
+                      checked={draftMemberIds.includes(friend.userId)}
+                      onChange={() => toggleDraftMember(friend.userId)}
+                    />
+                    <span>{friend.displayName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+          <div className="squad-card-actions">
+            <button className="secondary-button compact-button" type="button" onClick={saveSquad} disabled={busy || !draftName.trim()}>
+              Save Squad
+            </button>
+            <button className="ghost-button" type="button" onClick={() => setIsEditing(false)} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="squad-card-main">
+          <div>
+            <strong>{squad.name}</strong>
+            <span>{squad.members.length} {squad.members.length === 1 ? 'member' : 'members'}</span>
+          </div>
+          {squad.members.length === 0 ? (
+            <p>No active members. Add accepted friends by editing this squad.</p>
+          ) : (
+            <div className="squad-member-list">
+              {squad.members.map((member) => (
+                <span key={member.userId}>{member.displayName}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {squadLeaderboardRows.length > 0 && (
         <div className="squad-leaderboard">
           <small>Squad leaderboard</small>
@@ -4851,6 +5623,11 @@ function FriendSquadCard({
         </div>
       )}
       <div className="squad-card-actions">
+        {!isEditing && (
+          <button className="secondary-button compact-button" type="button" onClick={startEditing} disabled={busy}>
+            Edit Squad
+          </button>
+        )}
         <button className="secondary-button compact-button" type="button" onClick={onUseForChallenge} disabled={busy || squad.members.length === 0}>
           Use for Challenge
         </button>
@@ -4865,12 +5642,14 @@ function FriendSquadCard({
 function FriendChallengeCard({
   challenge,
   busy,
+  onSelect,
   onAccept,
   onDecline,
   onPublish,
 }: {
   challenge: FriendChallengeView
   busy: boolean
+  onSelect: () => void
   onAccept: () => void
   onDecline: () => void
   onPublish: () => void
@@ -4897,6 +5676,9 @@ function FriendChallengeCard({
       </div>
 
       <div className="challenge-card-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onSelect} disabled={busy}>
+          Details
+        </button>
         {challenge.currentUserStatus === 'pending' && !challenge.isCreator && (
           <>
             <button className="secondary-button compact-button" type="button" onClick={onAccept} disabled={busy}>
@@ -4934,6 +5716,11 @@ function FriendChallengeCard({
                 <span><small>Streak</small><strong>{formatSummaryMetric(participant.summary, 'showStreak', (summary) => String(summary.currentStreak))}</strong></span>
                 <span><small>Logged</small><strong>{formatSummaryMetric(participant.summary, 'showLoggedDays', (summary) => `${summary.loggedDays}/${summary.totalDays}`)}</strong></span>
               </div>
+              {(participant.summary?.note || participant.summary?.reaction) && (
+                <p className="score-note">
+                  {reactionLabel(participant.summary.reaction) ?? 'Note'}{participant.summary.note ? ` · ${participant.summary.note}` : ''}
+                </p>
+              )}
             </article>
           ))}
         </div>
@@ -4942,7 +5729,366 @@ function FriendChallengeCard({
   )
 }
 
-function LeaderboardCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
+function FriendChallengeDetail({
+  challenge,
+  acceptedFriends,
+  busy,
+  onClose,
+  onInviteMore,
+  onPublish,
+}: {
+  challenge: FriendChallengeView
+  acceptedFriends: LeaderboardRow[]
+  busy: boolean
+  onClose: () => void
+  onInviteMore: (inviteeIds: string[]) => void
+  onPublish: (note: string, reaction: ScoreReaction | null) => void
+}) {
+  const participantIds = new Set(challenge.participants.map((participant) => participant.userId))
+  const availableFriends = acceptedFriends.filter((friend) => !participantIds.has(friend.userId))
+  const acceptedParticipants = challenge.participants.filter((participant) => participant.status === 'accepted')
+  const pendingParticipants = challenge.participants.filter((participant) => participant.status === 'pending')
+  const declinedParticipants = challenge.participants.filter((participant) => participant.status === 'declined')
+  const rankedParticipants = [...acceptedParticipants].sort((a, b) => (
+    (b.summary?.weeklyCompletion ?? 0) - (a.summary?.weeklyCompletion ?? 0)
+    || (b.summary?.averageCompletion ?? 0) - (a.summary?.averageCompletion ?? 0)
+    || (b.summary?.currentStreak ?? 0) - (a.summary?.currentStreak ?? 0)
+    || a.displayName.localeCompare(b.displayName)
+  ))
+  const myParticipant = challenge.participants.find((participant) => participant.isCurrentUser) ?? null
+  const activeRules = getEnabledRules(challenge.settings)
+  const completed = isChallengeCompleted(challenge)
+  const [inviteIds, setInviteIds] = useState<string[]>([])
+  const [scoreNote, setScoreNote] = useState(myParticipant?.summary?.note ?? '')
+  const [scoreReaction, setScoreReaction] = useState<ScoreReaction | null>(myParticipant?.summary?.reaction ?? null)
+
+  useEffect(() => {
+    setInviteIds([])
+    setScoreNote(myParticipant?.summary?.note ?? '')
+    setScoreReaction(myParticipant?.summary?.reaction ?? null)
+  }, [challenge.id])
+
+  function toggleInvite(userId: string) {
+    setInviteIds((current) => (
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    ))
+  }
+
+  function submitInvites() {
+    onInviteMore(inviteIds)
+    setInviteIds([])
+  }
+
+  return (
+    <article className="challenge-detail-card">
+      <div className="challenge-detail-header">
+        <div>
+          <small>{completed ? 'Completed archive' : 'Challenge detail'}</small>
+          <h3>{challenge.name}</h3>
+          <p>{formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)} · {challenge.scoringMode === 'shared' ? 'Shared rules' : 'Personal targets'}</p>
+        </div>
+        <div className="challenge-detail-actions">
+          <span className="request-badge">{challenge.isCreator ? 'Owner' : statusLabel(challenge.currentUserStatus)}</span>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div className="challenge-detail-grid">
+        <section className="challenge-detail-section">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Publishing</p>
+              <h3>Your score</h3>
+            </div>
+          </div>
+          <div className="publish-state">
+            <span><small>Status</small><strong>{myParticipant ? statusLabel(myParticipant.status) : 'Not joined'}</strong></span>
+            <span><small>Last publish</small><strong>{myParticipant?.summary ? formatShortDate(myParticipant.summary.updatedAt.slice(0, 10)) : 'None'}</strong></span>
+          </div>
+          {challenge.currentUserStatus === 'accepted' ? (
+            <div className="score-publish-form">
+              <TextArea
+                label="Score note"
+                value={scoreNote}
+                placeholder="Optional: what made this score happen?"
+                disabled={busy}
+                onChange={(value) => setScoreNote(value.slice(0, 180))}
+              />
+              <label className="select-field">
+                <span>Reaction</span>
+                <select value={scoreReaction ?? ''} disabled={busy} onChange={(event) => setScoreReaction(normalizeScoreReaction(event.target.value))}>
+                  <option value="">No reaction</option>
+                  {SCORE_REACTIONS.map((reaction) => (
+                    <option key={reaction.key} value={reaction.key}>{reaction.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary-button compact-button" type="button" onClick={() => onPublish(scoreNote, scoreReaction)} disabled={busy}>
+                Publish With Note
+              </button>
+            </div>
+          ) : (
+            <p className="empty-leaderboard">Accept this challenge before publishing a score.</p>
+          )}
+        </section>
+
+        <section className="challenge-detail-section">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Participants</p>
+              <h3>Roster state</h3>
+            </div>
+          </div>
+          <div className="challenge-roster-grid">
+            <span><small>Accepted</small><strong>{acceptedParticipants.length}</strong></span>
+            <span><small>Pending</small><strong>{pendingParticipants.length}</strong></span>
+            <span><small>Declined</small><strong>{declinedParticipants.length}</strong></span>
+          </div>
+          <div className="participant-history-list">
+            {challenge.participants.map((participant) => (
+              <article className="participant-history-row" key={participant.userId}>
+                <div>
+                  <strong>{participant.displayName}{participant.isCurrentUser ? ' · You' : ''}</strong>
+                  <span>Invited {formatActivityDate(participant.createdAt)}{participant.respondedAt ? ` · Responded ${formatActivityDate(participant.respondedAt)}` : ''}</span>
+                </div>
+                <b>{statusLabel(participant.status)}</b>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {challenge.isCreator && (
+        <section className="challenge-detail-section">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Invite management</p>
+              <h3>Add friends</h3>
+            </div>
+            <span>{availableFriends.length}</span>
+          </div>
+          {availableFriends.length === 0 ? (
+            <p className="empty-leaderboard">All accepted friends are already in this challenge.</p>
+          ) : (
+            <>
+              <div className="challenge-invite-picker">
+                <div>
+                  {availableFriends.map((friend) => (
+                    <label className="challenge-invite-option" key={friend.userId}>
+                      <input
+                        type="checkbox"
+                        checked={inviteIds.includes(friend.userId)}
+                        onChange={() => toggleInvite(friend.userId)}
+                      />
+                      <span>{friend.displayName}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <button className="secondary-button compact-button" type="button" onClick={submitInvites} disabled={busy || inviteIds.length === 0}>
+                Send Challenge Invites
+              </button>
+            </>
+          )}
+        </section>
+      )}
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Settings</p>
+            <h3>Rules and targets</h3>
+          </div>
+        </div>
+        <div className="challenge-settings-grid">
+          <span><small>Exercise</small><strong>{challenge.settings.targets.exerciseMinutes} min</strong></span>
+          <span><small>Protein</small><strong>{challenge.settings.targets.proteinGrams} g</strong></span>
+          <span><small>Water</small><strong>{challenge.settings.targets.waterLiters} L</strong></span>
+          <span><small>Sleep</small><strong>{challenge.settings.targets.sleepHours} hr</strong></span>
+        </div>
+        <div className="squad-member-list">
+          {activeRules.map((rule) => (
+            <span key={rule.key}>{rule.label} · {rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting'}</span>
+          ))}
+        </div>
+      </section>
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">History</p>
+            <h3>Weekly comparison</h3>
+          </div>
+        </div>
+        {rankedParticipants.length === 0 ? (
+          <p className="empty-leaderboard">No accepted participants have published yet.</p>
+        ) : (
+          <div className="leaderboard-list">
+            {rankedParticipants.map((participant, index) => (
+              <article className={`leaderboard-card ${participant.isCurrentUser ? 'is-you' : ''}`} key={participant.userId}>
+                <div className="leaderboard-rank">{index + 1}</div>
+                <div className="leaderboard-main">
+                  <div className="leaderboard-name-row">
+                    <strong>{participant.displayName}</strong>
+                    {participant.isCurrentUser && <span>You</span>}
+                  </div>
+                  <small>{participant.summary?.lastLoggedDate ? `Last log ${formatShortDate(participant.summary.lastLoggedDate)}` : 'No logged score yet'}</small>
+                </div>
+                <div className="leaderboard-stats">
+                  <span><small>7-day</small><strong>{formatSummaryMetric(participant.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)}</strong></span>
+                  <span><small>Avg</small><strong>{formatSummaryMetric(participant.summary, 'showAverageCompletion', (summary) => `${summary.averageCompletion}%`)}</strong></span>
+                  <span><small>Streak</small><strong>{formatSummaryMetric(participant.summary, 'showStreak', (summary) => String(summary.currentStreak))}</strong></span>
+                  <span><small>Logged</small><strong>{formatSummaryMetric(participant.summary, 'showLoggedDays', (summary) => `${summary.loggedDays}/${summary.totalDays}`)}</strong></span>
+                </div>
+                {(participant.summary?.note || participant.summary?.reaction) && (
+                  <p className="score-note">
+                    {reactionLabel(participant.summary.reaction) ?? 'Note'}{participant.summary.note ? ` · ${participant.summary.note}` : ''}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </article>
+  )
+}
+
+function FriendProfileDetail({
+  friend,
+  currentUser,
+  friendChallenges,
+  friendSquads,
+  onClose,
+}: {
+  friend: LeaderboardRow
+  currentUser: LeaderboardRow | null
+  friendChallenges: FriendChallengeView[]
+  friendSquads: FriendSquadView[]
+  onClose: () => void
+}) {
+  const sharedSquads = friendSquads.filter((squad) => squad.members.some((member) => member.userId === friend.userId))
+  const sharedChallenges = friendChallenges.filter((challenge) => {
+    const friendParticipant = challenge.participants.find((participant) => participant.userId === friend.userId)
+    const currentParticipant = challenge.participants.find((participant) => participant.isCurrentUser)
+    return friendParticipant?.status === 'accepted' && currentParticipant?.status === 'accepted'
+  })
+  const headToHead = sharedChallenges.reduce((record, challenge) => {
+    const friendParticipant = challenge.participants.find((participant) => participant.userId === friend.userId)
+    const currentParticipant = challenge.participants.find((participant) => participant.isCurrentUser)
+    const friendScore = friendParticipant?.summary?.weeklyCompletion ?? null
+    const currentScore = currentParticipant?.summary?.weeklyCompletion ?? null
+    if (friendScore === null || currentScore === null || friendScore === currentScore) return record
+    return friendScore > currentScore
+      ? { ...record, friendWins: record.friendWins + 1 }
+      : { ...record, yourWins: record.yourWins + 1 }
+  }, { friendWins: 0, yourWins: 0 })
+  const recentChallengeScores = sharedChallenges
+    .map((challenge) => {
+      const participant = challenge.participants.find((item) => item.userId === friend.userId)
+      return participant?.summary
+        ? {
+          challenge,
+          summary: participant.summary,
+        }
+        : null
+    })
+    .filter((item): item is { challenge: FriendChallengeView; summary: ChallengeSummary } => item !== null)
+    .sort((a, b) => b.summary.updatedAt.localeCompare(a.summary.updatedAt))
+    .slice(0, 3)
+
+  return (
+    <article className="friend-profile-detail">
+      <div className="challenge-detail-header">
+        <div>
+          <small>Friend profile</small>
+          <h3>{friend.displayName}</h3>
+          <p>{sharedSquads.length} shared {sharedSquads.length === 1 ? 'squad' : 'squads'} · {sharedChallenges.length} shared {sharedChallenges.length === 1 ? 'challenge' : 'challenges'}</p>
+        </div>
+        <button className="ghost-button" type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+
+      <div className="friend-profile-grid">
+        <section className="challenge-detail-section">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Recent score</p>
+              <h3>Leaderboard</h3>
+            </div>
+          </div>
+          <div className="leaderboard-stats">
+            <span><small>7-day</small><strong>{formatSummaryMetric(friend.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)}</strong></span>
+            <span><small>Avg</small><strong>{formatSummaryMetric(friend.summary, 'showAverageCompletion', (summary) => `${summary.averageCompletion}%`)}</strong></span>
+            <span><small>Streak</small><strong>{formatSummaryMetric(friend.summary, 'showStreak', (summary) => String(summary.currentStreak))}</strong></span>
+            <span><small>Logged</small><strong>{formatSummaryMetric(friend.summary, 'showLoggedDays', (summary) => `${summary.loggedDays}/${summary.totalDays}`)}</strong></span>
+          </div>
+        </section>
+
+        <section className="challenge-detail-section">
+          <div className="section-heading compact-heading">
+            <div>
+              <p className="eyebrow">Head-to-head</p>
+              <h3>Shared challenges</h3>
+            </div>
+          </div>
+          <div className="challenge-roster-grid">
+            <span><small>{friend.displayName}</small><strong>{headToHead.friendWins}</strong></span>
+            <span><small>{currentUser?.displayName ?? 'You'}</small><strong>{headToHead.yourWins}</strong></span>
+            <span><small>Total</small><strong>{sharedChallenges.length}</strong></span>
+          </div>
+        </section>
+      </div>
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Shared squads</p>
+            <h3>Groups together</h3>
+          </div>
+        </div>
+        {sharedSquads.length === 0 ? (
+          <p className="empty-leaderboard">No shared squads yet.</p>
+        ) : (
+          <div className="squad-member-list">
+            {sharedSquads.map((squad) => <span key={squad.id}>{squad.name}</span>)}
+          </div>
+        )}
+      </section>
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Recent challenge scores</p>
+            <h3>Published history</h3>
+          </div>
+        </div>
+        {recentChallengeScores.length === 0 ? (
+          <p className="empty-leaderboard">No shared challenge scores published yet.</p>
+        ) : (
+          <div className="participant-history-list">
+            {recentChallengeScores.map(({ challenge, summary }) => (
+              <article className="participant-history-row" key={challenge.id}>
+                <div>
+                  <strong>{challenge.name}</strong>
+                  <span>Updated {formatActivityDate(summary.updatedAt)}{summary.note ? ` · ${summary.note}` : ''}</span>
+                </div>
+                <b>{formatSummaryMetric(summary, 'showWeeklyCompletion', (item) => `${item.weeklyCompletion}%`)}</b>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </article>
+  )
+}
+
+function LeaderboardCard({ row, rank, onOpenProfile }: { row: LeaderboardRow; rank: number; onOpenProfile?: () => void }) {
   const summary = row.summary
 
   return (
@@ -4961,6 +6107,11 @@ function LeaderboardCard({ row, rank }: { row: LeaderboardRow; rank: number }) {
         <span><small>Streak</small><strong>{formatSummaryMetric(summary, 'showStreak', (item) => String(item.currentStreak))}</strong></span>
         <span><small>Logged</small><strong>{formatSummaryMetric(summary, 'showLoggedDays', (item) => `${item.loggedDays}/${item.totalDays}`)}</strong></span>
       </div>
+      {onOpenProfile && (
+        <button className="ghost-button leaderboard-profile-button" type="button" onClick={onOpenProfile}>
+          View Profile
+        </button>
+      )}
     </article>
   )
 }
@@ -5923,10 +7074,23 @@ function PeriodRecapRow({ recap }: { recap: PeriodRecap }) {
   )
 }
 
-function NavButton({ label, icon, active, onClick }: { label: string; icon: 'home' | 'check' | 'calendar' | 'progress' | 'friends' | 'settings'; active: boolean; onClick: () => void }) {
+function NavButton({
+  label,
+  icon,
+  active,
+  badgeCount = 0,
+  onClick,
+}: {
+  label: string
+  icon: 'home' | 'check' | 'calendar' | 'progress' | 'friends' | 'settings'
+  active: boolean
+  badgeCount?: number
+  onClick: () => void
+}) {
   return (
     <button type="button" className={active ? 'active' : ''} onClick={onClick}>
       <Icon name={icon} />
+      {badgeCount > 0 && <b className="nav-badge">{badgeCount}</b>}
       <span>{label}</span>
     </button>
   )

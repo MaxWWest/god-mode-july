@@ -458,3 +458,100 @@ create policy "Users and creators can delete challenge participants"
         and challenge.creator_id = auth.uid()
     )
   );
+
+create table if not exists public.god_mode_friend_events (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid not null references auth.users(id) on delete cascade,
+  target_user_id uuid references auth.users(id) on delete cascade,
+  challenge_id uuid references public.god_mode_friend_challenges(id) on delete cascade,
+  squad_id uuid references public.god_mode_squads(id) on delete cascade,
+  event_type text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint god_mode_friend_events_type_check check (
+    event_type in (
+      'friend_request_sent',
+      'friend_request_accepted',
+      'friend_request_declined',
+      'squad_created',
+      'squad_updated',
+      'squad_deleted',
+      'challenge_created',
+      'challenge_invites_sent',
+      'challenge_invite_accepted',
+      'challenge_invite_declined',
+      'challenge_score_published',
+      'leaderboard_score_published'
+    )
+  )
+);
+
+create index if not exists god_mode_friend_events_actor_created_idx
+  on public.god_mode_friend_events(actor_id, created_at desc);
+
+create index if not exists god_mode_friend_events_target_created_idx
+  on public.god_mode_friend_events(target_user_id, created_at desc);
+
+create index if not exists god_mode_friend_events_challenge_idx
+  on public.god_mode_friend_events(challenge_id);
+
+alter table public.god_mode_friend_events enable row level security;
+
+drop policy if exists "Users can read visible friend events" on public.god_mode_friend_events;
+create policy "Users can read visible friend events"
+  on public.god_mode_friend_events
+  for select
+  using (
+    auth.uid() = actor_id
+    or auth.uid() = target_user_id
+    or public.god_mode_is_friend_challenge_member(challenge_id)
+    or exists (
+      select 1
+      from public.god_mode_squads squad
+      where squad.id = god_mode_friend_events.squad_id
+        and squad.owner_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.god_mode_squad_members member
+      where member.squad_id = god_mode_friend_events.squad_id
+        and member.user_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.god_mode_friendships friendship
+      where friendship.status = 'accepted'
+        and (
+          (
+            friendship.user_a = auth.uid()
+            and friendship.user_b = god_mode_friend_events.actor_id
+          ) or (
+            friendship.user_b = auth.uid()
+            and friendship.user_a = god_mode_friend_events.actor_id
+          ) or (
+            god_mode_friend_events.target_user_id is not null
+            and friendship.user_a = auth.uid()
+            and friendship.user_b = god_mode_friend_events.target_user_id
+          ) or (
+            god_mode_friend_events.target_user_id is not null
+            and friendship.user_b = auth.uid()
+            and friendship.user_a = god_mode_friend_events.target_user_id
+          )
+        )
+    )
+  );
+
+drop policy if exists "Users can create their friend events" on public.god_mode_friend_events;
+create policy "Users can create their friend events"
+  on public.god_mode_friend_events
+  for insert
+  with check (
+    auth.uid() = actor_id
+    and (target_user_id is null or target_user_id <> actor_id)
+  );
+
+drop policy if exists "Users can delete their friend events" on public.god_mode_friend_events;
+create policy "Users can delete their friend events"
+  on public.god_mode_friend_events
+  for delete
+  using (auth.uid() = actor_id or auth.uid() = target_user_id);
