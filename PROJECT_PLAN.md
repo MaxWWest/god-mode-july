@@ -41,6 +41,8 @@
 - Accepted friendships only appear in the leaderboard
 - Share-safe challenge summaries
 - Friends leaderboard for last-7-day completion, average completion, streaks, and logged days
+- Invite-only custom friend challenges with personal-target or shared-rule scoring
+- Challenge accept/decline flow and per-challenge score publishing
 
 ## Ongoing tracker pivot (complete)
 

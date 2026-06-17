@@ -3,6 +3,8 @@ import type { CSSProperties, ChangeEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
+  SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
+  SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_PROFILE_TABLE,
   SUPABASE_SUMMARY_TABLE,
@@ -122,6 +124,8 @@ type AccountDataExport = {
     profile: FriendProfile | null
     friendships: FriendshipRow[]
     summary: ChallengeSummary | null
+    friendChallenges: FriendChallenge[]
+    friendChallengeParticipants: FriendChallengeParticipant[]
   }
 }
 
@@ -219,6 +223,51 @@ type FriendRequest = FriendProfile & {
   requestedBy: string
   direction: 'incoming' | 'outgoing'
   createdAt: string
+}
+
+type FriendChallengeScoringMode = 'personal' | 'shared'
+type FriendChallengeParticipantStatus = 'pending' | 'accepted' | 'declined'
+
+type FriendChallenge = {
+  id: string
+  creatorId: string
+  name: string
+  startDate: string
+  endDate: string
+  scoringMode: FriendChallengeScoringMode
+  settings: ChallengeSettings
+  createdAt: string
+  updatedAt: string
+}
+
+type FriendChallengeParticipant = {
+  challengeId: string
+  userId: string
+  invitedBy: string
+  status: FriendChallengeParticipantStatus
+  summary: ChallengeSummary | null
+  createdAt: string
+  respondedAt: string | null
+}
+
+type FriendChallengeParticipantView = FriendProfile & {
+  status: FriendChallengeParticipantStatus
+  summary: ChallengeSummary | null
+  isCurrentUser: boolean
+}
+
+type FriendChallengeView = FriendChallenge & {
+  currentUserStatus: FriendChallengeParticipantStatus
+  isCreator: boolean
+  participants: FriendChallengeParticipantView[]
+}
+
+type CreateFriendChallengeInput = {
+  name: string
+  startDate: string
+  endDate: string
+  scoringMode: FriendChallengeScoringMode
+  inviteeIds: string[]
 }
 
 type InstallPromptEvent = Event & {
@@ -994,6 +1043,85 @@ function buildChallengeSummary(userId: string, entries: EntryMap, settings: Chal
   }
 }
 
+function getChallengeElapsedDates(challenge: Pick<FriendChallenge, 'startDate' | 'endDate'>): string[] {
+  const today = todayIso()
+  if (today < challenge.startDate) return []
+  const throughDate = today > challenge.endDate ? challenge.endDate : today
+  if (throughDate < challenge.startDate) return []
+  return Array.from({ length: daysBetween(challenge.startDate, throughDate) + 1 }, (_, index) => addDays(challenge.startDate, index))
+}
+
+function settingsForFriendChallenge(
+  challenge: FriendChallenge,
+  personalSettings: ChallengeSettings,
+): ChallengeSettings {
+  const sourceSettings = challenge.scoringMode === 'shared' ? challenge.settings : personalSettings
+  return normalizeSettings({
+    ...sourceSettings,
+    title: challenge.name,
+    startDate: challenge.startDate,
+    endDate: challenge.endDate,
+  })
+}
+
+function streakForChallengeDates(dates: string[], entries: EntryMap, settings: ChallengeSettings): { current: number; longest: number } {
+  let current = 0
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const entry = entries[dates[index]]
+    if (!entry || completionStats(entry, settings).percent < 100) break
+    current += 1
+  }
+
+  let running = 0
+  let longest = 0
+  for (const date of dates) {
+    const entry = entries[date]
+    if (entry && completionStats(entry, settings).percent === 100) {
+      running += 1
+      longest = Math.max(longest, running)
+    } else {
+      running = 0
+    }
+  }
+
+  return { current, longest }
+}
+
+function buildFriendChallengeSummary(
+  userId: string,
+  entries: EntryMap,
+  challenge: FriendChallenge,
+  personalSettings: ChallengeSettings,
+): ChallengeSummary {
+  const challengeSettings = settingsForFriendChallenge(challenge, personalSettings)
+  const elapsedDates = getChallengeElapsedDates(challenge)
+  const loggedDates = elapsedDates.filter((date) => Boolean(entries[date]))
+  const weekStart = elapsedDates.length === 0 ? challenge.startDate : addDays(elapsedDates[elapsedDates.length - 1], -6)
+  const weekDates = loggedDates.filter((date) => date >= weekStart)
+  const averageCompletion = loggedDates.length === 0
+    ? 0
+    : Math.round(loggedDates.reduce((sum, date) => sum + completionStats(entries[date], challengeSettings).percent, 0) / loggedDates.length)
+  const weeklyCompletion = weekDates.length === 0
+    ? 0
+    : Math.round(weekDates.reduce((sum, date) => sum + completionStats(entries[date], challengeSettings).percent, 0) / weekDates.length)
+  const streaks = streakForChallengeDates(elapsedDates, entries, challengeSettings)
+
+  return {
+    userId,
+    challengeTitle: challenge.name,
+    startDate: challenge.startDate,
+    endDate: challenge.endDate,
+    loggedDays: loggedDates.length,
+    totalDays: elapsedDates.length,
+    averageCompletion,
+    weeklyCompletion,
+    currentStreak: streaks.current,
+    longestStreak: streaks.longest,
+    lastLoggedDate: loggedDates[loggedDates.length - 1] ?? null,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
 function generateInviteCode(userId: string): string {
   return `GM-${userId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
 }
@@ -1025,6 +1153,14 @@ function normalizeFriendshipStatus(value: unknown): FriendshipStatus {
   return value === 'pending' || value === 'accepted' || value === 'declined' ? value : 'accepted'
 }
 
+function normalizeFriendChallengeParticipantStatus(value: unknown): FriendChallengeParticipantStatus {
+  return value === 'pending' || value === 'accepted' || value === 'declined' ? value : 'pending'
+}
+
+function normalizeFriendChallengeScoringMode(value: unknown): FriendChallengeScoringMode {
+  return value === 'shared' || value === 'personal' ? value : 'personal'
+}
+
 function normalizeFriendshipRow(row: unknown): FriendshipRow | null {
   const candidate = row && typeof row === 'object'
     ? row as Record<string, unknown>
@@ -1054,25 +1190,80 @@ function isFriendRequestSchemaError(error: unknown): boolean {
     || message.includes('column')
 }
 
+function isFriendChallengeSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('god_mode_friend_challenges')
+    || message.includes('god_mode_friend_challenge_participants')
+    || message.includes('scoring_mode')
+    || message.includes('summary')
+    || message.includes('relation')
+    || message.includes('column')
+}
+
 function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
   const candidate = row && typeof row === 'object'
     ? row as Record<string, unknown>
     : null
-  if (!candidate || typeof candidate.user_id !== 'string') return null
+  const userId = typeof candidate?.user_id === 'string'
+    ? candidate.user_id
+    : typeof candidate?.userId === 'string' ? candidate.userId : null
+  if (!candidate || !userId) return null
 
   return {
-    userId: candidate.user_id,
-    challengeTitle: normalizeText(candidate.challenge_title) || DEFAULT_SETTINGS.title,
-    startDate: isIsoDate(candidate.start_date) ? candidate.start_date : DEFAULT_SETTINGS.startDate,
-    endDate: isIsoDate(candidate.end_date) ? candidate.end_date : DEFAULT_SETTINGS.endDate,
-    loggedDays: normalizeBoundedNumber(candidate.logged_days, 0, 0, MAX_TRACKING_DAYS),
-    totalDays: normalizeBoundedNumber(candidate.total_days, 1, 1, MAX_TRACKING_DAYS),
-    averageCompletion: normalizeBoundedNumber(candidate.average_completion, 0, 0, 100),
-    weeklyCompletion: normalizeBoundedNumber(candidate.weekly_completion, 0, 0, 100),
-    currentStreak: normalizeBoundedNumber(candidate.current_streak, 0, 0, MAX_TRACKING_DAYS),
-    longestStreak: normalizeBoundedNumber(candidate.longest_streak, 0, 0, MAX_TRACKING_DAYS),
-    lastLoggedDate: isIsoDate(candidate.last_logged_date) ? candidate.last_logged_date : null,
+    userId,
+    challengeTitle: normalizeText(candidate.challenge_title ?? candidate.challengeTitle) || DEFAULT_SETTINGS.title,
+    startDate: isIsoDate(candidate.start_date) ? candidate.start_date : isIsoDate(candidate.startDate) ? candidate.startDate : DEFAULT_SETTINGS.startDate,
+    endDate: isIsoDate(candidate.end_date) ? candidate.end_date : isIsoDate(candidate.endDate) ? candidate.endDate : DEFAULT_SETTINGS.endDate,
+    loggedDays: normalizeBoundedNumber(candidate.logged_days ?? candidate.loggedDays, 0, 0, MAX_TRACKING_DAYS),
+    totalDays: normalizeBoundedNumber(candidate.total_days ?? candidate.totalDays, 0, 0, MAX_TRACKING_DAYS),
+    averageCompletion: normalizeBoundedNumber(candidate.average_completion ?? candidate.averageCompletion, 0, 0, 100),
+    weeklyCompletion: normalizeBoundedNumber(candidate.weekly_completion ?? candidate.weeklyCompletion, 0, 0, 100),
+    currentStreak: normalizeBoundedNumber(candidate.current_streak ?? candidate.currentStreak, 0, 0, MAX_TRACKING_DAYS),
+    longestStreak: normalizeBoundedNumber(candidate.longest_streak ?? candidate.longestStreak, 0, 0, MAX_TRACKING_DAYS),
+    lastLoggedDate: isIsoDate(candidate.last_logged_date) ? candidate.last_logged_date : isIsoDate(candidate.lastLoggedDate) ? candidate.lastLoggedDate : null,
+    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
+  }
+}
+
+function normalizeFriendChallengeRow(row: unknown): FriendChallenge | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.creator_id !== 'string') return null
+
+  const startDate = isIsoDate(candidate.start_date) ? candidate.start_date : todayIso()
+  const endDate = isIsoDate(candidate.end_date) && candidate.end_date >= startDate
+    ? candidate.end_date
+    : addDays(startDate, 6)
+
+  return {
+    id: candidate.id,
+    creatorId: candidate.creator_id,
+    name: normalizeText(candidate.name).trim() || 'Friend Challenge',
+    startDate,
+    endDate,
+    scoringMode: normalizeFriendChallengeScoringMode(candidate.scoring_mode),
+    settings: normalizeSettings(candidate.settings),
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
     updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : new Date().toISOString(),
+  }
+}
+
+function normalizeFriendChallengeParticipantRow(row: unknown): FriendChallengeParticipant | null {
+  const candidate = row && typeof row === 'object'
+    ? row as Record<string, unknown>
+    : null
+  if (!candidate || typeof candidate.challenge_id !== 'string' || typeof candidate.user_id !== 'string') return null
+
+  return {
+    challengeId: candidate.challenge_id,
+    userId: candidate.user_id,
+    invitedBy: typeof candidate.invited_by === 'string' ? candidate.invited_by : candidate.user_id,
+    status: normalizeFriendChallengeParticipantStatus(candidate.status),
+    summary: normalizeSummaryRow(candidate.summary),
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+    respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
   }
 }
 
@@ -1329,6 +1520,7 @@ function App() {
   const [inviteCodeDraft, setInviteCodeDraft] = useState('')
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
+  const [friendChallenges, setFriendChallenges] = useState<FriendChallengeView[]>([])
   const [friendsBusy, setFriendsBusy] = useState(false)
   const [friendsStatus, setFriendsStatus] = useState<DataStatus>({
     tone: 'neutral',
@@ -1417,6 +1609,7 @@ function App() {
       setInviteCodeDraft('')
       setLeaderboardRows([])
       setFriendRequests([])
+      setFriendChallenges([])
       setFriendsStatus({
         tone: 'neutral',
         message: isSupabaseConfigured ? 'Sign in to compete with friends.' : 'Add Supabase env vars to enable friends.',
@@ -1648,6 +1841,65 @@ function App() {
     if (friendshipResult.error) throw friendshipResult.error
     if (summaryResult.error) throw summaryResult.error
 
+    let friendChallenges: FriendChallenge[] = []
+    let friendChallengeParticipants: FriendChallengeParticipant[] = []
+    const [myChallengeParticipantsResult, createdChallengesResult] = await Promise.all([
+      supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
+        .eq('user_id', user.id),
+      supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+        .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
+        .eq('creator_id', user.id),
+    ])
+
+    if (myChallengeParticipantsResult.error) {
+      if (!isFriendChallengeSchemaError(myChallengeParticipantsResult.error)) throw myChallengeParticipantsResult.error
+    } else if (createdChallengesResult.error) {
+      if (!isFriendChallengeSchemaError(createdChallengesResult.error)) throw createdChallengesResult.error
+    } else {
+      const myChallengeParticipants = (myChallengeParticipantsResult.data ?? [])
+        .map(normalizeFriendChallengeParticipantRow)
+        .filter((row): row is FriendChallengeParticipant => row !== null)
+      const createdChallenges = (createdChallengesResult.data ?? [])
+        .map(normalizeFriendChallengeRow)
+        .filter((row): row is FriendChallenge => row !== null)
+      const challengeIds = Array.from(new Set([
+        ...myChallengeParticipants.map((participant) => participant.challengeId),
+        ...createdChallenges.map((challenge) => challenge.id),
+      ]))
+
+      if (challengeIds.length > 0) {
+        const [challengeResult, participantResult] = await Promise.all([
+          supabase
+            .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+            .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
+            .in('id', challengeIds),
+          supabase
+            .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+            .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
+            .in('challenge_id', challengeIds),
+        ])
+
+        if (challengeResult.error) {
+          if (!isFriendChallengeSchemaError(challengeResult.error)) throw challengeResult.error
+        } else {
+          friendChallenges = (challengeResult.data ?? [])
+            .map(normalizeFriendChallengeRow)
+            .filter((row): row is FriendChallenge => row !== null)
+        }
+
+        if (participantResult.error) {
+          if (!isFriendChallengeSchemaError(participantResult.error)) throw participantResult.error
+        } else {
+          friendChallengeParticipants = (participantResult.data ?? [])
+            .map(normalizeFriendChallengeParticipantRow)
+            .filter((row): row is FriendChallengeParticipant => row !== null)
+        }
+      }
+    }
+
     return {
       app: 'god-mode-july',
       exportType: 'account-data',
@@ -1667,6 +1919,8 @@ function App() {
           .map(normalizeFriendshipRow)
           .filter((row): row is FriendshipRow => row !== null),
         summary: normalizeSummaryRow(summaryResult.data),
+        friendChallenges,
+        friendChallengeParticipants,
       },
     }
   }
@@ -1902,7 +2156,7 @@ function App() {
     if (!supabase || !user) return
 
     const confirmed = window.confirm(
-      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, and leaderboard summary from Supabase? Local data on this device will stay.',
+      'Delete your cloud sync snapshot, public friend profile, friend requests/friendships, friend challenges, and leaderboard summaries from Supabase? Local data on this device will stay.',
     )
     if (!confirmed) {
       setCloudStatus({ tone: 'neutral', message: 'Cloud data deletion canceled.' })
@@ -1911,6 +2165,18 @@ function App() {
 
     setCloudBusy(true)
     try {
+      const createdChallengeDelete = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+        .delete()
+        .eq('creator_id', user.id)
+      if (createdChallengeDelete.error && !isFriendChallengeSchemaError(createdChallengeDelete.error)) throw createdChallengeDelete.error
+
+      const challengeParticipantDelete = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .delete()
+        .eq('user_id', user.id)
+      if (challengeParticipantDelete.error && !isFriendChallengeSchemaError(challengeParticipantDelete.error)) throw challengeParticipantDelete.error
+
       const friendshipDelete = await supabase
         .from(SUPABASE_FRIENDSHIP_TABLE)
         .delete()
@@ -1943,6 +2209,7 @@ function App() {
       setInviteCodeDraft('')
       setLeaderboardRows([])
       setFriendRequests([])
+      setFriendChallenges([])
       setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
       setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
     } catch (error) {
@@ -2173,11 +2440,135 @@ function App() {
         .filter((request): request is FriendRequest => request !== null)
         .sort((a, b) => a.direction.localeCompare(b.direction) || a.displayName.localeCompare(b.displayName))
 
+      let challengeViews: FriendChallengeView[] = []
+      const [myChallengeParticipantResult, createdChallengeResult] = await Promise.all([
+        supabase
+          .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+          .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
+          .eq('user_id', user.id)
+          .in('status', ['pending', 'accepted']),
+        supabase
+          .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+          .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
+          .eq('creator_id', user.id),
+      ])
+
+      if (myChallengeParticipantResult.error) {
+        if (isFriendChallengeSchemaError(myChallengeParticipantResult.error)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw myChallengeParticipantResult.error
+      }
+      if (createdChallengeResult.error) {
+        if (isFriendChallengeSchemaError(createdChallengeResult.error)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw createdChallengeResult.error
+      }
+
+      const myChallengeParticipants = (myChallengeParticipantResult.data ?? [])
+        .map(normalizeFriendChallengeParticipantRow)
+        .filter((participant): participant is FriendChallengeParticipant => participant !== null)
+      const createdChallenges = (createdChallengeResult.data ?? [])
+        .map(normalizeFriendChallengeRow)
+        .filter((challenge): challenge is FriendChallenge => challenge !== null)
+      const challengeIds = Array.from(new Set([
+        ...myChallengeParticipants.map((participant) => participant.challengeId),
+        ...createdChallenges.map((challenge) => challenge.id),
+      ]))
+
+      if (challengeIds.length > 0) {
+        const [challengeResult, participantResult] = await Promise.all([
+          supabase
+            .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+            .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
+            .in('id', challengeIds),
+          supabase
+            .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+            .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
+            .in('challenge_id', challengeIds),
+        ])
+
+        if (challengeResult.error) {
+          if (isFriendChallengeSchemaError(challengeResult.error)) {
+            throw new Error('Run the updated Supabase schema to enable friend challenges.')
+          }
+          throw challengeResult.error
+        }
+        if (participantResult.error) {
+          if (isFriendChallengeSchemaError(participantResult.error)) {
+            throw new Error('Run the updated Supabase schema to enable friend challenges.')
+          }
+          throw participantResult.error
+        }
+
+        const challenges = (challengeResult.data ?? [])
+          .map(normalizeFriendChallengeRow)
+          .filter((challenge): challenge is FriendChallenge => challenge !== null)
+        const challengeParticipants = (participantResult.data ?? [])
+          .map(normalizeFriendChallengeParticipantRow)
+          .filter((participant): participant is FriendChallengeParticipant => participant !== null)
+        const missingProfileIds = Array.from(new Set(challengeParticipants.map((participant) => participant.userId)))
+          .filter((profileUserId) => !profilesByUserId.has(profileUserId))
+
+        if (missingProfileIds.length > 0) {
+          const { data: challengeProfileRows, error: challengeProfileError } = await supabase
+            .from(SUPABASE_PROFILE_TABLE)
+            .select('user_id, display_name, invite_code')
+            .in('user_id', missingProfileIds)
+
+          if (challengeProfileError) throw challengeProfileError
+          for (const challengeProfile of (challengeProfileRows ?? [])
+            .map(normalizeFriendProfileRow)
+            .filter((profileRow): profileRow is FriendProfile => profileRow !== null)) {
+            profilesByUserId.set(challengeProfile.userId, challengeProfile)
+          }
+        }
+
+        challengeViews = challenges
+          .map((challenge) => {
+            const participants = challengeParticipants
+              .filter((participant) => participant.challengeId === challenge.id)
+              .map((participant) => {
+                const participantProfile = profilesByUserId.get(participant.userId)
+                return {
+                  userId: participant.userId,
+                  displayName: participantProfile?.displayName ?? 'Challenger',
+                  inviteCode: participantProfile?.inviteCode ?? '',
+                  status: participant.status,
+                  summary: participant.summary,
+                  isCurrentUser: participant.userId === user.id,
+                } satisfies FriendChallengeParticipantView
+              })
+              .sort((a, b) => {
+                if (a.status !== b.status) return a.status === 'accepted' ? -1 : 1
+                return (b.summary?.weeklyCompletion ?? 0) - (a.summary?.weeklyCompletion ?? 0)
+                  || (b.summary?.averageCompletion ?? 0) - (a.summary?.averageCompletion ?? 0)
+                  || a.displayName.localeCompare(b.displayName)
+              })
+            const currentParticipant = challengeParticipants.find((participant) => (
+              participant.challengeId === challenge.id && participant.userId === user.id
+            ))
+
+            return {
+              ...challenge,
+              currentUserStatus: currentParticipant?.status ?? 'pending',
+              isCreator: challenge.creatorId === user.id,
+              participants,
+            } satisfies FriendChallengeView
+          })
+          .sort((a, b) => {
+            if (a.currentUserStatus !== b.currentUserStatus) return a.currentUserStatus === 'pending' ? -1 : 1
+            return b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name)
+          })
+      }
+
       setLeaderboardRows(rows)
       setFriendRequests(requests)
+      setFriendChallenges(challengeViews)
       setFriendsStatus({
         tone: 'success',
-        message: `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${requests.length} pending.`,
+        message: `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${requests.length} pending · ${challengeViews.length} challenges.`,
       })
     } catch (error) {
       setFriendsStatus({
@@ -2359,6 +2750,196 @@ function App() {
       setFriendsStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not update friend request.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function createFriendChallenge(input: CreateFriendChallengeInput) {
+    if (!supabase || !user) return
+
+    const name = input.name.trim()
+    if (!name) {
+      setFriendsStatus({ tone: 'error', message: 'Challenge name cannot be empty.' })
+      return
+    }
+    if (!isIsoDate(input.startDate) || !isIsoDate(input.endDate) || input.endDate < input.startDate) {
+      setFriendsStatus({ tone: 'error', message: 'Choose a valid challenge date range.' })
+      return
+    }
+
+    const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
+    const inviteeIds = Array.from(new Set(input.inviteeIds)).filter((inviteeId) => acceptedFriendIds.has(inviteeId))
+
+    setFriendsBusy(true)
+    try {
+      const profile = await ensureFriendProfile()
+      if (!profile) throw new Error('Could not load your friend profile.')
+
+      const challengeSettings = normalizeSettings({
+        ...settings,
+        title: name,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      })
+      const { data: challengeRow, error: challengeError } = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+        .insert({
+          creator_id: user.id,
+          name,
+          start_date: input.startDate,
+          end_date: input.endDate,
+          scoring_mode: input.scoringMode,
+          settings: challengeSettings,
+          updated_at: new Date().toISOString(),
+        })
+        .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
+        .single()
+
+      if (challengeError) {
+        if (isFriendChallengeSchemaError(challengeError)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw challengeError
+      }
+
+      const challenge = normalizeFriendChallengeRow(challengeRow)
+      if (!challenge) throw new Error('Could not create the challenge.')
+      const ownerSummary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+      const now = new Date().toISOString()
+      const participantRows = [
+        {
+          challenge_id: challenge.id,
+          user_id: user.id,
+          invited_by: user.id,
+          status: 'accepted',
+          summary: ownerSummary,
+          responded_at: now,
+        },
+        ...inviteeIds.map((inviteeId) => ({
+          challenge_id: challenge.id,
+          user_id: inviteeId,
+          invited_by: user.id,
+          status: 'pending',
+          summary: null,
+          responded_at: null,
+        })),
+      ]
+
+      const { error: participantError } = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .insert(participantRows)
+
+      if (participantError) {
+        if (isFriendChallengeSchemaError(participantError)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw participantError
+      }
+
+      setFriendsStatus({
+        tone: 'success',
+        message: inviteeIds.length === 0
+          ? 'Challenge created. Invite friends whenever you are ready.'
+          : `Challenge created and ${inviteeIds.length} ${inviteeIds.length === 1 ? 'friend was' : 'friends were'} invited.`,
+      })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not create the friend challenge.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function respondToFriendChallenge(challengeId: string, nextStatus: 'accepted' | 'declined') {
+    if (!supabase || !user) return
+
+    setFriendsBusy(true)
+    try {
+      const challenge = friendChallenges.find((item) => item.id === challengeId)
+      const updatePayload: Record<string, unknown> = {
+        status: nextStatus,
+        responded_at: new Date().toISOString(),
+      }
+      if (challenge && nextStatus === 'accepted') {
+        updatePayload.summary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+      }
+
+      const { data, error } = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .update(updatePayload)
+        .eq('challenge_id', challengeId)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .select('challenge_id')
+        .maybeSingle()
+
+      if (error) {
+        if (isFriendChallengeSchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw error
+      }
+      if (!data) throw new Error('No pending challenge invite found.')
+
+      setFriendsStatus({
+        tone: 'success',
+        message: nextStatus === 'accepted' ? 'Challenge invite accepted.' : 'Challenge invite declined.',
+      })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not update the challenge invite.',
+      })
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function publishFriendChallengeScore(challengeId: string) {
+    if (!supabase || !user) return
+
+    const challenge = friendChallenges.find((item) => item.id === challengeId)
+    if (!challenge) {
+      setFriendsStatus({ tone: 'error', message: 'Could not find that challenge.' })
+      return
+    }
+    if (challenge.currentUserStatus !== 'accepted') {
+      setFriendsStatus({ tone: 'error', message: 'Accept the challenge before publishing a score.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      const summary = buildFriendChallengeSummary(user.id, entries, challenge, settings)
+      const { error } = await supabase
+        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+        .update({
+          summary,
+          responded_at: new Date().toISOString(),
+        })
+        .eq('challenge_id', challengeId)
+        .eq('user_id', user.id)
+        .eq('status', 'accepted')
+
+      if (error) {
+        if (isFriendChallengeSchemaError(error)) {
+          throw new Error('Run the updated Supabase schema to enable friend challenges.')
+        }
+        throw error
+      }
+
+      setFriendsStatus({ tone: 'success', message: `${challenge.name} score published.` })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not publish the challenge score.',
       })
     } finally {
       setFriendsBusy(false)
@@ -2568,6 +3149,7 @@ function App() {
             inviteCode={inviteCodeDraft}
             leaderboardRows={leaderboardRows}
             friendRequests={friendRequests}
+            friendChallenges={friendChallenges}
             status={friendsStatus}
             busy={friendsBusy}
             onDisplayNameChange={setDisplayNameDraft}
@@ -2576,6 +3158,10 @@ function App() {
             onAddFriend={sendFriendRequestByInviteCode}
             onAcceptRequest={(userId) => respondToFriendRequest(userId, 'accepted')}
             onDeclineRequest={(userId) => respondToFriendRequest(userId, 'declined')}
+            onCreateChallenge={createFriendChallenge}
+            onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
+            onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
+            onPublishChallengeScore={publishFriendChallengeScore}
             onPublishSummary={() => publishFriendSummary(false)}
             onRefresh={refreshFriendsData}
             onOpenSettings={() => setView('settings')}
@@ -2895,6 +3481,7 @@ function FriendsView({
   inviteCode,
   leaderboardRows,
   friendRequests,
+  friendChallenges,
   status,
   busy,
   onDisplayNameChange,
@@ -2903,6 +3490,10 @@ function FriendsView({
   onAddFriend,
   onAcceptRequest,
   onDeclineRequest,
+  onCreateChallenge,
+  onAcceptChallenge,
+  onDeclineChallenge,
+  onPublishChallengeScore,
   onPublishSummary,
   onRefresh,
   onOpenSettings,
@@ -2914,6 +3505,7 @@ function FriendsView({
   inviteCode: string
   leaderboardRows: LeaderboardRow[]
   friendRequests: FriendRequest[]
+  friendChallenges: FriendChallengeView[]
   status: DataStatus
   busy: boolean
   onDisplayNameChange: (value: string) => void
@@ -2922,12 +3514,41 @@ function FriendsView({
   onAddFriend: () => void
   onAcceptRequest: (userId: string) => void
   onDeclineRequest: (userId: string) => void
+  onCreateChallenge: (input: CreateFriendChallengeInput) => void
+  onAcceptChallenge: (challengeId: string) => void
+  onDeclineChallenge: (challengeId: string) => void
+  onPublishChallengeScore: (challengeId: string) => void
   onPublishSummary: () => void
   onRefresh: () => void
   onOpenSettings: () => void
 }) {
   const incomingRequests = friendRequests.filter((request) => request.direction === 'incoming')
   const outgoingRequests = friendRequests.filter((request) => request.direction === 'outgoing')
+  const acceptedFriends = leaderboardRows.filter((row) => !row.isCurrentUser)
+  const [challengeName, setChallengeName] = useState('No Zero Days')
+  const [challengeStartDate, setChallengeStartDate] = useState(todayIso())
+  const [challengeEndDate, setChallengeEndDate] = useState(addDays(todayIso(), 6))
+  const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>('personal')
+  const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
+
+  function toggleChallengeInvite(userId: string) {
+    setChallengeInviteIds((current) => (
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    ))
+  }
+
+  function submitChallenge() {
+    const acceptedFriendIds = new Set(acceptedFriends.map((friend) => friend.userId))
+    onCreateChallenge({
+      name: challengeName,
+      startDate: challengeStartDate,
+      endDate: challengeEndDate,
+      scoringMode: challengeScoringMode,
+      inviteeIds: challengeInviteIds.filter((userId) => acceptedFriendIds.has(userId)),
+    })
+  }
 
   if (!configured) {
     return (
@@ -3051,6 +3672,68 @@ function FriendsView({
         )}
       </section>
 
+      <section className="panel friend-challenges-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Friend challenges</p>
+            <h2>Custom competitions</h2>
+          </div>
+          <span>{friendChallenges.length}</span>
+        </div>
+        <div className="challenge-create-panel">
+          <div className="field-grid">
+            <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
+            <label className="select-field">
+              <span>Scoring</span>
+              <select value={challengeScoringMode} onChange={(event) => setChallengeScoringMode(event.target.value as FriendChallengeScoringMode)}>
+                <option value="personal">Personal targets</option>
+                <option value="shared">Shared rules</option>
+              </select>
+            </label>
+            <TextField label="Start" type="date" value={challengeStartDate} onChange={setChallengeStartDate} />
+            <TextField label="End" type="date" value={challengeEndDate} onChange={setChallengeEndDate} />
+          </div>
+          <div className="challenge-invite-picker">
+            <small>Invite friends</small>
+            {acceptedFriends.length === 0 ? (
+              <p>No accepted friends yet.</p>
+            ) : (
+              <div>
+                {acceptedFriends.map((friend) => (
+                  <label className="challenge-invite-option" key={friend.userId}>
+                    <input
+                      type="checkbox"
+                      checked={challengeInviteIds.includes(friend.userId)}
+                      onChange={() => toggleChallengeInvite(friend.userId)}
+                    />
+                    <span>{friend.displayName}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim()}>
+            Create Challenge
+          </button>
+        </div>
+        {friendChallenges.length === 0 ? (
+          <p className="empty-leaderboard">No friend challenges yet.</p>
+        ) : (
+          <div className="challenge-list">
+            {friendChallenges.map((challenge) => (
+              <FriendChallengeCard
+                key={challenge.id}
+                challenge={challenge}
+                busy={busy}
+                onAccept={() => onAcceptChallenge(challenge.id)}
+                onDecline={() => onDeclineChallenge(challenge.id)}
+                onPublish={() => onPublishChallengeScore(challenge.id)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="panel leaderboard-panel">
         <div className="section-heading">
           <div>
@@ -3103,6 +3786,86 @@ function FriendRequestCard({
         </div>
       ) : (
         <span className="request-badge">Pending</span>
+      )}
+    </article>
+  )
+}
+
+function FriendChallengeCard({
+  challenge,
+  busy,
+  onAccept,
+  onDecline,
+  onPublish,
+}: {
+  challenge: FriendChallengeView
+  busy: boolean
+  onAccept: () => void
+  onDecline: () => void
+  onPublish: () => void
+}) {
+  const modeLabel = challenge.scoringMode === 'shared' ? 'Shared rules' : 'Personal targets'
+  const acceptedParticipants = challenge.participants.filter((participant) => participant.status === 'accepted')
+  const pendingParticipants = challenge.participants.filter((participant) => participant.status === 'pending')
+  const rankedParticipants = [...acceptedParticipants].sort((a, b) => (
+    (b.summary?.weeklyCompletion ?? 0) - (a.summary?.weeklyCompletion ?? 0)
+    || (b.summary?.averageCompletion ?? 0) - (a.summary?.averageCompletion ?? 0)
+    || (b.summary?.currentStreak ?? 0) - (a.summary?.currentStreak ?? 0)
+    || a.displayName.localeCompare(b.displayName)
+  ))
+
+  return (
+    <article className={`challenge-card ${challenge.currentUserStatus === 'pending' ? 'has-pending-invite' : ''}`}>
+      <div className="challenge-card-header">
+        <div>
+          <small>{modeLabel} · {formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)}</small>
+          <h3>{challenge.name}</h3>
+          <p>{acceptedParticipants.length} active · {pendingParticipants.length} invited</p>
+        </div>
+        <span className="request-badge">{challenge.isCreator ? 'Owner' : challenge.currentUserStatus}</span>
+      </div>
+
+      <div className="challenge-card-actions">
+        {challenge.currentUserStatus === 'pending' && !challenge.isCreator && (
+          <>
+            <button className="secondary-button compact-button" type="button" onClick={onAccept} disabled={busy}>
+              Accept
+            </button>
+            <button className="ghost-button" type="button" onClick={onDecline} disabled={busy}>
+              Decline
+            </button>
+          </>
+        )}
+        {challenge.currentUserStatus === 'accepted' && (
+          <button className="secondary-button compact-button" type="button" onClick={onPublish} disabled={busy}>
+            Publish Challenge Score
+          </button>
+        )}
+      </div>
+
+      {rankedParticipants.length === 0 ? (
+        <p className="empty-leaderboard">No accepted participants yet.</p>
+      ) : (
+        <div className="leaderboard-list">
+          {rankedParticipants.map((participant, index) => (
+            <article className={`leaderboard-card ${participant.isCurrentUser ? 'is-you' : ''}`} key={participant.userId}>
+              <div className="leaderboard-rank">{index + 1}</div>
+              <div className="leaderboard-main">
+                <div className="leaderboard-name-row">
+                  <strong>{participant.displayName}</strong>
+                  {participant.isCurrentUser && <span>You</span>}
+                </div>
+                <small>{participant.summary ? `Updated ${formatShortDate(participant.summary.updatedAt.slice(0, 10))}` : 'No score published yet'}</small>
+              </div>
+              <div className="leaderboard-stats">
+                <span><small>7-day</small><strong>{participant.summary ? `${participant.summary.weeklyCompletion}%` : '—'}</strong></span>
+                <span><small>Avg</small><strong>{participant.summary ? `${participant.summary.averageCompletion}%` : '—'}</strong></span>
+                <span><small>Streak</small><strong>{participant.summary ? participant.summary.currentStreak : '—'}</strong></span>
+                <span><small>Logged</small><strong>{participant.summary ? `${participant.summary.loggedDays}/${participant.summary.totalDays}` : '—'}</strong></span>
+              </div>
+            </article>
+          ))}
+        </div>
       )}
     </article>
   )

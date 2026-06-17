@@ -3,7 +3,7 @@
 ## Supabase setup
 
 1. Create a Supabase project.
-2. In the SQL editor, run `supabase-schema.sql`. This creates the cloud snapshot, profile, friendship, and leaderboard summary tables, plus the RLS policies for sync, friends, export, and cloud-data deletion.
+2. In the SQL editor, run `supabase-schema.sql`. This creates the cloud snapshot, profile, friendship, leaderboard summary, friend challenge, and challenge participant tables, plus the RLS policies for sync, friends, challenges, export, and cloud-data deletion.
    - If you already ran an older version, run the current file again. It uses `create table if not exists`, `add column if not exists`, and policy replacement so existing app data is preserved.
 3. In Authentication > URL Configuration, add your local and hosted app URLs:
    - `http://localhost:5173`
@@ -22,7 +22,7 @@ npm run dev
 
 Open the app, go to Settings, create an account or sign in with email and password, then use Push Local and Pull Cloud.
 
-For friends, sign in on two accounts, publish a score from the Friends tab, send a request with the other account's invite code, then accept it from the receiving account.
+For friends, sign in on two accounts, publish a score from the Friends tab, send a request with the other account's invite code, then accept it from the receiving account. For friend challenges, run the latest SQL schema first, create a challenge from the Friends tab, invite an accepted friend, accept it from the other account, then publish challenge scores from both accounts.
 
 ## Vercel or Netlify
 

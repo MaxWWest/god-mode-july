@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto;
+
 create table if not exists public.god_mode_challenge_snapshots (
   user_id uuid primary key references auth.users(id) on delete cascade,
   settings jsonb not null default '{}'::jsonb,
@@ -226,3 +228,124 @@ create policy "Users can delete their own challenge summary"
   on public.god_mode_challenge_summaries
   for delete
   using (auth.uid() = user_id);
+
+create table if not exists public.god_mode_friend_challenges (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  start_date date not null,
+  end_date date not null,
+  scoring_mode text not null default 'personal',
+  settings jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint god_mode_friend_challenges_date_order check (end_date >= start_date),
+  constraint god_mode_friend_challenges_scoring_mode_check check (scoring_mode in ('personal', 'shared'))
+);
+
+create table if not exists public.god_mode_friend_challenge_participants (
+  challenge_id uuid not null references public.god_mode_friend_challenges(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  invited_by uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending',
+  summary jsonb,
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  primary key (challenge_id, user_id),
+  constraint god_mode_friend_challenge_participants_status_check check (status in ('pending', 'accepted', 'declined'))
+);
+
+create or replace function public.god_mode_is_friend_challenge_member(target_challenge_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.god_mode_friend_challenges challenge
+    where challenge.id = target_challenge_id
+      and challenge.creator_id = auth.uid()
+  ) or exists (
+    select 1
+    from public.god_mode_friend_challenge_participants participant
+    where participant.challenge_id = target_challenge_id
+      and participant.user_id = auth.uid()
+  );
+$$;
+
+alter table public.god_mode_friend_challenges enable row level security;
+alter table public.god_mode_friend_challenge_participants enable row level security;
+
+drop policy if exists "Challenge members can read friend challenges" on public.god_mode_friend_challenges;
+create policy "Challenge members can read friend challenges"
+  on public.god_mode_friend_challenges
+  for select
+  using (
+    auth.uid() = creator_id
+    or public.god_mode_is_friend_challenge_member(id)
+  );
+
+drop policy if exists "Users can create friend challenges" on public.god_mode_friend_challenges;
+create policy "Users can create friend challenges"
+  on public.god_mode_friend_challenges
+  for insert
+  with check (auth.uid() = creator_id);
+
+drop policy if exists "Creators can update friend challenges" on public.god_mode_friend_challenges;
+create policy "Creators can update friend challenges"
+  on public.god_mode_friend_challenges
+  for update
+  using (auth.uid() = creator_id)
+  with check (auth.uid() = creator_id);
+
+drop policy if exists "Creators can delete friend challenges" on public.god_mode_friend_challenges;
+create policy "Creators can delete friend challenges"
+  on public.god_mode_friend_challenges
+  for delete
+  using (auth.uid() = creator_id);
+
+drop policy if exists "Challenge members can read participants" on public.god_mode_friend_challenge_participants;
+create policy "Challenge members can read participants"
+  on public.god_mode_friend_challenge_participants
+  for select
+  using (public.god_mode_is_friend_challenge_member(challenge_id));
+
+drop policy if exists "Creators can invite challenge participants" on public.god_mode_friend_challenge_participants;
+create policy "Creators can invite challenge participants"
+  on public.god_mode_friend_challenge_participants
+  for insert
+  with check (
+    invited_by = auth.uid()
+    and (
+      user_id = auth.uid()
+      or exists (
+        select 1
+        from public.god_mode_friend_challenges challenge
+        where challenge.id = god_mode_friend_challenge_participants.challenge_id
+          and challenge.creator_id = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "Users can update their challenge participant row" on public.god_mode_friend_challenge_participants;
+create policy "Users can update their challenge participant row"
+  on public.god_mode_friend_challenge_participants
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users and creators can delete challenge participants" on public.god_mode_friend_challenge_participants;
+create policy "Users and creators can delete challenge participants"
+  on public.god_mode_friend_challenge_participants
+  for delete
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1
+      from public.god_mode_friend_challenges challenge
+      where challenge.id = god_mode_friend_challenge_participants.challenge_id
+        and challenge.creator_id = auth.uid()
+    )
+  );

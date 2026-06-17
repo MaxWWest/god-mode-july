@@ -24,6 +24,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Friends list with invite-code requests
 - Friend request accept/decline flow
 - Share-safe leaderboard competition
+- Invite-only custom friend challenges
 - Local daily notification reminders
 - Automatic localStorage persistence
 - PWA icons
@@ -76,7 +77,7 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends and leaderboards use separate Supabase tables for profiles, friendships, and challenge summaries. Friends can compare completion, streak, and logged-day stats, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, and invite-only friend challenges use separate Supabase tables for profiles, friendships, challenge summaries, challenge definitions, and challenge participants. Friends can compare completion, streak, and logged-day stats, but raw entries, reflections, weight, and calories are not shared.
 
 ## Next recommended milestones
 
