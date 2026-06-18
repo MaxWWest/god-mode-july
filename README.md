@@ -109,12 +109,25 @@ Current social beta coverage:
 - Challenge templates with preset target and scored-rule overrides.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 
-## Next recommended milestones
+## Recommended roadmap
 
-1. Add true per-day challenge history snapshots so detail pages can show daily timelines, not just latest published summaries.
-2. Add challenge/squad removal flows for individual participants and pending invites.
-3. Add direct challenge links or invite codes so friends can join from a shared URL.
-4. Add comment threads or lightweight replies if score reactions become too limited.
-5. Add push notifications later if you decide closed-app reminders are worth the setup.
-6. Split Supabase sync, friend requests, squads, and challenge mutations into service modules so `App.tsx` keeps shrinking.
-7. Add automated tests around Supabase row normalization, challenge templates, invite flows, and privacy-safe summaries.
+### Next: beta reliability
+
+1. Add Vitest and focused automated coverage for tracker scoring, challenge templates, Supabase row normalization, privacy-safe summaries, friend requests, and challenge invite state changes.
+2. Extract cloud snapshots, conflict resolution, account export, and account deletion from `App.tsx` into a dedicated cloud service.
+3. Add consistent retryable error states for failed sync and social requests, plus clearer offline status when Supabase cannot be reached.
+
+This should be the next sprint. Auth, cloud sync, privacy, squads, and challenges now share enough behavior that regression protection is more valuable than adding another large feature immediately.
+
+### Then: stronger competition
+
+1. Store per-day challenge score snapshots so challenge detail pages can show real daily timelines instead of only the latest published summary.
+2. Add direct challenge links or short join codes so an accepted friend can open the app directly to an invite.
+3. Add owner controls for removing participants, canceling pending invites, leaving challenges, and removing squad members safely.
+4. Add challenge lifecycle controls for editing upcoming challenges, ending active challenges early, and archiving or deleting completed challenges.
+
+### Later: engagement
+
+1. Add lightweight replies or comments only if score reactions prove too limited during friend testing.
+2. Add optional closed-app push notifications only if the extra backend and delivery setup becomes worthwhile; local open-app reminders remain the current default.
+3. Consider custom profile photos, achievement badges, and broader discovery only after private friend competition feels reliable.
