@@ -24,6 +24,8 @@
 - Editable diet, exercise, and sleep targets
 - Non-negotiable versus supporting-rule weights
 - Custom tracker title and start date
+- Synced light/dark/system theme and accent-color customization
+- Visually differentiated rule editors with category color cues and numbered headers
 - Five-tab navigation with separate Rules + Goals and App + Account settings views
 - Updated six-step onboarding for the exercise/diet tracker model
 

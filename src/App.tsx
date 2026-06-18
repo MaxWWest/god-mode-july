@@ -367,6 +367,23 @@ function App() {
   }, [settings])
 
   useEffect(() => {
+    const root = document.documentElement
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const applyAppearance = () => {
+      const theme = settings.appearance.theme === 'system'
+        ? media.matches ? 'dark' : 'light'
+        : settings.appearance.theme
+      root.dataset.theme = theme
+      root.dataset.accent = settings.appearance.accent
+      root.style.colorScheme = theme
+    }
+
+    applyAppearance()
+    if (settings.appearance.theme === 'system') media.addEventListener('change', applyAppearance)
+    return () => media.removeEventListener('change', applyAppearance)
+  }, [settings.appearance])
+
+  useEffect(() => {
     saveToStorage(REMINDER_STORAGE_KEY, reminderSettings)
   }, [reminderSettings])
 

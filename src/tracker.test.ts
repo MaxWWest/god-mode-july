@@ -48,6 +48,13 @@ describe('tracker scoring', () => {
     expect(settings.rules.some((rule) => rule.key === 'custom-morning-walk')).toBe(true)
   })
 
+  it('normalizes persisted appearance choices and rejects unknown themes', () => {
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, appearance: { theme: 'light', accent: 'teal' } }).appearance)
+      .toEqual({ theme: 'light', accent: 'teal' })
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, appearance: { theme: 'neon', accent: 'orange' } }).appearance)
+      .toEqual(DEFAULT_SETTINGS.appearance)
+  })
+
   it('scores exercise only on selected days in a repeating pattern', () => {
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,

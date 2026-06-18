@@ -88,6 +88,7 @@ export const DEFAULT_SETTINGS: ChallengeSettings = {
   title: 'God Mode July',
   startDate: todayIso(),
   endDate: addDays(todayIso(), 365),
+  appearance: { theme: 'dark', accent: 'violet' },
   targets: DEFAULT_TARGETS,
   categories: DEFAULT_RULE_CATEGORIES,
   rules: DEFAULT_RULES,
@@ -506,6 +507,17 @@ function defaultDietSettings(rule: RuleConfig, targets: ChallengeTargets): DietR
 
 export function normalizeSettings(value: unknown): ChallengeSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<ChallengeSettings> : {}
+  const appearanceCandidate = candidate.appearance && typeof candidate.appearance === 'object'
+    ? candidate.appearance as Partial<ChallengeSettings['appearance']>
+    : {}
+  const appearance: ChallengeSettings['appearance'] = {
+    theme: appearanceCandidate.theme === 'light' || appearanceCandidate.theme === 'dark' || appearanceCandidate.theme === 'system'
+      ? appearanceCandidate.theme
+      : DEFAULT_SETTINGS.appearance.theme,
+    accent: appearanceCandidate.accent === 'blue' || appearanceCandidate.accent === 'teal' || appearanceCandidate.accent === 'coral' || appearanceCandidate.accent === 'gold' || appearanceCandidate.accent === 'violet'
+      ? appearanceCandidate.accent
+      : DEFAULT_SETTINGS.appearance.accent,
+  }
   const targetsCandidate = candidate.targets && typeof candidate.targets === 'object'
     ? candidate.targets as Partial<ChallengeTargets>
     : {}
@@ -610,6 +622,7 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
       : DEFAULT_SETTINGS.title,
     startDate,
     endDate,
+    appearance,
     targets,
     categories,
     rules: allRules,

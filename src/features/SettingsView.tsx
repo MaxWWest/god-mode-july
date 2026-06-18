@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
 import type {
+  AccentColor,
   ChallengeSettings,
   ChallengeTargets,
   DataStatus,
@@ -16,6 +17,7 @@ import type {
   RuleKey,
   RuleWeight,
   SyncConflict,
+  ThemeMode,
 } from '../types'
 import {
   DEFAULT_RULE_CATEGORIES,
@@ -44,6 +46,20 @@ const DIET_PRESETS = [
   { label: 'Fiber', unit: 'g', goal: 30, goalType: 'minimum' as const, trackingSource: 'manual' as const },
   { label: 'Sodium', unit: 'mg', goal: 2300, goalType: 'maximum' as const, trackingSource: 'sodium' as const },
   { label: 'Sugar', unit: 'g', goal: 50, goalType: 'maximum' as const, trackingSource: 'manual' as const },
+]
+
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
+
+const ACCENT_OPTIONS: Array<{ value: AccentColor; label: string }> = [
+  { value: 'violet', label: 'Violet' },
+  { value: 'blue', label: 'Blue' },
+  { value: 'teal', label: 'Teal' },
+  { value: 'coral', label: 'Coral' },
+  { value: 'gold', label: 'Gold' },
 ]
 
 export default function SettingsView({
@@ -278,12 +294,31 @@ export default function SettingsView({
       {settingsTab === 'app' ? (
         <>
           <section className="panel form-panel">
-            <SectionTitle number="1" title="Tracker" />
+            <SectionTitle number="1" title="Appearance" />
+            <div className="appearance-setting">
+              <span>Theme</span>
+              <div className="appearance-segmented" role="group" aria-label="Color mode">
+                {THEME_OPTIONS.map((option) => (
+                  <button className={settings.appearance.theme === option.value ? 'active' : ''} type="button" key={option.value} aria-pressed={settings.appearance.theme === option.value} onClick={() => update({ appearance: { ...settings.appearance, theme: option.value } })}>{option.label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="appearance-setting">
+              <span>Accent</span>
+              <div className="accent-swatches" role="group" aria-label="Accent color">
+                {ACCENT_OPTIONS.map((option) => (
+                  <button className={`accent-swatch swatch-${option.value} ${settings.appearance.accent === option.value ? 'active' : ''}`} type="button" key={option.value} aria-label={option.label} aria-pressed={settings.appearance.accent === option.value} onClick={() => update({ appearance: { ...settings.appearance, accent: option.value } })}><span /></button>
+                ))}
+              </div>
+            </div>
+          </section>
+          <section className="panel form-panel">
+            <SectionTitle number="2" title="Tracker" />
             <TextField label="Title" value={titleDraft} onChange={updateTitleDraft} onBlur={saveTitleDraft} />
             <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
           </section>
           <section className="panel form-panel">
-            <SectionTitle number="2" title="Data" />
+            <SectionTitle number="3" title="Data" />
             <div className="data-actions">
               <button className="secondary-button" type="button" onClick={exportJsonBackup}>Export JSON</button>
               <label className="secondary-button file-import-label"><span>Import JSON</span><input type="file" accept="application/json,.json" onChange={importJsonBackup} /></label>
@@ -292,7 +327,7 @@ export default function SettingsView({
             <p className={`data-status ${dataStatus.tone}`}>{dataStatus.message}</p>
           </section>
           <section className="panel form-panel">
-            <SectionTitle number="3" title="Cloud Sync" />
+            <SectionTitle number="4" title="Cloud Sync" />
             <CloudSyncPanel
               configured={cloudConfigured} user={user} status={cloudStatus} busy={cloudBusy} online={online}
               updatedAt={cloudUpdatedAt} conflict={syncConflict} authEmail={authEmail} authPassword={authPassword}
@@ -307,7 +342,7 @@ export default function SettingsView({
             />
           </section>
           <section className="panel form-panel">
-            <SectionTitle number="4" title="Reminders" />
+            <SectionTitle number="5" title="Reminders" />
             <ReminderPanel settings={reminderSettings} status={reminderStatus} onChange={onReminderChange} onRequestPermission={onRequestReminderPermission} />
           </section>
         </>
@@ -341,8 +376,13 @@ export default function SettingsView({
                 )}
                 <div className="settings-rule-list">
                   {categoryRules.length === 0 && <p className="empty-rule-category">No {category.label.toLowerCase()} rules yet.</p>}
-                  {categoryRules.map((rule) => (
-                    <article className={`settings-rule-row rule-config-card ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
+                  {categoryRules.map((rule, ruleIndex) => (
+                    <article className={`settings-rule-row rule-config-card ${rule.enabled ? '' : 'is-disabled'}`} data-rule-category={category.key} key={rule.key}>
+                      <header className="rule-card-heading">
+                        <span className="rule-card-number">{String(ruleIndex + 1).padStart(2, '0')}</span>
+                        <div><strong>{rule.label.trim() || 'Untitled rule'}</strong><small>{category.label} · {rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting'}</small></div>
+                        <span className={`rule-card-state ${rule.enabled ? 'active' : ''}`}>{rule.enabled ? 'Active' : 'Inactive'}</span>
+                      </header>
                       <div className="rule-editor-main">
                         <label className="symbol-field"><span>Icon</span><input value={rule.icon} maxLength={2} onChange={(event) => updateRule(rule.key, { icon: event.target.value })} aria-label={`${rule.label} icon`} /></label>
                         <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />

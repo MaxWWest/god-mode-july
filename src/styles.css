@@ -1,21 +1,82 @@
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #f8f5ff;
-  background: #08070d;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  --text: #f8f5ff;
+  --text-soft: #cfc8da;
   --bg: #08070d;
+  --page-top: #0b0912;
+  --page-bottom: #07070b;
   --surface: rgba(20, 17, 29, 0.92);
   --surface-2: rgba(29, 24, 42, 0.9);
+  --surface-solid: #14111d;
+  --field-bg: #15111e;
+  --surface-faint: rgba(255, 255, 255, 0.025);
+  --surface-subtle: rgba(255, 255, 255, 0.045);
+  --surface-strong: rgba(255, 255, 255, 0.08);
   --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
   --muted: #9b95aa;
-  --purple: #9c5cff;
-  --purple-2: #6d32da;
-  --purple-soft: rgba(156, 92, 255, 0.14);
+  --accent: #9c5cff;
+  --accent-2: #6d32da;
+  --accent-bright: #b77cff;
+  --accent-text: #b985ff;
+  --accent-text-strong: #c9a9ff;
+  --accent-soft: rgba(156, 92, 255, 0.14);
+  --accent-faint: rgba(156, 92, 255, 0.08);
+  --accent-border: rgba(156, 92, 255, 0.25);
+  --accent-border-strong: rgba(156, 92, 255, 0.55);
+  --accent-glow: rgba(109, 50, 218, 0.28);
+  --on-accent: #ffffff;
+  --purple: var(--accent);
+  --purple-2: var(--accent-2);
+  --purple-soft: var(--accent-soft);
+  --panel-gradient: linear-gradient(145deg, rgba(25, 21, 36, 0.98), rgba(14, 12, 21, 0.96));
+  --page-glow: radial-gradient(circle at 50% -10%, var(--accent-glow), transparent 35rem);
+  --nav-bg: rgba(14, 12, 20, 0.88);
+  --backdrop: rgba(8, 7, 13, 0.76);
+  --shadow: rgba(0, 0, 0, 0.38);
+  --color-scheme: dark;
   --green: #57d979;
   --yellow: #e6bd4b;
   --red: #ed6b72;
 }
+
+:root[data-accent='blue'] { --accent: #5b8cff; --accent-2: #315fcb; --accent-bright: #8aafff; --accent-text: #8aafff; --accent-text-strong: #b9ceff; --accent-soft: rgba(91, 140, 255, 0.16); --accent-faint: rgba(91, 140, 255, 0.09); --accent-border: rgba(91, 140, 255, 0.28); --accent-border-strong: rgba(91, 140, 255, 0.58); --accent-glow: rgba(49, 95, 203, 0.27); }
+:root[data-accent='teal'] { --accent: #28b8a0; --accent-2: #147968; --accent-bright: #61d8c4; --accent-text: #61d8c4; --accent-text-strong: #9ce9dc; --accent-soft: rgba(40, 184, 160, 0.16); --accent-faint: rgba(40, 184, 160, 0.09); --accent-border: rgba(40, 184, 160, 0.28); --accent-border-strong: rgba(40, 184, 160, 0.58); --accent-glow: rgba(20, 121, 104, 0.27); }
+:root[data-accent='coral'] { --accent: #ef6f79; --accent-2: #bd3f50; --accent-bright: #ff9aa2; --accent-text: #ff9aa2; --accent-text-strong: #ffc0c5; --accent-soft: rgba(239, 111, 121, 0.16); --accent-faint: rgba(239, 111, 121, 0.09); --accent-border: rgba(239, 111, 121, 0.28); --accent-border-strong: rgba(239, 111, 121, 0.58); --accent-glow: rgba(189, 63, 80, 0.25); }
+:root[data-accent='gold'] { --accent: #d5a72e; --accent-2: #966f0e; --accent-bright: #efc95f; --accent-text: #efc95f; --accent-text-strong: #f5dda0; --accent-soft: rgba(213, 167, 46, 0.17); --accent-faint: rgba(213, 167, 46, 0.1); --accent-border: rgba(213, 167, 46, 0.3); --accent-border-strong: rgba(213, 167, 46, 0.62); --accent-glow: rgba(150, 111, 14, 0.24); }
+
+:root[data-theme='light'] {
+  --text: #1d1923;
+  --text-soft: #534d5c;
+  --bg: #f3f1f5;
+  --page-top: #fbfafc;
+  --page-bottom: #eeebf1;
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-2: rgba(249, 247, 251, 0.97);
+  --surface-solid: #ffffff;
+  --field-bg: #ffffff;
+  --surface-faint: rgba(32, 24, 40, 0.035);
+  --surface-subtle: rgba(32, 24, 40, 0.055);
+  --surface-strong: rgba(32, 24, 40, 0.09);
+  --line: rgba(32, 24, 40, 0.11);
+  --line-strong: rgba(32, 24, 40, 0.16);
+  --muted: #716a79;
+  --panel-gradient: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 245, 249, 0.98));
+  --nav-bg: rgba(255, 255, 255, 0.9);
+  --backdrop: rgba(41, 35, 48, 0.38);
+  --shadow: rgba(38, 29, 46, 0.16);
+  --color-scheme: light;
+}
+
+:root[data-theme='light'][data-accent='violet'] { --accent-text: #6d32da; --accent-text-strong: #5422b3; }
+:root[data-theme='light'][data-accent='blue'] { --accent-text: #315fcb; --accent-text-strong: #244ba5; }
+:root[data-theme='light'][data-accent='teal'] { --accent-text: #147968; --accent-text-strong: #0e6355; }
+:root[data-theme='light'][data-accent='coral'] { --accent-text: #bd3f50; --accent-text-strong: #9f2e3e; }
+:root[data-theme='light'][data-accent='gold'] { --accent-text: #7b5907; --accent-text-strong: #614500; }
 
 * {
   box-sizing: border-box;
@@ -31,8 +92,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 50% -10%, rgba(109, 50, 218, 0.28), transparent 35rem),
-    linear-gradient(180deg, #0b0912 0%, #07070b 100%);
+    var(--page-glow),
+    linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+  color: var(--text);
 }
 
 button,
@@ -50,7 +112,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #b986ff;
+  outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -74,8 +136,8 @@ textarea:focus-visible {
   width: 46px;
   height: 46px;
   border-radius: 15px;
-  background: linear-gradient(145deg, #b77cff, #6330d0);
-  box-shadow: 0 0 32px rgba(156, 92, 255, 0.45);
+  background: linear-gradient(145deg, var(--accent-bright), var(--accent-2));
+  box-shadow: 0 0 32px var(--accent-glow);
   font-size: 23px;
 }
 
@@ -94,7 +156,7 @@ textarea:focus-visible {
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #a66cff;
+  color: var(--accent);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -112,7 +174,7 @@ textarea:focus-visible {
 .install-button {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-subtle);
   color: var(--muted);
   padding: 8px 11px;
   font-size: 0.72rem;
@@ -120,13 +182,13 @@ textarea:focus-visible {
 }
 
 .save-status.is-saving {
-  color: #c9a9ff;
-  border-color: rgba(156, 92, 255, 0.35);
+  color: var(--accent-text-strong);
+  border-color: var(--accent-border);
 }
 
 .install-button {
   cursor: pointer;
-  color: white;
+  color: var(--text);
   background: var(--purple-soft);
 }
 
@@ -142,10 +204,10 @@ textarea:focus-visible {
   width: min(calc(100% - 28px), 560px);
   min-height: 52px;
   padding: 12px 14px;
-  border: 1px solid rgba(156, 92, 255, 0.32);
+  border: 1px solid var(--accent-border);
   border-radius: 16px;
-  background: rgba(20, 17, 29, 0.96);
-  box-shadow: 0 20px 55px rgba(0, 0, 0, 0.38);
+  background: var(--surface-solid);
+  box-shadow: 0 20px 55px var(--shadow);
   transform: translateX(-50%);
 }
 
@@ -159,7 +221,7 @@ textarea:focus-visible {
 
 .app-notice span {
   min-width: 0;
-  color: white;
+  color: var(--text);
   font-size: 0.82rem;
   font-weight: 800;
   line-height: 1.35;
@@ -173,7 +235,7 @@ textarea:focus-visible {
   height: 30px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--surface-subtle);
   cursor: pointer;
 }
 
@@ -184,7 +246,7 @@ textarea:focus-visible {
   display: grid;
   place-items: center;
   padding: 18px;
-  background: rgba(8, 7, 13, 0.76);
+  background: var(--backdrop);
   backdrop-filter: blur(12px);
 }
 
@@ -193,9 +255,9 @@ textarea:focus-visible {
   gap: 14px;
   width: min(100%, 520px);
   padding: 18px;
-  border: 1px solid rgba(156, 92, 255, 0.28);
+  border: 1px solid var(--accent-border);
   border-radius: 20px;
-  background: rgba(20, 17, 29, 0.98);
+  background: var(--surface-solid);
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52);
 }
 
@@ -235,7 +297,7 @@ textarea:focus-visible {
 .tutorial-progress span {
   height: 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-strong);
 }
 
 .tutorial-progress span.active {
@@ -264,7 +326,7 @@ textarea:focus-visible {
   height: 42px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-subtle);
   font-size: 1.5rem;
   cursor: pointer;
 }
@@ -292,7 +354,7 @@ textarea:focus-visible {
   color: white;
   font-weight: 800;
   text-align: center;
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
 .prep-banner {
@@ -301,16 +363,16 @@ textarea:focus-visible {
   gap: 12px;
   margin-bottom: 16px;
   padding: 12px 14px;
-  border: 1px solid rgba(156, 92, 255, 0.25);
+  border: 1px solid var(--accent-border);
   border-radius: 16px;
-  background: rgba(156, 92, 255, 0.09);
+  background: var(--accent-faint);
 }
 
 .prep-banner span {
   flex: 0 0 auto;
   padding: 5px 7px;
   border-radius: 7px;
-  background: #9c5cff;
+  background: var(--accent);
   color: #10091a;
   font-size: 0.65rem;
   font-weight: 900;
@@ -333,7 +395,7 @@ textarea:focus-visible {
 .stat-card,
 .page-intro {
   border: 1px solid var(--line);
-  background: linear-gradient(145deg, rgba(25, 21, 36, 0.98), rgba(14, 12, 21, 0.96));
+  background: var(--panel-gradient);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
 }
 
@@ -357,7 +419,7 @@ textarea:focus-visible {
   right: -70px;
   top: -90px;
   border-radius: 50%;
-  background: rgba(156, 92, 255, 0.15);
+  background: var(--accent-soft);
   filter: blur(40px);
 }
 
@@ -388,7 +450,7 @@ textarea:focus-visible {
   width: 126px;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: conic-gradient(from -90deg, #b879ff 0deg, #7138dc var(--progress), rgba(255,255,255,0.07) var(--progress));
+  background: conic-gradient(from -90deg, var(--accent-bright) 0deg, var(--accent-2) var(--progress), rgba(255,255,255,0.07) var(--progress));
   box-shadow: 0 0 36px rgba(130, 67, 231, 0.32);
 }
 
@@ -397,7 +459,7 @@ textarea:focus-visible {
   position: absolute;
   inset: 10px;
   border-radius: inherit;
-  background: #100d17;
+  background: var(--surface-solid);
 }
 
 .progress-ring div {
@@ -412,7 +474,7 @@ textarea:focus-visible {
 }
 
 .progress-ring span {
-  color: #a66cff;
+  color: var(--accent);
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -456,8 +518,8 @@ textarea:focus-visible {
 
 .page-intro {
   background:
-    radial-gradient(circle at 90% 20%, rgba(156, 92, 255, 0.18), transparent 10rem),
-    linear-gradient(145deg, rgba(25, 21, 36, 0.98), rgba(14, 12, 21, 0.96));
+    radial-gradient(circle at 90% 20%, var(--accent-border), transparent 10rem),
+    var(--panel-gradient);
 }
 
 .page-intro h2,
@@ -474,7 +536,7 @@ textarea:focus-visible {
 }
 
 .section-heading > span {
-  color: #b98cff;
+  color: var(--accent-text);
   font-weight: 800;
 }
 
@@ -493,14 +555,14 @@ textarea:focus-visible {
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   text-align: left;
   cursor: pointer;
 }
 
 .rule-row.is-complete {
-  background: rgba(156, 92, 255, 0.075);
-  border-color: rgba(156, 92, 255, 0.18);
+  background: var(--accent-faint);
+  border-color: var(--accent-border);
 }
 
 .rule-row:disabled {
@@ -516,7 +578,7 @@ textarea:focus-visible {
   height: 34px;
   border-radius: 11px;
   background: var(--purple-soft);
-  color: #b985ff;
+  color: var(--accent-text);
 }
 
 .rule-label {
@@ -554,9 +616,9 @@ textarea:focus-visible {
   padding: 15px;
   border: 0;
   border-radius: 16px;
-  background: linear-gradient(135deg, #b46dff, #6c33d5);
+  background: linear-gradient(135deg, var(--accent-bright), var(--accent-2));
   box-shadow: 0 12px 32px rgba(108, 51, 213, 0.28);
-  color: white;
+  color: var(--on-accent);
   font-weight: 850;
   cursor: pointer;
 }
@@ -566,10 +628,10 @@ textarea:focus-visible {
   place-items: center;
   min-height: 46px;
   padding: 12px 14px;
-  border: 1px solid rgba(156, 92, 255, 0.25);
+  border: 1px solid var(--accent-border);
   border-radius: 14px;
-  background: rgba(156, 92, 255, 0.1);
-  color: white;
+  background: var(--accent-soft);
+  color: var(--text);
   font-size: 0.78rem;
   font-weight: 850;
   text-align: center;
@@ -664,7 +726,7 @@ textarea:focus-visible {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .account-data-panel small {
@@ -703,7 +765,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .sync-account-row div {
@@ -733,7 +795,7 @@ textarea:focus-visible {
   padding: 8px 11px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-subtle);
   color: white;
   font-size: 0.74rem;
   font-weight: 850;
@@ -775,7 +837,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 10px 12px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.4;
@@ -842,8 +904,8 @@ textarea:focus-visible {
 .form-section-title > span {
   width: 30px;
   height: 30px;
-  background: linear-gradient(145deg, #ad6eff, #6c32d6);
-  color: white;
+  background: linear-gradient(145deg, var(--accent-bright), var(--accent-2));
+  color: var(--on-accent);
   font-size: 0.8rem;
   font-weight: 900;
 }
@@ -870,7 +932,7 @@ textarea:focus-visible {
 .text-area-field {
   display: grid;
   gap: 7px;
-  color: #cfc8da;
+  color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -882,7 +944,7 @@ textarea:focus-visible {
   gap: 5px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   overflow: hidden;
 }
 
@@ -894,7 +956,7 @@ textarea:focus-visible {
   width: 100%;
   border: 0;
   background: transparent;
-  color: white;
+  color: var(--text);
 }
 
 .number-field input,
@@ -906,8 +968,8 @@ textarea:focus-visible {
 .text-field input {
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
-  color-scheme: dark;
+  background: var(--surface-faint);
+  color-scheme: var(--color-scheme);
 }
 
 .select-field select {
@@ -915,8 +977,8 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #15111e;
-  color-scheme: dark;
+  background: var(--field-bg);
+  color-scheme: var(--color-scheme);
 }
 
 .number-field small {
@@ -933,22 +995,22 @@ textarea:focus-visible {
   padding: 10px 13px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   font-weight: 700;
 }
 
 .check-field input {
   width: 23px;
   height: 23px;
-  accent-color: #9c5cff;
+  accent-color: var(--accent);
 }
 
 .rating-field select {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #15111e;
-  color-scheme: dark;
+  background: var(--field-bg);
+  color-scheme: var(--color-scheme);
 }
 
 .text-area-field textarea {
@@ -957,7 +1019,7 @@ textarea:focus-visible {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   line-height: 1.5;
 }
 
@@ -988,14 +1050,14 @@ textarea:focus-visible {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   color: var(--muted);
   font-size: 0.74rem;
   line-height: 1.4;
 }
 
 .rule-glossary strong {
-  color: #f8f5ff;
+  color: var(--text);
 }
 
 .category-create-row {
@@ -1011,9 +1073,9 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  border: 1px solid rgba(156, 92, 255, 0.22);
+  border: 1px solid var(--accent-border);
   border-radius: 14px;
-  background: rgba(156, 92, 255, 0.08);
+  background: var(--accent-faint);
 }
 
 .today-plan-list {
@@ -1027,13 +1089,13 @@ textarea:focus-visible {
   gap: 10px;
   align-items: center;
   padding: 11px 12px;
-  border: 1px solid rgba(156, 92, 255, 0.22);
+  border: 1px solid var(--accent-border);
   border-radius: 8px;
-  background: rgba(156, 92, 255, 0.07);
+  background: var(--accent-faint);
 }
 
 .today-plan-row > span {
-  color: #b87cff;
+  color: var(--accent-text);
   font-size: 1.1rem;
   text-align: center;
 }
@@ -1126,7 +1188,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .workout-remove-button {
@@ -1189,7 +1251,7 @@ textarea:focus-visible {
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .quick-workout-list span,
@@ -1242,9 +1304,9 @@ textarea:focus-visible {
   display: grid;
   gap: 9px;
   padding: 11px;
-  border: 1px solid rgba(156, 92, 255, 0.22);
+  border: 1px solid var(--accent-border);
   border-radius: 8px;
-  background: rgba(156, 92, 255, 0.055);
+  background: var(--accent-faint);
 }
 
 .meal-type-tabs {
@@ -1269,8 +1331,8 @@ textarea:focus-visible {
 }
 
 .meal-type-tabs button.active {
-  background: rgba(156, 92, 255, 0.2);
-  color: white;
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
 }
 
 .food-macro-grid,
@@ -1308,7 +1370,7 @@ textarea:focus-visible {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   color: #d7cfdf;
   font-size: 0.66rem;
   font-weight: 750;
@@ -1317,7 +1379,7 @@ textarea:focus-visible {
 .food-category-picker input {
   width: 16px;
   height: 16px;
-  accent-color: #9c5cff;
+  accent-color: var(--accent);
 }
 
 .meal-group {
@@ -1331,7 +1393,7 @@ textarea:focus-visible {
   padding: 11px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .food-edit-main {
@@ -1397,7 +1459,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .settings-rule-row.is-disabled {
@@ -1411,7 +1473,7 @@ textarea:focus-visible {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-faint);
 }
 
 .settings-tabs button {
@@ -1426,13 +1488,164 @@ textarea:focus-visible {
 }
 
 .settings-tabs button.active {
-  background: rgba(156, 92, 255, 0.16);
-  color: #f8f5ff;
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
 }
+
+.appearance-setting {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.appearance-setting > span {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.appearance-segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.appearance-segmented button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.appearance-segmented button.active {
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
+}
+
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.accent-swatch {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 5px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.accent-swatch span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.accent-swatch.active {
+  border-color: var(--swatch-color);
+}
+
+.swatch-violet { --swatch-color: #9c5cff; }
+.swatch-blue { --swatch-color: #5b8cff; }
+.swatch-teal { --swatch-color: #28b8a0; }
+.swatch-coral { --swatch-color: #ef6f79; }
+.swatch-gold { --swatch-color: #d5a72e; }
 
 .rule-config-card {
   grid-template-columns: 1fr;
   align-items: stretch;
+  --rule-card-accent: var(--accent);
+  --rule-card-tint: var(--accent-faint);
+  border-left: 4px solid var(--rule-card-accent);
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--rule-card-tint), var(--surface-faint) 42%);
+}
+
+.rule-config-card[data-rule-category='exercise'] { --rule-card-accent: #28b8a0; --rule-card-tint: rgba(40, 184, 160, 0.09); }
+.rule-config-card[data-rule-category='diet'] { --rule-card-accent: #d5a72e; --rule-card-tint: rgba(213, 167, 46, 0.09); }
+.rule-config-card[data-rule-category='mental'] { --rule-card-accent: #5b8cff; --rule-card-tint: rgba(91, 140, 255, 0.09); }
+.rule-config-card[data-rule-category='misc'] { --rule-card-accent: #ef6f79; --rule-card-tint: rgba(239, 111, 121, 0.09); }
+
+.rule-card-heading {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rule-card-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--rule-card-accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.rule-card-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rule-card-heading strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-card-heading small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.rule-card-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.rule-card-state::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: '';
+}
+
+.rule-card-state.active {
+  color: var(--rule-card-accent);
+}
+
+.rule-card-state.active::before {
+  background: var(--rule-card-accent);
 }
 
 .rule-editor-main {
@@ -1459,7 +1672,7 @@ textarea:focus-visible {
   grid-column: 1 / -1;
   display: grid;
   gap: 7px;
-  color: #cfc8da;
+  color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -1483,7 +1696,7 @@ textarea:focus-visible {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-faint);
   color: var(--muted);
   font: inherit;
   font-size: 0.7rem;
@@ -1491,9 +1704,15 @@ textarea:focus-visible {
 }
 
 .pattern-day-grid button.active {
-  border-color: rgba(156, 92, 255, 0.75);
-  background: rgba(156, 92, 255, 0.2);
-  color: white;
+  border-color: var(--accent-border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
+}
+
+:root[data-theme='light'] .danger-button {
+  border-color: rgba(178, 48, 63, 0.24);
+  background: rgba(178, 48, 63, 0.08);
+  color: #9f2e3e;
 }
 
 .pattern-day-grid.cycle-7 {
@@ -1511,7 +1730,7 @@ textarea:focus-visible {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .exercise-progress-header {
@@ -1522,7 +1741,7 @@ textarea:focus-visible {
 }
 
 .exercise-progress-header > span {
-  color: #b87cff;
+  color: var(--accent-text);
   font-size: 1.05rem;
   text-align: center;
 }
@@ -1558,7 +1777,7 @@ textarea:focus-visible {
   padding: 7px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .exercise-cycle-days strong {
@@ -1595,7 +1814,7 @@ textarea:focus-visible {
 .symbol-field {
   display: grid;
   gap: 7px;
-  color: #cfc8da;
+  color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -1606,8 +1825,8 @@ textarea:focus-visible {
   padding: 13px 8px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
-  color: white;
+  background: var(--surface-faint);
+  color: var(--text);
   text-align: center;
 }
 
@@ -1626,8 +1845,8 @@ textarea:focus-visible {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
-  color: #cfc8da;
+  background: var(--surface-faint);
+  color: var(--text-soft);
   font-size: 0.76rem;
   font-weight: 750;
 }
@@ -1639,7 +1858,7 @@ textarea:focus-visible {
 .mini-check-field input {
   width: 21px;
   height: 21px;
-  accent-color: #9c5cff;
+  accent-color: var(--accent);
 }
 
 .weight-field {
@@ -1652,10 +1871,10 @@ textarea:focus-visible {
   max-width: 170px;
   border: 0;
   background: transparent;
-  color: white;
+  color: var(--text);
   font-size: 0.76rem;
   font-weight: 800;
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
 .autosave-note {
@@ -1699,7 +1918,7 @@ textarea:focus-visible {
   place-content: center;
   gap: 2px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   cursor: pointer;
 }
 
@@ -1711,7 +1930,7 @@ textarea:focus-visible {
 .calendar-day.great { background: rgba(87, 217, 121, 0.22); border-color: rgba(87, 217, 121, 0.32); }
 .calendar-day.good { background: rgba(230, 189, 75, 0.22); border-color: rgba(230, 189, 75, 0.32); }
 .calendar-day.low { background: rgba(237, 107, 114, 0.2); border-color: rgba(237, 107, 114, 0.3); }
-.calendar-day.selected { box-shadow: 0 0 0 2px #b778ff inset; }
+.calendar-day.selected { box-shadow: 0 0 0 2px var(--accent-bright) inset; }
 
 .calendar-legend {
   display: flex;
@@ -1752,14 +1971,14 @@ textarea:focus-visible {
 }
 
 .bar-row small {
-  color: #b78aff;
+  color: var(--accent-text);
   font-weight: 800;
 }
 
 .bar-track {
   height: 9px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-strong);
   overflow: hidden;
 }
 
@@ -1767,7 +1986,7 @@ textarea:focus-visible {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7137dc, #b471ff);
+  background: linear-gradient(90deg, var(--accent-2), var(--accent-bright));
 }
 
 .trend-grid {
@@ -1777,14 +1996,14 @@ textarea:focus-visible {
 }
 
 .trend-card {
-  --metric-color: #9c5cff;
+  --metric-color: var(--accent);
   display: grid;
   gap: 10px;
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .trend-card-header {
@@ -1879,7 +2098,7 @@ textarea:focus-visible {
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-subtle);
 }
 
 .period-toggle button {
@@ -1911,7 +2130,7 @@ textarea:focus-visible {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .weekly-row.is-empty {
@@ -1946,8 +2165,8 @@ textarea:focus-visible {
   flex: 0 0 auto;
   padding: 6px 9px;
   border-radius: 999px;
-  background: rgba(156, 92, 255, 0.14);
-  color: #c39aff;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: 0.78rem;
 }
 
@@ -1963,7 +2182,7 @@ textarea:focus-visible {
   min-width: 0;
   padding: 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .weekly-metrics strong {
@@ -2003,7 +2222,7 @@ textarea:focus-visible {
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .friends-tabs button {
@@ -2026,8 +2245,8 @@ textarea:focus-visible {
 }
 
 .friends-tabs button.active {
-  background: rgba(156, 92, 255, 0.16);
-  color: white;
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
 }
 
 .inline-badge,
@@ -2058,7 +2277,7 @@ textarea:focus-visible {
   padding: 11px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .friends-stat-grid small {
@@ -2085,9 +2304,9 @@ textarea:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   min-height: 68px;
   padding: 12px;
-  border: 1px solid rgba(156, 92, 255, 0.25);
+  border: 1px solid var(--accent-border);
   border-radius: 14px;
-  background: rgba(156, 92, 255, 0.1);
+  background: var(--accent-soft);
 }
 
 .invite-code-card small,
@@ -2119,7 +2338,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .privacy-panel small,
@@ -2164,7 +2383,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .friend-request-main {
@@ -2202,7 +2421,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .activity-card-main {
@@ -2268,7 +2487,7 @@ textarea:focus-visible {
   padding: 5px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-subtle);
   color: var(--muted);
   font: inherit;
   font-size: 0.68rem;
@@ -2356,7 +2575,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .squad-edit-panel {
@@ -2403,7 +2622,7 @@ textarea:focus-visible {
 .squad-member-list span {
   padding: 7px 9px;
   border-radius: 999px;
-  background: rgba(156, 92, 255, 0.12);
+  background: var(--accent-soft);
   color: #d9d1e5;
   font-size: 0.68rem;
   font-weight: 900;
@@ -2421,7 +2640,7 @@ textarea:focus-visible {
   gap: 7px;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .squad-leaderboard > small {
@@ -2445,8 +2664,8 @@ textarea:focus-visible {
   width: 26px;
   height: 26px;
   border-radius: 9px;
-  background: rgba(156, 92, 255, 0.12);
-  color: #c49aff;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: 0.74rem;
 }
 
@@ -2485,12 +2704,12 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .challenge-create-panel {
-  border-color: rgba(156, 92, 255, 0.22);
-  background: rgba(156, 92, 255, 0.06);
+  border-color: var(--accent-border);
+  background: var(--accent-faint);
 }
 
 .template-picker {
@@ -2560,7 +2779,7 @@ textarea:focus-visible {
   padding: 9px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .challenge-rule-option input {
@@ -2624,7 +2843,7 @@ textarea:focus-visible {
   padding: 10px 11px;
   border: 1px solid var(--line);
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
   color: #d9d1e5;
   font-size: 0.76rem;
   font-weight: 800;
@@ -2728,7 +2947,7 @@ textarea:focus-visible {
   min-width: 0;
   padding: 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .publish-state small,
@@ -2766,7 +2985,7 @@ textarea:focus-visible {
   min-width: 0;
   padding: 10px;
   border-radius: 13px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .participant-history-row div {
@@ -2789,7 +3008,7 @@ textarea:focus-visible {
 }
 
 .participant-history-row b {
-  color: #c49aff;
+  color: var(--accent-text);
   font-size: 0.68rem;
   text-transform: uppercase;
 }
@@ -2805,7 +3024,7 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .daily-history-person-heading {
@@ -2865,19 +3084,19 @@ textarea:focus-visible {
   border: 0;
   border-radius: 4px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-strong);
 }
 
 .daily-score-row progress::-webkit-progress-bar {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-strong);
 }
 
 .daily-score-row progress::-webkit-progress-value {
-  background: #9c5cff;
+  background: var(--accent);
 }
 
 .daily-score-row progress::-moz-progress-bar {
-  background: #9c5cff;
+  background: var(--accent);
 }
 
 .score-note {
@@ -2885,7 +3104,7 @@ textarea:focus-visible {
   margin: 0;
   padding: 9px 10px;
   border-radius: 12px;
-  background: rgba(156, 92, 255, 0.08);
+  background: var(--accent-faint);
   color: #d9d1e5;
   font-size: 0.74rem;
   line-height: 1.45;
@@ -2904,12 +3123,12 @@ textarea:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .leaderboard-card.is-you {
-  border-color: rgba(156, 92, 255, 0.28);
-  background: rgba(156, 92, 255, 0.08);
+  border-color: var(--accent-border);
+  background: var(--accent-faint);
 }
 
 .leaderboard-rank {
@@ -2919,7 +3138,7 @@ textarea:focus-visible {
   height: 38px;
   border-radius: 12px;
   background: var(--purple-soft);
-  color: #c49aff;
+  color: var(--accent-text);
   font-weight: 900;
 }
 
@@ -2971,7 +3190,7 @@ textarea:focus-visible {
   min-width: 0;
   padding: 9px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-faint);
 }
 
 .leaderboard-stats strong {
@@ -2985,8 +3204,8 @@ textarea:focus-visible {
 
 .focus-panel {
   background:
-    radial-gradient(circle at 90% 20%, rgba(156, 92, 255, 0.22), transparent 13rem),
-    linear-gradient(145deg, rgba(25, 21, 36, 0.98), rgba(14, 12, 21, 0.96));
+    radial-gradient(circle at 90% 20%, var(--accent-border), transparent 13rem),
+    var(--panel-gradient);
 }
 
 .bottom-nav {
@@ -2998,9 +3217,9 @@ textarea:focus-visible {
   grid-template-columns: repeat(5, 1fr);
   width: min(calc(100% - 24px), 720px);
   padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom));
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(14, 12, 20, 0.88);
+  background: var(--nav-bg);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(20px);
   transform: translateX(-50%);
@@ -3026,8 +3245,8 @@ textarea:focus-visible {
 }
 
 .bottom-nav button.active {
-  background: rgba(156, 92, 255, 0.13);
-  color: #b87cff;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .bottom-nav svg {

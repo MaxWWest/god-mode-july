@@ -10,6 +10,13 @@ export type DietGoalType = 'minimum' | 'maximum' | 'avoid'
 export type DietTrackingSource = 'manual' | 'calories' | 'protein' | 'carbs' | 'fat' | 'sodium' | 'foodCategory'
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 export type FoodCategory = 'alcohol' | 'dessert' | 'fruit' | 'vegetable' | 'protein' | 'grain' | 'dairy' | 'other'
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type AccentColor = 'violet' | 'blue' | 'teal' | 'coral' | 'gold'
+
+export type AppearanceSettings = {
+  theme: ThemeMode
+  accent: AccentColor
+}
 
 export type ExerciseRuleSettings = {
   cycleDays: ExerciseCycleDays
@@ -64,6 +71,7 @@ export type ChallengeSettings = {
   title: string
   startDate: string
   endDate: string
+  appearance: AppearanceSettings
   targets: ChallengeTargets
   categories: RuleCategoryConfig[]
   rules: RuleConfig[]

@@ -10,6 +10,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Daily rule checklist
 - Detailed check-in form
 - Configurable tracker title and start date
+- Light, dark, or system appearance with five selectable accent colors
 - Exercise, diet, mental, and miscellaneous scored rule categories
 - Repeating 1-day, 7-day, and 30-day exercise patterns with scheduled training days, workout type, and minutes
 - Weekday-aware 7-day plans with recovery-day and next-workout guidance
@@ -47,6 +48,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - PWA icons
 - Five-tab navigation: Home, Check-In, Progress, Social, and Settings
 - Separate Rules + Goals and App + Account settings views
+- Category-colored, numbered rule editors for easier scanning in larger goal sets
 - Six-step onboarding for daily tracking, exercise patterns, diet goals, progress, and Social
 
 ## Requirements
