@@ -44,9 +44,11 @@ import {
   downloadTextFile,
   formatDate,
   formatDateTime,
+  formatShortDate,
   getDietRuleValue,
   getEnabledRules,
   getExerciseRuleMinutes,
+  getNextExerciseDate,
   getLoggedDates,
   getTrackingDates,
   isEntryFinalized,
@@ -118,31 +120,48 @@ const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
 const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v1'
 const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
 
-const TUTORIAL_STEPS = [
+const TUTORIAL_STEPS: Array<{ eyebrow: string; title: string; body: string; view: View; actionLabel: string }> = [
   {
     eyebrow: 'Step 1',
-    title: 'Build today from the Home tab.',
-    body: 'Tap daily rules as you complete them. Your percent is weighted by non-negotiable and supporting rules.',
+    title: 'Start with today on Home.',
+    body: 'Home shows the rules that apply today, your score, streaks, and a clear recovery-day card when no exercise is scheduled.',
+    view: 'home',
+    actionLabel: 'Open Home',
   },
   {
     eyebrow: 'Step 2',
-    title: 'Use Check-In for the details.',
-    body: 'Log scheduled exercise, diet goals, mental rules, body signals, and short reflections before you finalize the day.',
+    title: 'Build your exercise pattern.',
+    body: 'In Settings, choose a daily, 7-day, or 30-day cycle. Seven-day plans use weekdays; selected days are training and the rest are recovery.',
+    view: 'settings',
+    actionLabel: 'Open Rules + Goals',
   },
   {
     eyebrow: 'Step 3',
-    title: 'Finalize when the day is done.',
-    body: 'Finalizing locks the day so your score feels published. You can still unlock it if you need to fix something.',
+    title: 'Set diet and mental goals.',
+    body: 'Diet goals can be at least, at most, or avoid with your own units. Mental and miscellaneous rules stay simple daily checks.',
+    view: 'settings',
+    actionLabel: 'Open Rules + Goals',
   },
   {
     eyebrow: 'Step 4',
-    title: 'Tune rules and the app in Settings.',
-    body: 'Rules + Goals holds exercise patterns and diet targets. App + Account holds sync, reminders, exports, and tracker controls.',
+    title: 'Use Check-In for the details.',
+    body: 'Log today’s planned exercise, diet values, mental rules, body signals, and reflections. Optional movement can still be logged on rest days.',
+    view: 'check-in',
+    actionLabel: 'Open Check-In',
   },
   {
     eyebrow: 'Step 5',
-    title: 'Compete from Friends.',
-    body: 'Copy your invite code, accept requests, save private squads, publish scores, and create friend challenges.',
+    title: 'Watch the pattern in Progress.',
+    body: 'Current Cycle shows completed, missed, and upcoming training days. Calendar and longer-term rule trends live here too.',
+    view: 'progress',
+    actionLabel: 'Open Progress',
+  },
+  {
+    eyebrow: 'Step 6',
+    title: 'Finalize and share when ready.',
+    body: 'Finalize a day to lock its score. Social lets you add friends, build squads, and publish selected challenge results.',
+    view: 'friends',
+    actionLabel: 'Open Social',
   },
 ]
 
@@ -1804,8 +1823,7 @@ function TutorialOverlay({
   const currentStep = TUTORIAL_STEPS[step] ?? TUTORIAL_STEPS[0]
   const isFirst = step === 0
   const isLast = step === TUTORIAL_STEPS.length - 1
-  const targetView: View = step === 1 ? 'check-in' : step === 3 ? 'settings' : step === 4 ? 'friends' : 'home'
-  const targetLabel = targetView === 'check-in' ? 'Open Check-In' : `Open ${targetView.charAt(0).toUpperCase()}${targetView.slice(1)}`
+  const targetView = currentStep.view
 
   return (
     <div className="tutorial-backdrop" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
@@ -1830,7 +1848,7 @@ function TutorialOverlay({
             Back
           </button>
           <button className="secondary-button" type="button" onClick={() => onNavigate(targetView)}>
-            {targetLabel}
+            {currentStep.actionLabel}
           </button>
           {isLast ? (
             <button className="primary-button" type="button" onClick={onClose}>
@@ -1877,6 +1895,12 @@ function Dashboard({
   onUnlockDay: () => void
 }) {
   const activeRules = getEnabledRules(settings, selectedDate)
+  const exerciseRules = getEnabledRules(settings).filter((rule) => rule.category === 'exercise' && rule.exercise)
+  const todayExerciseRules = activeRules.filter((rule) => rule.category === 'exercise' && rule.exercise)
+  const nextExercise = exerciseRules
+    .map((rule) => ({ rule, date: getNextExerciseDate(rule, selectedDate, settings) }))
+    .filter((item): item is { rule: RuleConfig; date: string } => item.date !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))[0]
 
   return (
     <div className="page-stack">
@@ -1899,6 +1923,16 @@ function Dashboard({
         <StatCard label="Longest streak" value={`${longestStreak(entries, settings)} days`} icon="🏆" />
         <StatCard label="Latest weight" value={latestWeight ? `${latestWeight.toFixed(1)} lb` : '—'} icon="◒" />
       </section>
+
+      {exerciseRules.length > 0 && todayExerciseRules.length === 0 && (
+        <section className="rest-day-banner home-rest-day" aria-label="Exercise rest day">
+          <span aria-hidden="true">◒</span>
+          <div>
+            <strong>Exercise recovery day</strong>
+            <small>{nextExercise ? `Next planned: ${nextExercise.rule.label} on ${formatShortDate(nextExercise.date)}.` : 'No upcoming training day is scheduled.'} Optional movement can still be logged in Check-In.</small>
+          </div>
+        </section>
+      )}
 
       <section className="panel rules-panel">
         <div className="section-heading">

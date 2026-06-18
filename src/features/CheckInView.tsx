@@ -4,10 +4,13 @@ import {
   MAX_WORKOUT_MINUTES,
   WORKOUT_TYPES,
   formatDateTime,
+  formatExercisePatternSchedule,
+  formatShortDate,
   getDietRuleValue,
   getEnabledRules,
   getExerciseMinutes,
   getExerciseRuleMinutes,
+  getNextExerciseDate,
   makeEmptyWorkout,
   normalizeWorkoutLogs,
   workoutMinutesTotal,
@@ -39,9 +42,15 @@ export default function CheckInView({
   const workoutLogs = Array.isArray(entry.workouts) ? entry.workouts : []
   const workoutTotal = getExerciseMinutes(entry)
   const activeRules = getEnabledRules(settings, entry.date)
+  const allExerciseRules = getEnabledRules(settings).filter((rule) => rule.category === 'exercise' && rule.exercise)
   const exerciseRules = activeRules.filter((rule) => rule.category === 'exercise' && rule.exercise)
+  const restExerciseRules = allExerciseRules.filter((rule) => !exerciseRules.some((activeRule) => activeRule.key === rule.key))
   const dietRules = activeRules.filter((rule) => rule.category === 'diet' && rule.diet)
   const habitRules = activeRules.filter((rule) => (rule.category === 'mental' || rule.category === 'misc') && rule.key !== 'sleep')
+  const nextExercise = allExerciseRules
+    .map((rule) => ({ rule, date: getNextExerciseDate(rule, entry.date, settings) }))
+    .filter((item): item is { rule: RuleConfig; date: string } => item.date !== null)
+    .sort((a, b) => a.date.localeCompare(b.date))[0]
 
   function updateWorkouts(nextWorkouts: WorkoutLog[]) {
     const workouts = normalizeWorkoutLogs(nextWorkouts)
@@ -101,22 +110,34 @@ export default function CheckInView({
 
       <section className="panel form-panel">
         <SectionTitle number="1" title="Exercise" />
-        {exerciseRules.length > 0 ? (
+        {exerciseRules.length > 0 && (
           <div className="today-plan-list">
             {exerciseRules.map((rule) => (
               <article className="today-plan-row" key={rule.key}>
                 <span>{rule.icon}</span>
                 <div>
                   <strong>{rule.label}</strong>
-                  <small>{rule.exercise?.workoutType} · {rule.exercise?.targetMinutes} min · {rule.exercise?.cycleDays}-day pattern</small>
+                  <small>{rule.exercise?.workoutType} · {rule.exercise?.targetMinutes} min · {formatExercisePatternSchedule(rule, settings)}</small>
                 </div>
                 <b>{getExerciseRuleMinutes(entry, rule)} min</b>
               </article>
             ))}
           </div>
-        ) : (
-          <p className="empty-workout-log">No exercise is scheduled for this pattern day. You can still log an optional workout.</p>
         )}
+        {restExerciseRules.length > 0 && (
+          <div className="rest-day-banner">
+            <span aria-hidden="true">◒</span>
+            <div>
+              <strong>{exerciseRules.length === 0 ? 'Recovery day' : `${restExerciseRules.length} resting pattern${restExerciseRules.length === 1 ? '' : 's'}`}</strong>
+              <small>
+                {exerciseRules.length === 0 ? 'No planned exercise today. ' : ''}
+                {nextExercise ? `Next: ${nextExercise.rule.label} on ${formatShortDate(nextExercise.date)}.` : 'No upcoming exercise is scheduled.'}
+                {exerciseRules.length === 0 ? ' Optional movement can still be logged.' : ''}
+              </small>
+            </div>
+          </div>
+        )}
+        {allExerciseRules.length === 0 && <p className="empty-workout-log">No active exercise pattern. Add one from Settings.</p>}
         <div className="workout-summary">
           <div>
             <strong>{workoutTotal} min logged</strong>

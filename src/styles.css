@@ -1054,6 +1054,44 @@ textarea:focus-visible {
   font-size: 0.76rem;
 }
 
+.rest-day-banner {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(91, 179, 220, 0.28);
+  border-radius: 8px;
+  background: rgba(56, 118, 147, 0.1);
+}
+
+.rest-day-banner > span {
+  color: #84d5f5;
+  font-size: 1.15rem;
+  text-align: center;
+}
+
+.rest-day-banner div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rest-day-banner strong {
+  color: #e4f7ff;
+  font-size: 0.84rem;
+}
+
+.rest-day-banner small {
+  color: #a8bdc7;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.home-rest-day {
+  width: 100%;
+}
+
 .workout-summary div {
   display: grid;
   gap: 3px;
@@ -1205,6 +1243,13 @@ textarea:focus-visible {
   font-weight: 750;
 }
 
+.pattern-day-field > small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
 .pattern-day-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
@@ -1228,6 +1273,98 @@ textarea:focus-visible {
   border-color: rgba(156, 92, 255, 0.75);
   background: rgba(156, 92, 255, 0.2);
   color: white;
+}
+
+.pattern-day-grid.cycle-7 {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.exercise-progress-list {
+  display: grid;
+  gap: 10px;
+}
+
+.exercise-progress-card {
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.exercise-progress-header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.exercise-progress-header > span {
+  color: #b87cff;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.exercise-progress-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.exercise-progress-header small,
+.exercise-progress-card > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.exercise-progress-header b {
+  color: #bfeec8;
+  font-size: 0.9rem;
+}
+
+.exercise-cycle-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  gap: 6px;
+}
+
+.exercise-cycle-days > span {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.exercise-cycle-days strong {
+  font-size: 0.68rem;
+}
+
+.exercise-cycle-days small {
+  color: var(--muted);
+  font-size: 0.58rem;
+  text-transform: capitalize;
+}
+
+.exercise-cycle-days .complete {
+  border-color: rgba(87, 217, 121, 0.35);
+  background: rgba(87, 217, 121, 0.08);
+}
+
+.exercise-cycle-days .complete small {
+  color: #9cefb0;
+}
+
+.exercise-cycle-days .missed {
+  border-color: rgba(255, 120, 128, 0.28);
+}
+
+.exercise-cycle-days .missed small {
+  color: #ff9ca2;
 }
 
 .progress-calendar-intro {

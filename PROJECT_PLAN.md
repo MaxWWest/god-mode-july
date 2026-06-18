@@ -15,11 +15,14 @@
 - Editable rules
 - Exercise, diet, mental, and miscellaneous rule categories
 - Repeating 1-day, 7-day, and 30-day exercise patterns
+- Weekday-aware 7-day plans, visible recovery days, and next-workout guidance
+- Current-cycle exercise progress with completed, missed, and upcoming training dates
 - Minimum, maximum, and avoid diet goals with common presets and custom names/units
 - Editable diet, exercise, and sleep targets
 - Non-negotiable versus supporting-rule weights
 - Custom tracker title and start date
 - Five-tab navigation with separate Rules + Goals and App + Account settings views
+- Updated six-step onboarding for the exercise/diet tracker model
 
 ## Milestone 3 — Better data ownership (complete)
 

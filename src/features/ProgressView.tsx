@@ -13,9 +13,11 @@ import {
   addDays,
   completionStats,
   daysBetween,
+  formatExercisePatternSchedule,
   formatMonthLabel,
   formatShortDate,
   getEnabledRules,
+  getExercisePatternProgress,
   getLoggedDates,
   getTrackingDates,
   isRuleScheduledForDate,
@@ -147,6 +149,11 @@ export default function ProgressView({
     metric,
     points: getTrendPoints(entries, settings, metric),
   }))
+  const throughDate = selectableEndDate(settings)
+  const exercisePatterns = getEnabledRules(settings)
+    .filter((rule) => rule.category === 'exercise' && rule.exercise)
+    .map((rule) => ({ rule, progress: getExercisePatternProgress(rule, entries, throughDate, settings) }))
+    .filter((item) => item.progress !== null)
 
   const averageCompletion = dates.length === 0
     ? 0
@@ -171,6 +178,46 @@ export default function ProgressView({
         <ProgressCalendar entries={entries} selectedDate={selectedDate} settings={settings} onSelectDate={onSelectDate} />
       ) : (
         <>
+
+      {exercisePatterns.length > 0 && (
+        <section className="panel exercise-progress-panel">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Current cycle</p>
+              <h2>Exercise patterns</h2>
+            </div>
+          </div>
+          <div className="exercise-progress-list">
+            {exercisePatterns.map(({ rule, progress }) => {
+              if (!progress) return null
+              const percent = progress.scheduledDates.length === 0
+                ? 0
+                : Math.round((progress.completedDates.length / progress.scheduledDates.length) * 100)
+              const todayIsTraining = progress.scheduledDates.includes(throughDate)
+              return (
+                <article className="exercise-progress-card" key={rule.key}>
+                  <div className="exercise-progress-header">
+                    <span>{rule.icon}</span>
+                    <div>
+                      <strong>{rule.label}</strong>
+                      <small>{formatExercisePatternSchedule(rule, settings)} · {formatShortDate(progress.cycleStart)}–{formatShortDate(progress.cycleEnd)}</small>
+                    </div>
+                    <b>{progress.completedDates.length}/{progress.scheduledDates.length}</b>
+                  </div>
+                  <div className="bar-track"><span style={{ width: `${percent}%` }} /></div>
+                  <div className="exercise-cycle-days">
+                    {progress.scheduledDates.map((date) => {
+                      const state = progress.completedDates.includes(date) ? 'complete' : date > throughDate ? 'upcoming' : 'missed'
+                      return <span className={state} key={date}><strong>{formatShortDate(date)}</strong><small>{state}</small></span>
+                    })}
+                  </div>
+                  <p>{todayIsTraining ? `${rule.exercise?.targetMinutes} minutes planned today.` : progress.nextScheduledDate ? `Rest day today · next training ${formatShortDate(progress.nextScheduledDate)}.` : 'Rest day today.'}</p>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="panel progress-panel">
         <div className="section-heading">

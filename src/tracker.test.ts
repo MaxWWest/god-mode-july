@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
   completionStats,
+  formatExercisePatternDayLabel,
+  formatExercisePatternSchedule,
   getEnabledRules,
+  getExercisePatternProgress,
+  getNextExerciseDate,
   makeEmptyEntry,
   normalizePrivacySettings,
   normalizeSettings,
@@ -64,6 +68,38 @@ describe('tracker scoring', () => {
 
     expect(getEnabledRules(settings, restDay.date)).toHaveLength(0)
     expect(completionStats(trainingDay, settings)).toEqual({ completed: 1, total: 1, percent: 100 })
+  })
+
+  it('uses weekday labels and reports current-cycle exercise progress', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      startDate: '2026-06-01',
+      endDate: '2026-07-01',
+      rules: DEFAULT_SETTINGS.rules.map((rule) => ({
+        ...rule,
+        enabled: rule.key === 'exercise',
+        exercise: rule.key === 'exercise'
+          ? { cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Strength', targetMinutes: 30 }
+          : rule.exercise,
+      })),
+    })
+    const rule = settings.rules.find((item) => item.key === 'exercise')!
+    const monday = {
+      ...makeEmptyEntry('2026-06-01'),
+      exerciseMinutes: 30,
+      workouts: [{ id: 'strength-1', type: 'Strength', minutes: 30 }],
+    }
+    const progress = getExercisePatternProgress(rule, { [monday.date]: monday }, '2026-06-05', settings)
+
+    expect([1, 3, 5].map((day) => formatExercisePatternDayLabel(rule, day, settings))).toEqual(['Mon', 'Wed', 'Fri'])
+    expect(formatExercisePatternSchedule(rule, settings)).toBe('Mon, Wed, Fri')
+    expect(getNextExerciseDate(rule, '2026-06-02', settings)).toBe('2026-06-03')
+    expect(progress).toMatchObject({
+      scheduledDates: ['2026-06-01', '2026-06-03', '2026-06-05'],
+      completedDates: ['2026-06-01'],
+      reachedDates: ['2026-06-01', '2026-06-03', '2026-06-05'],
+      nextScheduledDate: '2026-06-08',
+    })
   })
 
   it('supports minimum, maximum, and avoid diet goals with custom units', () => {

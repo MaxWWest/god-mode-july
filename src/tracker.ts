@@ -10,6 +10,7 @@ import type {
   DietRuleSettings,
   EntryMap,
   ExerciseCycleDays,
+  ExercisePatternProgress,
   ExerciseRuleSettings,
   PrivacySettings,
   ReminderSettings,
@@ -697,6 +698,73 @@ export function isRuleScheduledForDate(rule: RuleConfig, date: string, settings:
   if (rule.category !== 'exercise' || !rule.exercise) return true
   const cycleDay = exercisePatternDay(rule, date, settings)
   return cycleDay !== null && rule.exercise.scheduledDays.includes(cycleDay)
+}
+
+export function formatExercisePatternDayLabel(
+  rule: RuleConfig,
+  day: number,
+  settings: ChallengeSettings,
+  weekdayStyle: 'short' | 'long' = 'short',
+): string {
+  if (!rule.exercise || rule.exercise.cycleDays === 1) return 'Daily'
+  if (rule.exercise.cycleDays === 30) return `Day ${day}`
+  const date = addDays(settings.startDate, day - 1)
+  return new Intl.DateTimeFormat('en-US', { weekday: weekdayStyle }).format(new Date(`${date}T12:00:00`))
+}
+
+export function formatExercisePatternSchedule(rule: RuleConfig, settings: ChallengeSettings): string {
+  if (!rule.exercise) return ''
+  if (rule.exercise.cycleDays === 1) return 'Every day'
+  if (rule.exercise.cycleDays === 30) {
+    const count = rule.exercise.scheduledDays.length
+    return `${count} training ${count === 1 ? 'day' : 'days'} per 30-day cycle`
+  }
+  return rule.exercise.scheduledDays
+    .map((day) => formatExercisePatternDayLabel(rule, day, settings))
+    .join(', ')
+}
+
+export function getNextExerciseDate(
+  rule: RuleConfig,
+  afterDate: string,
+  settings: ChallengeSettings,
+  includeDate = false,
+): string | null {
+  if (!rule.exercise || rule.exercise.scheduledDays.length === 0) return null
+  const searchDays = rule.exercise.cycleDays + 1
+  for (let offset = includeDate ? 0 : 1; offset <= searchDays; offset += 1) {
+    const date = addDays(afterDate, offset)
+    if (isRuleScheduledForDate(rule, date, settings)) return date
+  }
+  return null
+}
+
+export function getExercisePatternProgress(
+  rule: RuleConfig,
+  entries: EntryMap,
+  throughDate: string,
+  settings: ChallengeSettings,
+): ExercisePatternProgress | null {
+  if (!rule.exercise) return null
+  const elapsedDays = Math.max(0, daysBetween(settings.startDate, throughDate))
+  const cycleOffset = Math.floor(elapsedDays / rule.exercise.cycleDays) * rule.exercise.cycleDays
+  const cycleStart = addDays(settings.startDate, cycleOffset)
+  const cycleEnd = addDays(cycleStart, rule.exercise.cycleDays - 1)
+  const scheduledDates = rule.exercise.scheduledDays.map((day) => addDays(cycleStart, day - 1))
+  const reachedDates = scheduledDates.filter((date) => date <= throughDate)
+  const completedDates = reachedDates.filter((date) => {
+    const entry = entries[date]
+    return Boolean(entry && ruleComplete(entry, rule.key, settings))
+  })
+
+  return {
+    cycleStart,
+    cycleEnd,
+    scheduledDates,
+    completedDates,
+    reachedDates,
+    nextScheduledDate: getNextExerciseDate(rule, throughDate, settings),
+  }
 }
 
 export function getEnabledRules(settings: ChallengeSettings, date?: string): RuleConfig[] {

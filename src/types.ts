@@ -15,6 +15,15 @@ export type ExerciseRuleSettings = {
   targetMinutes: number
 }
 
+export type ExercisePatternProgress = {
+  cycleStart: string
+  cycleEnd: string
+  scheduledDates: string[]
+  completedDates: string[]
+  reachedDates: string[]
+  nextScheduledDate: string | null
+}
+
 export type DietRuleSettings = {
   goalType: DietGoalType
   goal: number

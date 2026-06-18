@@ -20,6 +20,9 @@ import {
   WORKOUT_TYPES,
   downloadTextFile,
   entriesToCsv,
+  formatExercisePatternDayLabel,
+  formatExercisePatternSchedule,
+  formatShortDate,
   getEnabledRules,
   getScoredRules,
   makeBackupPayload,
@@ -333,7 +336,16 @@ export default function SettingsView({
                           <label className="weight-field"><span>Pattern</span><select value={rule.exercise.cycleDays} onChange={(event) => updateExerciseCycle(rule, Number(event.target.value) as ExerciseCycleDays)}><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
                           <label className="weight-field"><span>Exercise type</span><select value={rule.exercise.workoutType} onChange={(event) => updateExerciseRule(rule, { workoutType: event.target.value })}>{['Any exercise', ...WORKOUT_TYPES].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
                           <NumberField label="Target" value={rule.exercise.targetMinutes} min={1} max={300} step={5} onChange={(value) => value !== null && updateExerciseRule(rule, { targetMinutes: value })} suffix="min" />
-                          <div className="pattern-day-field"><span>Training days</span><div className="pattern-day-grid">{Array.from({ length: rule.exercise.cycleDays }, (_, index) => index + 1).map((day) => <button className={rule.exercise?.scheduledDays.includes(day) ? 'active' : ''} type="button" key={day} onClick={() => toggleExerciseDay(rule, day)}>{day}</button>)}</div></div>
+                          <div className="pattern-day-field">
+                            <span>Training days</span>
+                            <div className={`pattern-day-grid cycle-${rule.exercise.cycleDays}`}>
+                              {Array.from({ length: rule.exercise.cycleDays }, (_, index) => index + 1).map((day) => {
+                                const label = formatExercisePatternDayLabel(rule, day, settings)
+                                return <button className={rule.exercise?.scheduledDays.includes(day) ? 'active' : ''} type="button" key={day} aria-label={`${label} ${rule.exercise?.scheduledDays.includes(day) ? 'training day' : 'rest day'}`} onClick={() => toggleExerciseDay(rule, day)}>{rule.exercise?.cycleDays === 30 ? day : label}</button>
+                              })}
+                            </div>
+                            <small>{formatExercisePatternSchedule(rule, settings)} · anchored to {formatShortDate(settings.startDate)}</small>
+                          </div>
                         </div>
                       )}
                       {rule.diet && (
