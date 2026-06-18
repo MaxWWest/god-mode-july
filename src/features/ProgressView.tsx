@@ -12,10 +12,13 @@ import type {
 import {
   addDays,
   completionStats,
+  daysBetween,
+  formatMonthLabel,
   formatShortDate,
   getEnabledRules,
   getLoggedDates,
   getTrackingDates,
+  isRuleScheduledForDate,
   ruleComplete,
   selectableEndDate,
 } from '../tracker'
@@ -76,9 +79,10 @@ function formatSigned(value: number, unit: string): string {
 function getRuleRatesForDates(dates: string[], entries: EntryMap, settings: ChallengeSettings): RuleRate[] {
   const activeRules = getEnabledRules(settings)
   return activeRules.map((rule) => {
-    if (dates.length === 0) return { ...rule, rate: 0 }
-    const completeDays = dates.filter((date) => ruleComplete(entries[date], rule.key, settings)).length
-    return { ...rule, rate: Math.round((completeDays / dates.length) * 100) }
+    const eligibleDates = dates.filter((date) => isRuleScheduledForDate(rule, date, settings))
+    if (eligibleDates.length === 0) return { ...rule, rate: 0 }
+    const completeDays = eligibleDates.filter((date) => ruleComplete(entries[date], rule.key, settings)).length
+    return { ...rule, rate: Math.round((completeDays / eligibleDates.length) * 100) }
   })
 }
 
@@ -123,8 +127,19 @@ function buildPeriodRecap(entries: EntryMap, settings: ChallengeSettings, period
   }
 }
 
-export default function ProgressView({ entries, settings }: { entries: EntryMap; settings: ChallengeSettings }) {
+export default function ProgressView({
+  entries,
+  settings,
+  selectedDate,
+  onSelectDate,
+}: {
+  entries: EntryMap
+  settings: ChallengeSettings
+  selectedDate: string
+  onSelectDate: (date: string) => void
+}) {
   const [period, setPeriod] = useState<ProgressPeriod>('week')
+  const [progressTab, setProgressTab] = useState<'overview' | 'calendar'>('overview')
   const dates = getLoggedDates(entries, settings)
   const ruleRates = getRuleRatesForDates(dates, entries, settings)
   const periodRecap = buildPeriodRecap(entries, settings, period)
@@ -146,6 +161,16 @@ export default function ProgressView({ entries, settings }: { entries: EntryMap;
         <h2>Progress</h2>
         <p>{dates.length} logged days · {averageCompletion}% average completion</p>
       </section>
+
+      <div className="settings-tabs" role="tablist" aria-label="Progress sections">
+        <button className={progressTab === 'overview' ? 'active' : ''} type="button" role="tab" aria-selected={progressTab === 'overview'} onClick={() => setProgressTab('overview')}>Overview</button>
+        <button className={progressTab === 'calendar' ? 'active' : ''} type="button" role="tab" aria-selected={progressTab === 'calendar'} onClick={() => setProgressTab('calendar')}>Calendar</button>
+      </div>
+
+      {progressTab === 'calendar' ? (
+        <ProgressCalendar entries={entries} selectedDate={selectedDate} settings={settings} onSelectDate={onSelectDate} />
+      ) : (
+        <>
 
       <section className="panel progress-panel">
         <div className="section-heading">
@@ -209,7 +234,76 @@ export default function ProgressView({ entries, settings }: { entries: EntryMap;
               : 'Turn on at least one rule in Settings to calculate progress.'}
         </p>
       </section>
+        </>
+      )}
     </div>
+  )
+}
+
+function calendarCellLabel(date: string, settings: ChallengeSettings): string {
+  const parsed = new Date(`${date}T12:00:00`)
+  const day = parsed.getDate()
+  if (date === settings.startDate || day === 1) return formatShortDate(date)
+  return String(day)
+}
+
+function ProgressCalendar({
+  entries,
+  selectedDate,
+  settings,
+  onSelectDate,
+}: {
+  entries: EntryMap
+  selectedDate: string
+  settings: ChallengeSettings
+  onSelectDate: (date: string) => void
+}) {
+  const monthStart = `${selectedDate.slice(0, 7)}-01`
+  const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + '01', -1)
+  const maxDate = selectableEndDate(settings)
+  const startDate = monthStart < settings.startDate ? settings.startDate : monthStart
+  const endDate = monthEnd > maxDate ? maxDate : monthEnd
+  const dates = endDate >= startDate
+    ? Array.from({ length: daysBetween(startDate, endDate) + 1 }, (_, index) => addDays(startDate, index))
+    : []
+  const leadingBlanks = new Date(`${monthStart}T12:00:00`).getDay()
+  const cells = [
+    ...Array.from({ length: leadingBlanks }, (_, index) => ({ type: 'blank' as const, key: `blank-${index}` })),
+    ...dates.map((date) => ({ type: 'day' as const, date, key: date })),
+  ]
+
+  return (
+    <>
+      <section className="page-intro progress-calendar-intro">
+        <p className="eyebrow">Consistency map</p>
+        <h2>{formatMonthLabel(selectedDate)}</h2>
+        <p>Green means 80% or better. Tap a tracked date to open it on Home.</p>
+      </section>
+      <section className="panel calendar-panel">
+        <div className="calendar-weekdays">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
+        </div>
+        <div className="calendar-grid">
+          {cells.map((cell) => {
+            if (cell.type === 'blank') return <span className="calendar-blank" key={cell.key} />
+            const dayEntry = entries[cell.date]
+            const score = dayEntry ? completionStats(dayEntry, settings).percent : null
+            const status = score === null ? 'empty' : score >= 80 ? 'great' : score >= 50 ? 'good' : 'low'
+            return (
+              <button type="button" key={cell.key} className={`calendar-day ${status} ${selectedDate === cell.date ? 'selected' : ''}`} onClick={() => onSelectDate(cell.date)}>
+                <strong>{calendarCellLabel(cell.date, settings)}</strong>
+                <small>{score === null ? '—' : `${score}%`}</small>
+              </button>
+            )
+          })}
+        </div>
+        <div className="calendar-legend">
+          <span><i className="legend-great" />80–100%</span>
+          <span><i className="legend-good" />50–79%</span>
+          <span><i className="legend-low" />0–49%</span>
+        </div>
+      </section>
+    </>
   )
 }
 

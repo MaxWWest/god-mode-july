@@ -5,7 +5,9 @@ import type {
   ChallengeSettings,
   ChallengeTargets,
   DataStatus,
+  DietGoalType,
   EntryMap,
+  ExerciseCycleDays,
   ReminderSettings,
   RuleCategoryConfig,
   RuleConfig,
@@ -15,20 +17,27 @@ import type {
 } from '../types'
 import {
   DEFAULT_RULE_CATEGORIES,
+  WORKOUT_TYPES,
   downloadTextFile,
   entriesToCsv,
   getEnabledRules,
   getScoredRules,
   makeBackupPayload,
-  makeCategoryKey,
   makeCustomRule,
-  normalizeCategoryLabel,
   normalizeSettings,
   readBackupFile,
   sanitizeFilenamePart,
   todayIso,
 } from '../tracker'
 import { NumberField, SectionTitle, TextField } from '../ui'
+
+const DIET_PRESETS = [
+  { label: 'Carbs', unit: 'g', goal: 250, goalType: 'maximum' as const },
+  { label: 'Fat', unit: 'g', goal: 70, goalType: 'maximum' as const },
+  { label: 'Fiber', unit: 'g', goal: 30, goalType: 'minimum' as const },
+  { label: 'Sodium', unit: 'mg', goal: 2300, goalType: 'maximum' as const },
+  { label: 'Sugar', unit: 'g', goal: 50, goalType: 'maximum' as const },
+]
 
 export default function SettingsView({
   settings,
@@ -107,8 +116,8 @@ export default function SettingsView({
     tone: 'neutral',
     message: `${entryCount} saved ${entryCount === 1 ? 'entry' : 'entries'}`,
   })
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const categories = settings.categories.length > 0 ? settings.categories : DEFAULT_RULE_CATEGORIES
+  const [settingsTab, setSettingsTab] = useState<'rules' | 'app'>('rules')
+  const categories = DEFAULT_RULE_CATEGORIES
 
   function update(patch: Partial<ChallengeSettings>) {
     onSettingsChange(normalizeSettings({ ...settings, ...patch }))
@@ -130,14 +139,39 @@ export default function SettingsView({
     })
   }
 
-  function addCategory() {
-    const label = normalizeCategoryLabel(newCategoryName, '')
-    if (!label) return
-    const key = makeCategoryKey(label, new Set(categories.map((category) => category.key)))
-    update({
-      categories: [...categories, { key, label }],
-    })
-    setNewCategoryName('')
+  function addDietPreset(preset: typeof DIET_PRESETS[number]) {
+    const category = categories.find((item) => item.key === 'diet') ?? categories[1]
+    const rule = makeCustomRule(category)
+    rule.label = preset.label
+    rule.diet = { unit: preset.unit, goal: preset.goal, goalType: preset.goalType }
+    update({ rules: [...settings.rules, rule] })
+  }
+
+  function updateExerciseRule(rule: RuleConfig, patch: Partial<NonNullable<RuleConfig['exercise']>>) {
+    if (!rule.exercise) return
+    updateRule(rule.key, { exercise: { ...rule.exercise, ...patch } })
+  }
+
+  function updateExerciseCycle(rule: RuleConfig, cycleDays: ExerciseCycleDays) {
+    if (!rule.exercise) return
+    const scheduledDays = rule.exercise.scheduledDays.filter((day) => day <= cycleDays)
+    updateExerciseRule(rule, { cycleDays, scheduledDays: scheduledDays.length > 0 ? scheduledDays : [1] })
+  }
+
+  function toggleExerciseDay(rule: RuleConfig, day: number) {
+    if (!rule.exercise) return
+    const selected = rule.exercise.scheduledDays.includes(day)
+    const scheduledDays = selected
+      ? rule.exercise.scheduledDays.filter((item) => item !== day)
+      : [...rule.exercise.scheduledDays, day].sort((a, b) => a - b)
+    if (scheduledDays.length > 0) updateExerciseRule(rule, { scheduledDays })
+  }
+
+  function updateDietRule(rule: RuleConfig, patch: Partial<NonNullable<RuleConfig['diet']>>) {
+    if (!rule.diet) return
+    const diet = { ...rule.diet, ...patch }
+    if (diet.goalType === 'avoid') diet.goal = 0
+    updateRule(rule.key, { diet })
   }
 
   function removeRule(key: RuleKey) {
@@ -206,164 +240,117 @@ export default function SettingsView({
   return (
     <div className="page-stack">
       <section className="page-intro">
-        <p className="eyebrow">Milestone 4</p>
+        <p className="eyebrow">Control center</p>
         <h2>Settings</h2>
-        <p>Ongoing tracker · {activeRuleCount} scored rules</p>
+        <p>{activeRuleCount} active rules · app, account, and scoring controls</p>
       </section>
 
-      <section className="panel form-panel">
-        <SectionTitle number="1" title="Data" />
-        <div className="data-actions">
-          <button className="secondary-button" type="button" onClick={exportJsonBackup}>
-            Export JSON
-          </button>
-          <label className="secondary-button file-import-label">
-            <span>Import JSON</span>
-            <input type="file" accept="application/json,.json" onChange={importJsonBackup} />
-          </label>
-          <button className="secondary-button" type="button" onClick={exportCsv}>
-            Export CSV
-          </button>
-        </div>
-        <p className={`data-status ${dataStatus.tone}`}>{dataStatus.message}</p>
-      </section>
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button className={settingsTab === 'rules' ? 'active' : ''} type="button" role="tab" aria-selected={settingsTab === 'rules'} onClick={() => setSettingsTab('rules')}>Rules + Goals</button>
+        <button className={settingsTab === 'app' ? 'active' : ''} type="button" role="tab" aria-selected={settingsTab === 'app'} onClick={() => setSettingsTab('app')}>App + Account</button>
+      </div>
 
-      <section className="panel form-panel">
-        <SectionTitle number="2" title="Cloud Sync" />
-        <CloudSyncPanel
-          configured={cloudConfigured}
-          user={user}
-          status={cloudStatus}
-          busy={cloudBusy}
-          online={online}
-          updatedAt={cloudUpdatedAt}
-          conflict={syncConflict}
-          authEmail={authEmail}
-          authPassword={authPassword}
-          onAuthEmailChange={onAuthEmailChange}
-          onAuthPasswordChange={onAuthPasswordChange}
-          onSignInWithPassword={onSignInWithPassword}
-          onCreatePasswordAccount={onCreatePasswordAccount}
-          onSetAccountPassword={onSetAccountPassword}
-          onSendMagicLink={onSendMagicLink}
-          onSendPasswordReset={onSendPasswordReset}
-          onSignOut={onSignOut}
-          onPushCloud={onPushCloud}
-          onPullCloud={onPullCloud}
-          onRetryCloud={onRetryCloud}
-          onExportAccountData={onExportAccountData}
-          onDeleteCloudAccountData={onDeleteCloudAccountData}
-          onUseCloudVersion={onUseCloudVersion}
-          onKeepLocalVersion={onKeepLocalVersion}
-          onMergeCloudEntries={onMergeCloudEntries}
-          onDismissConflict={onDismissConflict}
-        />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="3" title="Reminders" />
-        <ReminderPanel
-          settings={reminderSettings}
-          status={reminderStatus}
-          onChange={onReminderChange}
-          onRequestPermission={onRequestReminderPermission}
-        />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="4" title="Tracker" />
-        <TextField label="Title" value={settings.title} onChange={(title) => update({ title })} />
-        <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="5" title="Targets" />
-        <div className="field-grid">
-          <NumberField label="Exercise target" value={settings.targets.exerciseMinutes} min={1} max={300} onChange={(value) => value !== null && updateTargets({ exerciseMinutes: value })} suffix="min" />
-          <NumberField label="Calorie target" value={settings.targets.calories} min={1} max={10000} onChange={(value) => value !== null && updateTargets({ calories: value })} suffix="kcal" />
-          <NumberField label="Protein target" value={settings.targets.proteinGrams} min={1} max={500} onChange={(value) => value !== null && updateTargets({ proteinGrams: value })} suffix="g" />
-          <NumberField label="Water target" value={settings.targets.waterLiters} min={0.1} max={15} step={0.1} onChange={(value) => value !== null && updateTargets({ waterLiters: value })} suffix="L" />
-          <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
-        </div>
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="6" title="Scored Rules" />
-        <div className="rule-glossary">
-          <span><strong>Scored</strong> counts toward today’s percent and streaks.</span>
-          <span><strong>Non-negotiable</strong> counts double.</span>
-          <span><strong>Supporting</strong> counts once.</span>
-          <span><strong>Active</strong> counts now; inactive stays saved for later.</span>
-        </div>
-        <div className="category-create-row">
-          <TextField label="New category" value={newCategoryName} onChange={setNewCategoryName} />
-          <button className="secondary-button" type="button" onClick={addCategory} disabled={!newCategoryName.trim()}>
-            Add Category
-          </button>
-        </div>
-        {categories.map((category) => {
-          const categoryRules = getScoredRules(settings).filter((rule) => rule.category === category.key)
-
-          return (
-            <div className="settings-rule-category" key={category.key}>
-              <div className="settings-rule-category-header">
-                <div>
-                  <p className="eyebrow">{category.label}</p>
-                  <h3>{category.label} Rules</h3>
-                </div>
-                <button className="secondary-button compact-button" type="button" onClick={() => addRule(category)}>
-                  Add Rule
-                </button>
-              </div>
-              <div className="settings-rule-list">
-                {categoryRules.length === 0 && <p className="empty-rule-category">No {category.label.toLowerCase()} rules yet.</p>}
-                {categoryRules.map((rule) => (
-                  <article className={`settings-rule-row ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
-                    <label className="symbol-field">
-                      <span>Icon</span>
-                      <input
-                        value={rule.icon}
-                        maxLength={2}
-                        onChange={(event) => updateRule(rule.key, { icon: event.target.value })}
-                        aria-label={`${rule.label} icon`}
-                      />
-                    </label>
-                    <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
-                    <div className="settings-rule-controls">
-                      <label className="mini-check-field">
-                        <input
-                          type="checkbox"
-                          checked={rule.enabled}
-                          onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })}
-                        />
-                        <span>Active</span>
-                      </label>
-                      <label className="weight-field">
-                        <span>Weight</span>
-                        <select value={rule.weight} onChange={(event) => updateRule(rule.key, { weight: event.target.value as RuleWeight })}>
-                          <option value="nonNegotiable">Non-negotiable</option>
-                          <option value="supporting">Supporting</option>
-                        </select>
-                      </label>
-                      <label className="weight-field">
-                        <span>Group</span>
-                        <select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value })}>
-                          {categories.map((option) => (
-                            <option key={option.key} value={option.key}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button className="danger-button" type="button" onClick={() => removeRule(rule.key)}>
-                        Remove
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
+      {settingsTab === 'app' ? (
+        <>
+          <section className="panel form-panel">
+            <SectionTitle number="1" title="Tracker" />
+            <TextField label="Title" value={settings.title} onChange={(title) => update({ title })} />
+            <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
+          </section>
+          <section className="panel form-panel">
+            <SectionTitle number="2" title="Data" />
+            <div className="data-actions">
+              <button className="secondary-button" type="button" onClick={exportJsonBackup}>Export JSON</button>
+              <label className="secondary-button file-import-label"><span>Import JSON</span><input type="file" accept="application/json,.json" onChange={importJsonBackup} /></label>
+              <button className="secondary-button" type="button" onClick={exportCsv}>Export CSV</button>
             </div>
-          )
-        })}
-      </section>
+            <p className={`data-status ${dataStatus.tone}`}>{dataStatus.message}</p>
+          </section>
+          <section className="panel form-panel">
+            <SectionTitle number="3" title="Cloud Sync" />
+            <CloudSyncPanel
+              configured={cloudConfigured} user={user} status={cloudStatus} busy={cloudBusy} online={online}
+              updatedAt={cloudUpdatedAt} conflict={syncConflict} authEmail={authEmail} authPassword={authPassword}
+              onAuthEmailChange={onAuthEmailChange} onAuthPasswordChange={onAuthPasswordChange}
+              onSignInWithPassword={onSignInWithPassword} onCreatePasswordAccount={onCreatePasswordAccount}
+              onSetAccountPassword={onSetAccountPassword} onSendMagicLink={onSendMagicLink}
+              onSendPasswordReset={onSendPasswordReset} onSignOut={onSignOut} onPushCloud={onPushCloud}
+              onPullCloud={onPullCloud} onRetryCloud={onRetryCloud} onExportAccountData={onExportAccountData}
+              onDeleteCloudAccountData={onDeleteCloudAccountData} onUseCloudVersion={onUseCloudVersion}
+              onKeepLocalVersion={onKeepLocalVersion} onMergeCloudEntries={onMergeCloudEntries}
+              onDismissConflict={onDismissConflict}
+            />
+          </section>
+          <section className="panel form-panel">
+            <SectionTitle number="4" title="Reminders" />
+            <ReminderPanel settings={reminderSettings} status={reminderStatus} onChange={onReminderChange} onRequestPermission={onRequestReminderPermission} />
+          </section>
+        </>
+      ) : (
+        <>
+          <section className="panel form-panel">
+            <SectionTitle number="1" title="Scoring" />
+            <div className="rule-glossary">
+              <span><strong>Scored</strong> counts toward today’s percent and streaks.</span>
+              <span><strong>Non-negotiable</strong> counts double.</span>
+              <span><strong>Supporting</strong> counts once.</span>
+              <span><strong>Active</strong> counts now; inactive stays saved.</span>
+            </div>
+            <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
+          </section>
+
+          {categories.map((category, categoryIndex) => {
+            const categoryRules = getScoredRules(settings).filter((rule) => rule.category === category.key)
+            return (
+              <section className="panel form-panel" key={category.key}>
+                <div className="settings-rule-category-header">
+                  <SectionTitle number={String(categoryIndex + 2)} title={`${category.label} Rules`} />
+                  <button className="secondary-button compact-button" type="button" onClick={() => addRule(category)}>
+                    {category.key === 'exercise' ? 'Add Pattern' : category.key === 'diet' ? 'Add Diet Goal' : 'Add Rule'}
+                  </button>
+                </div>
+                {category.key === 'diet' && (
+                  <div className="diet-preset-row" aria-label="Common diet goals">
+                    {DIET_PRESETS.map((preset) => <button className="ghost-button compact-button" type="button" key={preset.label} onClick={() => addDietPreset(preset)}>+ {preset.label}</button>)}
+                  </div>
+                )}
+                <div className="settings-rule-list">
+                  {categoryRules.length === 0 && <p className="empty-rule-category">No {category.label.toLowerCase()} rules yet.</p>}
+                  {categoryRules.map((rule) => (
+                    <article className={`settings-rule-row rule-config-card ${rule.enabled ? '' : 'is-disabled'}`} key={rule.key}>
+                      <div className="rule-editor-main">
+                        <label className="symbol-field"><span>Icon</span><input value={rule.icon} maxLength={2} onChange={(event) => updateRule(rule.key, { icon: event.target.value })} aria-label={`${rule.label} icon`} /></label>
+                        <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
+                      </div>
+                      <div className="settings-rule-controls">
+                        <label className="mini-check-field"><input type="checkbox" checked={rule.enabled} onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })} /><span>Active</span></label>
+                        <label className="weight-field"><span>Weight</span><select value={rule.weight} onChange={(event) => updateRule(rule.key, { weight: event.target.value as RuleWeight })}><option value="nonNegotiable">Non-negotiable</option><option value="supporting">Supporting</option></select></label>
+                        <label className="weight-field"><span>Group</span><select value={rule.category} onChange={(event) => updateRule(rule.key, { category: event.target.value })}>{categories.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+                        <button className="danger-button" type="button" onClick={() => removeRule(rule.key)}>Remove</button>
+                      </div>
+                      {rule.exercise && (
+                        <div className="rule-specific-controls">
+                          <label className="weight-field"><span>Pattern</span><select value={rule.exercise.cycleDays} onChange={(event) => updateExerciseCycle(rule, Number(event.target.value) as ExerciseCycleDays)}><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
+                          <label className="weight-field"><span>Exercise type</span><select value={rule.exercise.workoutType} onChange={(event) => updateExerciseRule(rule, { workoutType: event.target.value })}>{['Any exercise', ...WORKOUT_TYPES].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+                          <NumberField label="Target" value={rule.exercise.targetMinutes} min={1} max={300} step={5} onChange={(value) => value !== null && updateExerciseRule(rule, { targetMinutes: value })} suffix="min" />
+                          <div className="pattern-day-field"><span>Training days</span><div className="pattern-day-grid">{Array.from({ length: rule.exercise.cycleDays }, (_, index) => index + 1).map((day) => <button className={rule.exercise?.scheduledDays.includes(day) ? 'active' : ''} type="button" key={day} onClick={() => toggleExerciseDay(rule, day)}>{day}</button>)}</div></div>
+                        </div>
+                      )}
+                      {rule.diet && (
+                        <div className="rule-specific-controls diet-rule-controls">
+                          <label className="weight-field"><span>Goal</span><select value={rule.diet.goalType} onChange={(event) => updateDietRule(rule, { goalType: event.target.value as DietGoalType })}><option value="minimum">At least</option><option value="maximum">At most</option><option value="avoid">Avoid</option></select></label>
+                          {rule.diet.goalType !== 'avoid' && <NumberField label="Amount" value={rule.diet.goal} min={0} max={100000} step={rule.diet.unit.toLowerCase() === 'l' ? 0.1 : 1} onChange={(value) => value !== null && updateDietRule(rule, { goal: value })} suffix={rule.diet.unit} />}
+                          <TextField label="Unit" value={rule.diet.unit} onChange={(unit) => updateDietRule(rule, { unit })} />
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }

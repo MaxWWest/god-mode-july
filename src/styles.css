@@ -1016,6 +1016,44 @@ textarea:focus-visible {
   background: rgba(156, 92, 255, 0.08);
 }
 
+.today-plan-list {
+  display: grid;
+  gap: 8px;
+}
+
+.today-plan-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid rgba(156, 92, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(156, 92, 255, 0.07);
+}
+
+.today-plan-row > span {
+  color: #b87cff;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.today-plan-row div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.today-plan-row small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.today-plan-row b {
+  color: #bfeec8;
+  font-size: 0.76rem;
+}
+
 .workout-summary div {
   display: grid;
   gap: 3px;
@@ -1105,6 +1143,95 @@ textarea:focus-visible {
 
 .settings-rule-row.is-disabled {
   opacity: 0.68;
+}
+
+.settings-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.settings-tabs button.active {
+  background: rgba(156, 92, 255, 0.16);
+  color: #f8f5ff;
+}
+
+.rule-config-card {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.rule-editor-main {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.rule-specific-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.diet-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pattern-day-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  color: #cfc8da;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.pattern-day-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  gap: 6px;
+}
+
+.pattern-day-grid button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.pattern-day-grid button.active {
+  border-color: rgba(156, 92, 255, 0.75);
+  background: rgba(156, 92, 255, 0.2);
+  color: white;
+}
+
+.progress-calendar-intro {
+  padding-top: 4px;
 }
 
 .symbol-field {
@@ -2337,7 +2464,7 @@ textarea:focus-visible {
   left: 50%;
   bottom: 10px;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   width: min(calc(100% - 24px), 720px);
   padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom));
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -2438,6 +2565,11 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .rule-specific-controls,
+  .diet-rule-controls {
+    grid-template-columns: 1fr;
+  }
+
   .rule-glossary,
   .category-create-row,
   .settings-rule-category-header {
@@ -2455,6 +2587,14 @@ textarea:focus-visible {
 
   .workout-summary {
     display: grid;
+  }
+
+  .today-plan-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .today-plan-row b {
+    grid-column: 2;
   }
 
   .compact-button,

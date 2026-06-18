@@ -34,6 +34,8 @@ describe('social challenge data', () => {
       enabled: true,
       weight: 'nonNegotiable',
     })
+    expect(settings.rules.find((rule) => rule.key === 'exercise')?.exercise?.targetMinutes).toBe(45)
+    expect(settings.rules.find((rule) => rule.key === 'water')?.diet?.goal).toBe(3)
   })
 
   it('redacts hidden values from published leaderboard summaries', () => {

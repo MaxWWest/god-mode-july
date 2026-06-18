@@ -41,14 +41,12 @@ import {
   completionStats,
   countCloudOnlyEntries,
   dayNumber,
-  daysBetween,
   downloadTextFile,
   formatDate,
   formatDateTime,
-  formatMonthLabel,
-  formatShortDate,
+  getDietRuleValue,
   getEnabledRules,
-  getExerciseMinutes,
+  getExerciseRuleMinutes,
   getLoggedDates,
   getTrackingDates,
   isEntryFinalized,
@@ -129,7 +127,7 @@ const TUTORIAL_STEPS = [
   {
     eyebrow: 'Step 2',
     title: 'Use Check-In for the details.',
-    body: 'Log workouts, food targets, water, sleep, mood, and short reflections before you finalize the day.',
+    body: 'Log scheduled exercise, diet goals, mental rules, body signals, and short reflections before you finalize the day.',
   },
   {
     eyebrow: 'Step 3',
@@ -138,8 +136,8 @@ const TUTORIAL_STEPS = [
   },
   {
     eyebrow: 'Step 4',
-    title: 'Tune the tracker in Settings.',
-    body: 'Change targets, scored rule categories, active rules, account sync, reminders, exports, and cloud data controls.',
+    title: 'Tune rules and the app in Settings.',
+    body: 'Rules + Goals holds exercise patterns and diet targets. App + Account holds sync, reminders, exports, and tracker controls.',
   },
   {
     eyebrow: 'Step 5',
@@ -180,27 +178,22 @@ function longestStreak(entries: EntryMap, settings: ChallengeSettings): number {
 }
 
 function ruleDetail(rule: RuleConfig, entry: DailyEntry, settings: ChallengeSettings): string | undefined {
+  if (rule.exercise) {
+    const cycle = rule.exercise.cycleDays === 1 ? 'daily' : `${rule.exercise.scheduledDays.length}/${rule.exercise.cycleDays} pattern`
+    return `${getExerciseRuleMinutes(entry, rule)} / ${rule.exercise.targetMinutes} min · ${cycle}`
+  }
+  if (rule.diet) {
+    if (rule.diet.goalType === 'avoid') return 'Avoid'
+    const value = getDietRuleValue(entry, rule) ?? 0
+    const direction = rule.diet.goalType === 'minimum' ? 'at least' : 'at most'
+    return `${value} ${rule.diet.unit} · ${direction} ${rule.diet.goal}`
+  }
   switch (rule.key) {
-    case 'exercise':
-      return `${getExerciseMinutes(entry)} / ${settings.targets.exerciseMinutes} min`
-    case 'calories':
-      return `${entry.calories ?? 0} / ${settings.targets.calories} kcal`
-    case 'protein':
-      return `${entry.proteinGrams ?? 0} / ${settings.targets.proteinGrams} g`
-    case 'water':
-      return `${entry.waterLiters ?? 0} / ${settings.targets.waterLiters} L`
     case 'sleep':
       return `${entry.sleepHours ?? 0} / ${settings.targets.sleepHours} hr`
     default:
       return undefined
   }
-}
-
-function calendarCellLabel(date: string, settings: ChallengeSettings): string {
-  const parsed = new Date(`${date}T12:00:00`)
-  const day = parsed.getDate()
-  if (date === settings.startDate || day === 1) return formatShortDate(date)
-  return String(day)
 }
 
 async function copyTextToClipboard(text: string): Promise<void> {
@@ -1480,19 +1473,40 @@ function App() {
   function toggleRule(key: RuleKey) {
     if (entryFinalized) return
     const next = !ruleComplete(entry, key, settings)
+    const config = settings.rules.find((rule) => rule.key === key)
+    if (config?.exercise) {
+      const workoutType = config.exercise.workoutType === 'Any exercise' ? 'Workout' : config.exercise.workoutType
+      if (next) {
+        const workout = { ...makeEmptyWorkout(), type: workoutType, minutes: config.exercise.targetMinutes }
+        updateEntry({ exerciseMinutes: workout.minutes, workouts: [workout] })
+      } else {
+        const workouts = config.exercise.workoutType === 'Any exercise'
+          ? []
+          : entry.workouts.filter((workout) => workout.type.toLowerCase() !== config.exercise?.workoutType.toLowerCase())
+        updateEntry({ exerciseMinutes: workouts.reduce((sum, workout) => sum + workout.minutes, 0), workouts })
+      }
+      return
+    }
+    if (config?.diet) {
+      if (config.diet.goalType === 'avoid') {
+        updateEntry({
+          sober: key === 'sober' ? next : entry.sober,
+          ruleCompletions: { ...entry.ruleCompletions, [key]: next },
+        })
+      } else {
+        const ruleValues = { ...entry.ruleValues }
+        if (next) ruleValues[key] = config.diet.goal
+        else delete ruleValues[key]
+        updateEntry({
+          ruleValues,
+          calories: key === 'calories' ? (next ? config.diet.goal : null) : entry.calories,
+          proteinGrams: key === 'protein' ? (next ? config.diet.goal : null) : entry.proteinGrams,
+          waterLiters: key === 'water' ? (next ? config.diet.goal : null) : entry.waterLiters,
+        })
+      }
+      return
+    }
     switch (key) {
-      case 'exercise':
-        if (next) {
-          const workout = {
-            ...makeEmptyWorkout(),
-            type: 'Workout',
-            minutes: settings.targets.exerciseMinutes,
-          }
-          updateEntry({ exerciseMinutes: workout.minutes, workouts: [workout] })
-        } else {
-          updateEntry({ exerciseMinutes: 0, workouts: [] })
-        }
-        break
       case 'sober':
         updateEntry({ sober: next })
         break
@@ -1641,17 +1655,6 @@ function App() {
             />
           </Suspense>
         )}
-        {view === 'calendar' && (
-          <CalendarView
-            entries={entries}
-            selectedDate={selectedDate}
-            settings={settings}
-            onSelectDate={(date) => {
-              setSelectedDate(date)
-              setView('home')
-            }}
-          />
-        )}
         {view === 'progress' && (
           <Suspense fallback={(
             <section className="panel focus-panel">
@@ -1660,7 +1663,15 @@ function App() {
               <p>Preparing charts and recaps.</p>
             </section>
           )}>
-            <ProgressView entries={entries} settings={settings} />
+            <ProgressView
+              entries={entries}
+              settings={settings}
+              selectedDate={selectedDate}
+              onSelectDate={(date) => {
+                setSelectedDate(date)
+                setView('home')
+              }}
+            />
           </Suspense>
         )}
         {view === 'friends' && (
@@ -1760,9 +1771,8 @@ function App() {
       <nav className="bottom-nav" aria-label="Primary navigation">
         <NavButton label="Home" icon="home" active={view === 'home'} onClick={() => setView('home')} />
         <NavButton label="Check-In" icon="check" active={view === 'check-in'} onClick={() => setView('check-in')} />
-        <NavButton label="Calendar" icon="calendar" active={view === 'calendar'} onClick={() => setView('calendar')} />
         <NavButton label="Progress" icon="progress" active={view === 'progress'} onClick={() => setView('progress')} />
-        <NavButton label="Friends" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} badgeCount={friendsBadgeCount} />
+        <NavButton label="Social" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} badgeCount={friendsBadgeCount} />
         <NavButton label="Settings" icon="settings" active={view === 'settings'} onClick={() => setView('settings')} />
       </nav>
       {showTutorial && (
@@ -1866,7 +1876,7 @@ function Dashboard({
   onFinalizeDay: () => void
   onUnlockDay: () => void
 }) {
-  const activeRules = getEnabledRules(settings)
+  const activeRules = getEnabledRules(settings, selectedDate)
 
   return (
     <div className="page-stack">
@@ -1949,71 +1959,6 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
       <small>{label}</small>
       <strong>{value}</strong>
     </article>
-  )
-}
-
-function CalendarView({
-  entries,
-  selectedDate,
-  settings,
-  onSelectDate,
-}: {
-  entries: EntryMap
-  selectedDate: string
-  settings: ChallengeSettings
-  onSelectDate: (date: string) => void
-}) {
-  const monthStart = `${selectedDate.slice(0, 7)}-01`
-  const monthEnd = addDays(addDays(monthStart, 32).slice(0, 8) + '01', -1)
-  const maxDate = selectableEndDate(settings)
-  const startDate = monthStart < settings.startDate ? settings.startDate : monthStart
-  const endDate = monthEnd > maxDate ? maxDate : monthEnd
-  const dates = endDate >= startDate
-    ? Array.from({ length: daysBetween(startDate, endDate) + 1 }, (_, index) => addDays(startDate, index))
-    : []
-  const leadingBlanks = new Date(`${monthStart}T12:00:00`).getDay()
-  const cells = [
-    ...Array.from({ length: leadingBlanks }, (_, index) => ({ type: 'blank' as const, key: `blank-${index}` })),
-    ...dates.map((date) => ({ type: 'day' as const, date, key: date })),
-  ]
-
-  return (
-    <div className="page-stack">
-      <section className="page-intro">
-        <p className="eyebrow">Consistency map</p>
-        <h2>{formatMonthLabel(selectedDate)}</h2>
-        <p>Green means 80% or better. Tap any tracked date to open it.</p>
-      </section>
-      <section className="panel calendar-panel">
-        <div className="calendar-weekdays">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
-        </div>
-        <div className="calendar-grid">
-          {cells.map((cell) => {
-            if (cell.type === 'blank') return <span className="calendar-blank" key={cell.key} />
-            const dayEntry = entries[cell.date]
-            const score = dayEntry ? completionStats(dayEntry, settings).percent : null
-            const status = score === null ? 'empty' : score >= 80 ? 'great' : score >= 50 ? 'good' : 'low'
-            return (
-              <button
-                type="button"
-                key={cell.key}
-                className={`calendar-day ${status} ${selectedDate === cell.date ? 'selected' : ''}`}
-                onClick={() => onSelectDate(cell.date)}
-              >
-                <strong>{calendarCellLabel(cell.date, settings)}</strong>
-                <small>{score === null ? '—' : `${score}%`}</small>
-              </button>
-            )
-          })}
-        </div>
-        <div className="calendar-legend">
-          <span><i className="legend-great" />80–100%</span>
-          <span><i className="legend-good" />50–79%</span>
-          <span><i className="legend-low" />0–49%</span>
-        </div>
-      </section>
-    </div>
   )
 }
 

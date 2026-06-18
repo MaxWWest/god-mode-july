@@ -228,7 +228,22 @@ export function buildChallengeSettingsForTemplate(
   const rules = baseSettings.rules.map((rule) => {
     const builtInKey = BUILT_IN_RULE_KEYS.includes(rule.key as BuiltInRuleKey) ? rule.key as BuiltInRuleKey : null
     const override = builtInKey ? template.ruleOverrides?.[builtInKey] : undefined
-    return override ? { ...rule, ...override } : rule
+    const nextRule = override ? { ...rule, ...override } : { ...rule }
+    if (rule.key === 'exercise' && rule.exercise && template.targetOverrides?.exerciseMinutes !== undefined) {
+      nextRule.exercise = { ...rule.exercise, targetMinutes: template.targetOverrides.exerciseMinutes }
+    }
+    if (rule.diet) {
+      if (rule.key === 'calories' && template.targetOverrides?.calories !== undefined) {
+        nextRule.diet = { ...rule.diet, goal: template.targetOverrides.calories }
+      }
+      if (rule.key === 'protein' && template.targetOverrides?.proteinGrams !== undefined) {
+        nextRule.diet = { ...rule.diet, goal: template.targetOverrides.proteinGrams }
+      }
+      if (rule.key === 'water' && template.targetOverrides?.waterLiters !== undefined) {
+        nextRule.diet = { ...rule.diet, goal: template.targetOverrides.waterLiters }
+      }
+    }
+    return nextRule
   })
 
   return normalizeSettings({ ...baseSettings, title, startDate, endDate, targets, rules })

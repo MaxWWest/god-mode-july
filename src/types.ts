@@ -1,10 +1,25 @@
-export type View = 'home' | 'check-in' | 'calendar' | 'progress' | 'friends' | 'settings'
+export type View = 'home' | 'check-in' | 'progress' | 'friends' | 'settings'
 
 export type BuiltInRuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protein' | 'water' | 'sleep' | 'reading' | 'journal'
 export type CustomRuleKey = `custom-${string}`
 export type RuleKey = BuiltInRuleKey | CustomRuleKey
 export type RuleWeight = 'nonNegotiable' | 'supporting'
 export type RuleCategoryKey = string
+export type ExerciseCycleDays = 1 | 7 | 30
+export type DietGoalType = 'minimum' | 'maximum' | 'avoid'
+
+export type ExerciseRuleSettings = {
+  cycleDays: ExerciseCycleDays
+  scheduledDays: number[]
+  workoutType: string
+  targetMinutes: number
+}
+
+export type DietRuleSettings = {
+  goalType: DietGoalType
+  goal: number
+  unit: string
+}
 
 export type RuleCategoryConfig = {
   key: RuleCategoryKey
@@ -18,6 +33,8 @@ export type RuleConfig = {
   enabled: boolean
   weight: RuleWeight
   category: RuleCategoryKey
+  exercise?: ExerciseRuleSettings
+  diet?: DietRuleSettings
   deleted?: boolean
 }
 
@@ -58,6 +75,7 @@ export type DailyEntry = {
   readTenPages: boolean
   journaled: boolean
   ruleCompletions: Record<string, boolean>
+  ruleValues: Record<string, number>
   mood: number
   energy: number
   hunger: number

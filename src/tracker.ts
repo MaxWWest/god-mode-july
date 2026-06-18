@@ -6,7 +6,11 @@ import type {
   CloudSnapshot,
   CustomRuleKey,
   DailyEntry,
+  DietGoalType,
+  DietRuleSettings,
   EntryMap,
+  ExerciseCycleDays,
+  ExerciseRuleSettings,
   PrivacySettings,
   ReminderSettings,
   RuleCategoryConfig,
@@ -31,9 +35,10 @@ const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
 export const BUILT_IN_RULE_KEYS: BuiltInRuleKey[] = ['exercise', 'sober', 'foodLogged', 'calories', 'protein', 'water', 'sleep', 'reading', 'journal']
 
 export const DEFAULT_RULE_CATEGORIES: RuleCategoryConfig[] = [
-  { key: 'activity', label: 'Activity' },
   { key: 'exercise', label: 'Exercise' },
+  { key: 'diet', label: 'Diet' },
   { key: 'mental', label: 'Mental' },
+  { key: 'misc', label: 'Misc' },
 ]
 
 export const DEFAULT_TARGETS: ChallengeTargets = {
@@ -45,12 +50,27 @@ export const DEFAULT_TARGETS: ChallengeTargets = {
 }
 
 export const DEFAULT_RULES: RuleConfig[] = [
-  { key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'exercise' },
-  { key: 'sober', label: 'No Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'activity' },
-  { key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'activity' },
-  { key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'activity' },
-  { key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'activity' },
-  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'activity' },
+  {
+    key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'exercise',
+    exercise: { cycleDays: 1, scheduledDays: [1], workoutType: 'Any exercise', targetMinutes: 90 },
+  },
+  {
+    key: 'sober', label: 'Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'diet',
+    diet: { goalType: 'avoid', goal: 0, unit: 'drinks' },
+  },
+  {
+    key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'diet',
+    diet: { goalType: 'maximum', goal: 2200, unit: 'kcal' },
+  },
+  {
+    key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'diet',
+    diet: { goalType: 'minimum', goal: 140, unit: 'g' },
+  },
+  {
+    key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'diet',
+    diet: { goalType: 'minimum', goal: 3, unit: 'L' },
+  },
+  { key: 'sleep', label: 'Sleep', icon: '◒', enabled: false, weight: 'supporting', category: 'misc' },
   { key: 'reading', label: 'Read 10 Pages', icon: '▣', enabled: true, weight: 'supporting', category: 'mental' },
   { key: 'journal', label: 'Journal', icon: '✦', enabled: true, weight: 'supporting', category: 'mental' },
 ]
@@ -114,10 +134,12 @@ function normalizeRuleKey(value: unknown): RuleKey | null {
 }
 
 function normalizeCategoryKey(value: unknown, fallback: RuleCategoryKey): RuleCategoryKey {
+  if (value === 'activity') return 'diet'
   if (value === 'physical') return fallback
   if (typeof value !== 'string') return fallback
   const key = value.trim().toLowerCase()
-  return /^[a-z0-9-]{2,80}$/.test(key) ? key : fallback
+  if (['exercise', 'diet', 'mental', 'misc'].includes(key)) return key
+  return ['exercise', 'diet', 'mental', 'misc'].includes(fallback) ? fallback : 'misc'
 }
 
 export function normalizeCategoryLabel(value: unknown, fallback: string): string {
@@ -145,14 +167,6 @@ export function makeCategoryKey(label: string, existingKeys: Set<string>): RuleC
   return key
 }
 
-function categoryLabelFromKey(key: RuleCategoryKey): string {
-  return key
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Custom'
-}
-
 function normalizeRuleWeight(value: unknown, fallback: RuleWeight): RuleWeight {
   return value === 'nonNegotiable' || value === 'supporting' ? value : fallback
 }
@@ -162,14 +176,21 @@ function makeCustomRuleKey(): CustomRuleKey {
 }
 
 export function makeCustomRule(category: RuleCategoryConfig): RuleConfig {
-  return {
+  const rule: RuleConfig = {
     key: makeCustomRuleKey(),
     label: `New ${category.label} Rule`,
-    icon: category.key === 'mental' ? '✦' : category.key === 'exercise' ? '◆' : '◈',
+    icon: category.key === 'mental' ? '✦' : category.key === 'exercise' ? '◆' : category.key === 'diet' ? '▲' : '●',
     enabled: true,
     weight: 'supporting',
     category: category.key,
   }
+  if (category.key === 'exercise') {
+    rule.exercise = { cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Any exercise', targetMinutes: 30 }
+  }
+  if (category.key === 'diet') {
+    rule.diet = { goalType: 'minimum', goal: 1, unit: 'g' }
+  }
+  return rule
 }
 
 function normalizeTarget(value: unknown, fallback: number, min: number): number {
@@ -229,7 +250,16 @@ function normalizeRuleCompletionMap(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key, complete]) => isCustomRuleKey(key) && typeof complete === 'boolean'),
+      .filter(([key, complete]) => normalizeRuleKey(key) !== null && typeof complete === 'boolean'),
+  )
+}
+
+function normalizeRuleValueMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, amount]) => normalizeRuleKey(key) !== null && Number.isFinite(Number(amount)))
+      .map(([key, amount]) => [key, Math.max(0, Number(amount))]),
   )
 }
 
@@ -313,33 +343,60 @@ function normalizeRuleLabel(defaultRule: RuleConfig, storedLabel: string): strin
   return storedLabel || defaultRule.label
 }
 
-function normalizeRuleCategories(value: unknown, rules: RuleConfig[]): RuleCategoryConfig[] {
-  const categoriesByKey = new Map<string, RuleCategoryConfig>()
+function normalizeRuleCategories(_value: unknown, _rules: RuleConfig[]): RuleCategoryConfig[] {
+  return DEFAULT_RULE_CATEGORIES
+}
 
-  for (const category of DEFAULT_RULE_CATEGORIES) {
-    categoriesByKey.set(category.key, category)
+function normalizeExerciseCycleDays(value: unknown, fallback: ExerciseCycleDays): ExerciseCycleDays {
+  return value === 1 || value === 7 || value === 30 ? value : fallback
+}
+
+function normalizeExerciseSettings(value: unknown, fallback: ExerciseRuleSettings): ExerciseRuleSettings {
+  const candidate = value && typeof value === 'object' ? value as Partial<ExerciseRuleSettings> : {}
+  const cycleDays = normalizeExerciseCycleDays(candidate.cycleDays, fallback.cycleDays)
+  const rawDays = Array.isArray(candidate.scheduledDays) ? candidate.scheduledDays : fallback.scheduledDays
+  const scheduledDays = Array.from(new Set(rawDays
+    .map((day) => Math.round(Number(day)))
+    .filter((day) => Number.isFinite(day) && day >= 1 && day <= cycleDays)))
+    .sort((a, b) => a - b)
+  const workoutType = typeof candidate.workoutType === 'string' && candidate.workoutType.trim()
+    ? candidate.workoutType.trim().slice(0, 40)
+    : fallback.workoutType
+
+  return {
+    cycleDays,
+    scheduledDays: scheduledDays.length > 0 ? scheduledDays : [1],
+    workoutType,
+    targetMinutes: normalizeBoundedNumber(candidate.targetMinutes, fallback.targetMinutes, 1, MAX_WORKOUT_MINUTES),
   }
+}
 
-  if (Array.isArray(value)) {
-    for (const rawCategory of value) {
-      if (!rawCategory || typeof rawCategory !== 'object') continue
-      const category = rawCategory as Partial<RuleCategoryConfig>
-      const labelFallback = typeof category.key === 'string' ? categoryLabelFromKey(category.key) : 'Custom'
-      const label = normalizeCategoryLabel(category.label, labelFallback)
-      const keyFallback = makeCategoryKey(label, new Set(categoriesByKey.keys()))
-      const key = normalizeCategoryKey(category.key, keyFallback)
-      categoriesByKey.set(key, { key, label })
-    }
+function normalizeDietGoalType(value: unknown, fallback: DietGoalType): DietGoalType {
+  return value === 'minimum' || value === 'maximum' || value === 'avoid' ? value : fallback
+}
+
+function normalizeDietSettings(value: unknown, fallback: DietRuleSettings): DietRuleSettings {
+  const candidate = value && typeof value === 'object' ? value as Partial<DietRuleSettings> : {}
+  const goalType = normalizeDietGoalType(candidate.goalType, fallback.goalType)
+  const unit = typeof candidate.unit === 'string' && candidate.unit.trim()
+    ? candidate.unit.trim().slice(0, 16)
+    : fallback.unit
+
+  return {
+    goalType,
+    goal: goalType === 'avoid' ? 0 : normalizeBoundedNumber(candidate.goal, fallback.goal, 0, 100000),
+    unit,
   }
+}
 
-  for (const rule of rules) {
-    const key = normalizeCategoryKey(rule.category, 'activity')
-    if (!categoriesByKey.has(key)) {
-      categoriesByKey.set(key, { key, label: categoryLabelFromKey(key) })
-    }
+function defaultDietSettings(rule: RuleConfig, targets: ChallengeTargets): DietRuleSettings | undefined {
+  if (!rule.diet) return undefined
+  switch (rule.key) {
+    case 'calories': return { ...rule.diet, goal: targets.calories }
+    case 'protein': return { ...rule.diet, goal: targets.proteinGrams }
+    case 'water': return { ...rule.diet, goal: targets.waterLiters }
+    default: return rule.diet
   }
-
-  return Array.from(categoriesByKey.values())
 }
 
 export function normalizeSettings(value: unknown): ChallengeSettings {
@@ -377,13 +434,28 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
       ? storedRule.icon.trim().slice(0, 2)
       : defaultRule.icon
 
+    const fallbackExercise = defaultRule.exercise
+      ? { ...defaultRule.exercise, targetMinutes: defaultRule.key === 'exercise' ? targets.exerciseMinutes : defaultRule.exercise.targetMinutes }
+      : undefined
+    const fallbackDiet = defaultDietSettings(defaultRule, targets)
+    const storedCategory = storedRule?.category === 'activity' && defaultRule.key === 'sleep'
+      ? 'misc'
+      : storedRule?.category
+    const category = normalizeCategoryKey(storedCategory, defaultRule.category)
+    const exerciseFallback: ExerciseRuleSettings = fallbackExercise
+      ?? { cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Any exercise', targetMinutes: 30 }
+    const dietFallback: DietRuleSettings = fallbackDiet
+      ?? { goalType: 'minimum', goal: 1, unit: 'g' }
+
     return {
       key: defaultRule.key,
       label,
       icon,
       enabled: typeof storedRule?.enabled === 'boolean' ? storedRule.enabled : defaultRule.enabled,
       weight: normalizeRuleWeight(storedRule?.weight, defaultRule.weight),
-      category: normalizeCategoryKey(storedRule?.category, defaultRule.category),
+      category,
+      exercise: category === 'exercise' ? normalizeExerciseSettings(storedRule?.exercise, exerciseFallback) : undefined,
+      diet: category === 'diet' ? normalizeDietSettings(storedRule?.diet, dietFallback) : undefined,
       deleted: storedRule?.deleted === true,
     }
   })
@@ -399,13 +471,18 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
       ? rule.icon.trim().slice(0, 2)
       : '◆'
 
+    const category = normalizeCategoryKey(rule.category, 'misc')
+    const fallbackExercise: ExerciseRuleSettings = { cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Any exercise', targetMinutes: 30 }
+    const fallbackDiet: DietRuleSettings = { goalType: 'minimum', goal: 1, unit: 'g' }
     normalizedRules.push({
       key,
       label,
       icon,
       enabled: typeof rule.enabled === 'boolean' ? rule.enabled : true,
       weight: normalizeRuleWeight(rule.weight, 'supporting'),
-      category: normalizeCategoryKey(rule.category, 'activity'),
+      category,
+      exercise: category === 'exercise' ? normalizeExerciseSettings(rule.exercise, fallbackExercise) : undefined,
+      diet: category === 'diet' ? normalizeDietSettings(rule.diet, fallbackDiet) : undefined,
       deleted: rule.deleted === true,
     })
     return normalizedRules
@@ -471,6 +548,7 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
     readTenPages: candidate.readTenPages === true,
     journaled: candidate.journaled === true,
     ruleCompletions: normalizeRuleCompletionMap(candidate.ruleCompletions),
+    ruleValues: normalizeRuleValueMap(candidate.ruleValues),
     mood: normalizeBoundedNumber(candidate.mood, 3, 1, 5),
     energy: normalizeBoundedNumber(candidate.energy, 3, 1, 5),
     hunger: normalizeBoundedNumber(candidate.hunger, 3, 1, 5),
@@ -549,6 +627,7 @@ export function makeEmptyEntry(date: string): DailyEntry {
     readTenPages: false,
     journaled: false,
     ruleCompletions: {},
+    ruleValues: {},
     mood: 3,
     energy: 3,
     hunger: 3,
@@ -609,16 +688,60 @@ export function getScoredRules(settings: ChallengeSettings): RuleConfig[] {
   return settings.rules.filter((rule) => rule.deleted !== true)
 }
 
-export function getEnabledRules(settings: ChallengeSettings): RuleConfig[] {
-  return getScoredRules(settings).filter((rule) => rule.enabled)
+export function exercisePatternDay(rule: RuleConfig, date: string, settings: ChallengeSettings): number | null {
+  if (!rule.exercise) return null
+  return (daysBetween(settings.startDate, date) % rule.exercise.cycleDays) + 1
+}
+
+export function isRuleScheduledForDate(rule: RuleConfig, date: string, settings: ChallengeSettings): boolean {
+  if (rule.category !== 'exercise' || !rule.exercise) return true
+  const cycleDay = exercisePatternDay(rule, date, settings)
+  return cycleDay !== null && rule.exercise.scheduledDays.includes(cycleDay)
+}
+
+export function getEnabledRules(settings: ChallengeSettings, date?: string): RuleConfig[] {
+  return getScoredRules(settings).filter((rule) => rule.enabled && (!date || isRuleScheduledForDate(rule, date, settings)))
 }
 
 export function ruleWeightValue(rule: RuleConfig): number {
   return rule.weight === 'nonNegotiable' ? 2 : 1
 }
 
-export function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: ChallengeSettings): boolean {
-  switch (rule) {
+export function getDietRuleValue(entry: DailyEntry, rule: RuleConfig): number | null {
+  const stored = entry.ruleValues?.[rule.key]
+  if (typeof stored === 'number') return stored
+  switch (rule.key) {
+    case 'calories': return entry.calories
+    case 'protein': return entry.proteinGrams
+    case 'water': return entry.waterLiters
+    default: return null
+  }
+}
+
+export function getExerciseRuleMinutes(entry: DailyEntry, rule: RuleConfig): number {
+  const workoutType = rule.exercise?.workoutType ?? 'Any exercise'
+  if (workoutType === 'Any exercise') return getExerciseMinutes(entry)
+  return (entry.workouts ?? [])
+    .filter((workout) => workout.type.toLowerCase() === workoutType.toLowerCase())
+    .reduce((sum, workout) => sum + workout.minutes, 0)
+}
+
+export function ruleComplete(entry: DailyEntry, ruleKey: RuleKey, settings: ChallengeSettings): boolean {
+  const config = settings.rules.find((rule) => rule.key === ruleKey)
+  if (config?.category === 'exercise' && config.exercise) {
+    return isRuleScheduledForDate(config, entry.date, settings)
+      && getExerciseRuleMinutes(entry, config) >= config.exercise.targetMinutes
+  }
+  if (config?.category === 'diet' && config.diet) {
+    if (config.diet.goalType === 'avoid') {
+      return config.key === 'sober' ? entry.sober : entry.ruleCompletions?.[config.key] === true
+    }
+    const value = getDietRuleValue(entry, config)
+    if (value === null) return false
+    return config.diet.goalType === 'minimum' ? value >= config.diet.goal : value <= config.diet.goal
+  }
+
+  switch (ruleKey) {
     case 'exercise':
       return getExerciseMinutes(entry) >= settings.targets.exerciseMinutes
     case 'sober':
@@ -638,12 +761,12 @@ export function ruleComplete(entry: DailyEntry, rule: RuleKey, settings: Challen
     case 'journal':
       return entry.journaled
     default:
-      return entry.ruleCompletions?.[rule] === true
+      return entry.ruleCompletions?.[ruleKey] === true
   }
 }
 
 export function completionStats(entry: DailyEntry, settings: ChallengeSettings) {
-  const activeRules = getEnabledRules(settings)
+  const activeRules = getEnabledRules(settings, entry.date)
   const totalWeight = activeRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
   const completedRules = activeRules.filter((rule) => ruleComplete(entry, rule.key, settings))
   const completedWeight = completedRules.reduce((sum, rule) => sum + ruleWeightValue(rule), 0)
@@ -703,6 +826,7 @@ function csvCell(value: string | number | boolean | null | undefined): string {
 export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): string {
   const csvRules = getScoredRules(settings)
   const ruleColumns = csvRules.map((rule) => `rule_${rule.key}`)
+  const ruleValueColumns = csvRules.map((rule) => `value_${rule.key}`)
   const headers = [
     'date',
     'tracking_day',
@@ -710,6 +834,7 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
     'completed_rules',
     'total_rules',
     ...ruleColumns,
+    ...ruleValueColumns,
     'finalized_at',
     'exercise_minutes',
     'workout_log',
@@ -739,6 +864,7 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
       stats?.completed ?? '',
       stats?.total ?? '',
       ...csvRules.map((rule) => inChallenge ? Number(ruleComplete(entry, rule.key, settings)) : ''),
+      ...csvRules.map((rule) => rule.diet && rule.diet.goalType !== 'avoid' ? getDietRuleValue(entry, rule) : ''),
       entry.finalizedAt,
       getExerciseMinutes(entry),
       formatWorkoutSummary(entry.workouts),

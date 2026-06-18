@@ -10,9 +10,11 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Daily rule checklist
 - Detailed check-in form
 - Configurable tracker title and start date
-- Activity, exercise, mental, and custom scored rule categories
-- Editable rules, targets, and rule weights
-- Monthly calendar heatmap
+- Exercise, diet, mental, and miscellaneous scored rule categories
+- Repeating 1-day, 7-day, and 30-day exercise patterns with scheduled training days, workout type, and minutes
+- Common and custom diet goals with minimum, maximum, or avoid scoring plus custom units
+- Editable rules, goals, categories, and rule weights
+- Monthly calendar heatmap inside Progress
 - Rule completion analytics
 - Last-7-day and last-30-day progress reviews
 - Weight, sleep, calorie, and mood trend charts
@@ -38,6 +40,8 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Local daily notification reminders
 - Automatic localStorage persistence
 - PWA icons
+- Five-tab navigation: Home, Check-In, Progress, Social, and Settings
+- Separate Rules + Goals and App + Account settings views
 
 ## Requirements
 
@@ -68,7 +72,7 @@ Install prompts and service-worker behavior are most reliable from the productio
 npm test
 ```
 
-Vitest covers weighted tracker scoring, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
+Vitest covers weighted tracker scoring, exercise pattern scheduling, flexible diet goals, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
 
 ## Current data model
 
@@ -97,6 +101,8 @@ See `DEPLOYMENT.md` for Supabase and hosting setup.
 
 Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
 
+Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
+
 ## Code organization
 
 - `src/types.ts` holds shared tracker, cloud sync, friends, squads, challenge, and feed types.
@@ -109,7 +115,7 @@ Friends, leaderboards, private squads, invite-only friend challenges, daily chal
 - `src/services/reliability.ts` classifies transient failures and retries safe cloud/social operations.
 - Tracker, social-data, reliability, and mocked social-service tests cover the highest-risk scoring, privacy, history, normalization, retry, and mutation behavior.
 - `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
-- `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, Calendar, and navigation.
+- `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, and navigation.
 
 Current social beta coverage:
 
