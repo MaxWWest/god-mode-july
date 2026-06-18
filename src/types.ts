@@ -113,6 +113,7 @@ export type AccountDataExport = {
     summary: ChallengeSummary | null
     friendChallenges: FriendChallenge[]
     friendChallengeParticipants: FriendChallengeParticipant[]
+    challengeScoreSnapshots: ChallengeScoreSnapshot[]
     friendSquads: FriendSquad[]
     friendSquadMembers: FriendSquadMember[]
     friendEvents: FriendEvent[]
@@ -258,6 +259,16 @@ export type FriendChallengeParticipant = {
   respondedAt: string | null
 }
 
+export type ChallengeScoreSnapshot = {
+  challengeId: string
+  userId: string
+  date: string
+  completionPercent: number
+  completedRules: number
+  totalRules: number
+  publishedAt: string
+}
+
 export type FriendChallengeParticipantView = FriendProfile & {
   invitedBy: string
   status: FriendChallengeParticipantStatus
@@ -265,6 +276,7 @@ export type FriendChallengeParticipantView = FriendProfile & {
   createdAt: string
   respondedAt: string | null
   isCurrentUser: boolean
+  history: ChallengeScoreSnapshot[]
 }
 
 export type FriendChallengeView = FriendChallenge & {

@@ -2098,6 +2098,92 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
+.daily-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+.daily-history-person {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.daily-history-person-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.daily-history-person-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.daily-history-person-heading small,
+.daily-history-person > p {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.daily-history-person > p {
+  margin: 0;
+}
+
+.daily-score-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.daily-score-row {
+  display: grid;
+  grid-template-columns: 54px minmax(80px, 1fr) 38px;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.68rem;
+}
+
+.daily-score-row span {
+  color: var(--muted);
+}
+
+.daily-score-row strong {
+  text-align: right;
+  color: #d9c6ff;
+}
+
+.daily-score-row progress {
+  width: 100%;
+  height: 7px;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.daily-score-row progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.daily-score-row progress::-webkit-progress-value {
+  background: #9c5cff;
+}
+
+.daily-score-row progress::-moz-progress-bar {
+  background: #9c5cff;
+}
+
 .score-note {
   grid-column: 1 / -1;
   margin: 0;

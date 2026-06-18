@@ -3,6 +3,12 @@ import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
+  buildAccountDataExport as buildAccountDataExportApi,
+  deleteCloudAccountData as deleteCloudAccountDataApi,
+  fetchCloudSnapshot as fetchCloudSnapshotApi,
+  writeCloudSnapshot as writeCloudSnapshotApi,
+} from './services/cloudApi'
+import {
   createChallenge as createChallengeRecord,
   createSquad as createSquadRecord,
   deleteSquad as deleteSquadRecord,
@@ -21,18 +27,8 @@ import {
 import {
   buildChallengeSettingsForTemplate,
   buildChallengeSummary,
+  buildFriendChallengeSnapshots,
   buildFriendChallengeSummary,
-  isFriendChallengeSchemaError,
-  isFriendEventSchemaError,
-  isFriendSquadSchemaError,
-  normalizeFriendChallengeParticipantRow,
-  normalizeFriendChallengeRow,
-  normalizeFriendEventRow,
-  normalizeFriendProfileRow,
-  normalizeFriendSquadMemberRow,
-  normalizeFriendSquadRow,
-  normalizeFriendshipRow,
-  normalizeSummaryRow,
 } from './socialData'
 import {
   DAY_IN_MS,
@@ -59,7 +55,6 @@ import {
   makeEmptyEntry,
   makeEmptyWorkout,
   mergeCloudOnlyEntries,
-  normalizeCloudSnapshot,
   normalizeEntries,
   normalizePrivacySettings,
   normalizeReminderSettings,
@@ -72,15 +67,6 @@ import {
   todayIso,
 } from './tracker'
 import {
-  SUPABASE_FRIEND_EVENT_TABLE,
-  SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
-  SUPABASE_FRIEND_CHALLENGE_TABLE,
-  SUPABASE_FRIENDSHIP_TABLE,
-  SUPABASE_PROFILE_TABLE,
-  SUPABASE_SQUAD_MEMBER_TABLE,
-  SUPABASE_SQUAD_TABLE,
-  SUPABASE_SUMMARY_TABLE,
-  SUPABASE_TABLE,
   isSupabaseConfigured,
   supabase,
 } from './supabase'
@@ -88,7 +74,6 @@ import type {
   AccountDataExport,
   AppNotice,
   ChallengeSettings,
-  ChallengeSummary,
   ChallengeTemplate,
   CloudSnapshot,
   CreateFriendChallengeInput,
@@ -97,17 +82,12 @@ import type {
   DataStatus,
   EntryMap,
   FriendActivityFeedItem,
-  FriendChallenge,
-  FriendChallengeParticipant,
   FriendChallengeView,
   FriendEvent,
   FriendEventType,
   FriendProfile,
   FriendRequest,
-  FriendSquad,
-  FriendSquadMember,
   FriendSquadView,
-  FriendshipRow,
   FriendsTab,
   InstallPromptEvent,
   InviteFriendChallengeInput,
@@ -607,201 +587,22 @@ function App() {
 
   async function fetchCloudSnapshot(): Promise<CloudSnapshot | null> {
     if (!supabase || !user) return null
-
-    const { data, error } = await supabase
-      .from(SUPABASE_TABLE)
-      .select('settings, entries, updated_at')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (error) throw error
-    return normalizeCloudSnapshot(data)
+    return fetchCloudSnapshotApi(supabase, user.id)
   }
 
   async function writeCloudSnapshot(nextSettings: ChallengeSettings, nextEntries: EntryMap): Promise<string> {
     if (!supabase || !user) throw new Error('Sign in before syncing.')
-
-    const updatedAt = new Date().toISOString()
-    const { error } = await supabase
-      .from(SUPABASE_TABLE)
-      .upsert({
-        user_id: user.id,
-        settings: normalizeSettings(nextSettings),
-        entries: normalizeEntries(nextEntries),
-        updated_at: updatedAt,
-      }, { onConflict: 'user_id' })
-
-    if (error) throw error
-    return updatedAt
+    return writeCloudSnapshotApi(supabase, user.id, nextSettings, nextEntries)
   }
 
   async function buildAccountDataExport(): Promise<AccountDataExport> {
     if (!supabase || !user) throw new Error('Sign in before exporting account data.')
-
-    const [
-      snapshotResult,
-      profileResult,
-      friendshipResult,
-      summaryResult,
-    ] = await Promise.all([
-      supabase
-        .from(SUPABASE_TABLE)
-        .select('settings, entries, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle(),
-      supabase
-        .from(SUPABASE_PROFILE_TABLE)
-        .select('user_id, display_name, invite_code')
-        .eq('user_id', user.id)
-        .maybeSingle(),
-      supabase
-        .from(SUPABASE_FRIENDSHIP_TABLE)
-        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
-        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
-      supabase
-        .from(SUPABASE_SUMMARY_TABLE)
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle(),
-    ])
-
-    if (snapshotResult.error) throw snapshotResult.error
-    if (profileResult.error) throw profileResult.error
-    if (friendshipResult.error) throw friendshipResult.error
-    if (summaryResult.error) throw summaryResult.error
-
-    let friendChallenges: FriendChallenge[] = []
-    let friendChallengeParticipants: FriendChallengeParticipant[] = []
-    let friendSquads: FriendSquad[] = []
-    let friendSquadMembers: FriendSquadMember[] = []
-    let friendEvents: FriendEvent[] = []
-    const [myChallengeParticipantsResult, createdChallengesResult] = await Promise.all([
-      supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
-        .eq('user_id', user.id),
-      supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-        .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
-        .eq('creator_id', user.id),
-    ])
-
-    if (myChallengeParticipantsResult.error) {
-      if (!isFriendChallengeSchemaError(myChallengeParticipantsResult.error)) throw myChallengeParticipantsResult.error
-    } else if (createdChallengesResult.error) {
-      if (!isFriendChallengeSchemaError(createdChallengesResult.error)) throw createdChallengesResult.error
-    } else {
-      const myChallengeParticipants = (myChallengeParticipantsResult.data ?? [])
-        .map(normalizeFriendChallengeParticipantRow)
-        .filter((row): row is FriendChallengeParticipant => row !== null)
-      const createdChallenges = (createdChallengesResult.data ?? [])
-        .map(normalizeFriendChallengeRow)
-        .filter((row): row is FriendChallenge => row !== null)
-      const challengeIds = Array.from(new Set([
-        ...myChallengeParticipants.map((participant) => participant.challengeId),
-        ...createdChallenges.map((challenge) => challenge.id),
-      ]))
-
-      if (challengeIds.length > 0) {
-        const [challengeResult, participantResult] = await Promise.all([
-          supabase
-            .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-            .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
-            .in('id', challengeIds),
-          supabase
-            .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-            .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
-            .in('challenge_id', challengeIds),
-        ])
-
-        if (challengeResult.error) {
-          if (!isFriendChallengeSchemaError(challengeResult.error)) throw challengeResult.error
-        } else {
-          friendChallenges = (challengeResult.data ?? [])
-            .map(normalizeFriendChallengeRow)
-            .filter((row): row is FriendChallenge => row !== null)
-        }
-
-        if (participantResult.error) {
-          if (!isFriendChallengeSchemaError(participantResult.error)) throw participantResult.error
-        } else {
-          friendChallengeParticipants = (participantResult.data ?? [])
-            .map(normalizeFriendChallengeParticipantRow)
-            .filter((row): row is FriendChallengeParticipant => row !== null)
-        }
-      }
-    }
-
-    const { data: squadRows, error: squadError } = await supabase
-      .from(SUPABASE_SQUAD_TABLE)
-      .select('id, owner_id, name, created_at, updated_at')
-      .eq('owner_id', user.id)
-
-    if (squadError) {
-      if (!isFriendSquadSchemaError(squadError)) throw squadError
-    } else {
-      friendSquads = (squadRows ?? [])
-        .map(normalizeFriendSquadRow)
-        .filter((row): row is FriendSquad => row !== null)
-      const squadIds = friendSquads.map((squad) => squad.id)
-      if (squadIds.length > 0) {
-        const { data: memberRows, error: memberError } = await supabase
-          .from(SUPABASE_SQUAD_MEMBER_TABLE)
-          .select('squad_id, user_id, added_by, created_at')
-          .in('squad_id', squadIds)
-
-        if (memberError) {
-          if (!isFriendSquadSchemaError(memberError)) throw memberError
-        } else {
-          friendSquadMembers = (memberRows ?? [])
-            .map(normalizeFriendSquadMemberRow)
-            .filter((row): row is FriendSquadMember => row !== null)
-        }
-      }
-    }
-
-    const { data: eventRows, error: eventError } = await supabase
-      .from(SUPABASE_FRIEND_EVENT_TABLE)
-      .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
-      .or(`actor_id.eq.${user.id},target_user_id.eq.${user.id}`)
-
-    if (eventError) {
-      if (!isFriendEventSchemaError(eventError)) throw eventError
-    } else {
-      friendEvents = (eventRows ?? [])
-        .map(normalizeFriendEventRow)
-        .filter((row): row is FriendEvent => row !== null)
-    }
-
-    return {
-      app: 'god-mode-july',
-      exportType: 'account-data',
-      exportedAt: new Date().toISOString(),
-      user: {
-        id: user.id,
-        email: user.email ?? null,
-      },
-      local: {
-        settings: normalizeSettings(settings),
-        entries: normalizeEntries(entries),
-        privacy: normalizePrivacySettings(privacySettings),
-      },
-      cloud: {
-        snapshot: normalizeCloudSnapshot(snapshotResult.data),
-        profile: normalizeFriendProfileRow(profileResult.data),
-        friendships: (friendshipResult.data ?? [])
-          .map(normalizeFriendshipRow)
-          .filter((row): row is FriendshipRow => row !== null),
-        summary: normalizeSummaryRow(summaryResult.data),
-        friendChallenges,
-        friendChallengeParticipants,
-        friendSquads,
-        friendSquadMembers,
-        friendEvents,
-      },
-    }
+    return buildAccountDataExportApi(supabase, user, {
+      settings,
+      entries,
+      privacy: privacySettings,
+    })
   }
-
   async function sendMagicLink() {
     if (!supabase) return
     const email = authEmail.trim()
@@ -1071,59 +872,7 @@ function App() {
 
     setCloudBusy(true)
     try {
-      const friendEventDelete = await supabase
-        .from(SUPABASE_FRIEND_EVENT_TABLE)
-        .delete()
-        .or(`actor_id.eq.${user.id},target_user_id.eq.${user.id}`)
-      if (friendEventDelete.error && !isFriendEventSchemaError(friendEventDelete.error)) throw friendEventDelete.error
-
-      const createdChallengeDelete = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-        .delete()
-        .eq('creator_id', user.id)
-      if (createdChallengeDelete.error && !isFriendChallengeSchemaError(createdChallengeDelete.error)) throw createdChallengeDelete.error
-
-      const challengeParticipantDelete = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (challengeParticipantDelete.error && !isFriendChallengeSchemaError(challengeParticipantDelete.error)) throw challengeParticipantDelete.error
-
-      const squadDelete = await supabase
-        .from(SUPABASE_SQUAD_TABLE)
-        .delete()
-        .eq('owner_id', user.id)
-      if (squadDelete.error && !isFriendSquadSchemaError(squadDelete.error)) throw squadDelete.error
-
-      const squadMemberDelete = await supabase
-        .from(SUPABASE_SQUAD_MEMBER_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (squadMemberDelete.error && !isFriendSquadSchemaError(squadMemberDelete.error)) throw squadMemberDelete.error
-
-      const friendshipDelete = await supabase
-        .from(SUPABASE_FRIENDSHIP_TABLE)
-        .delete()
-        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
-      if (friendshipDelete.error) throw friendshipDelete.error
-
-      const summaryDelete = await supabase
-        .from(SUPABASE_SUMMARY_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (summaryDelete.error) throw summaryDelete.error
-
-      const profileDelete = await supabase
-        .from(SUPABASE_PROFILE_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (profileDelete.error) throw profileDelete.error
-
-      const snapshotDelete = await supabase
-        .from(SUPABASE_TABLE)
-        .delete()
-        .eq('user_id', user.id)
-      if (snapshotDelete.error) throw snapshotDelete.error
+      await deleteCloudAccountDataApi(supabase, user.id)
 
       setCloudUpdatedAt(null)
       setSyncConflict(null)
@@ -1255,11 +1004,12 @@ function App() {
       setFriendChallenges(data.challenges)
       setFriendSquads(data.squads)
       setFriendEvents(data.events)
+      const schemaReady = data.squadSchemaReady && data.historySchemaReady
       setFriendsStatus({
-        tone: data.squadSchemaReady ? 'success' : 'neutral',
-        message: data.squadSchemaReady
+        tone: schemaReady ? 'success' : 'neutral',
+        message: schemaReady
           ? `${data.acceptedFriendCount} ${data.acceptedFriendCount === 1 ? 'friend' : 'friends'} · ${data.squads.length} ${data.squads.length === 1 ? 'squad' : 'squads'} · ${data.requests.length} pending · ${data.challenges.length} challenges.`
-          : 'Friends loaded. Run the updated Supabase schema to enable squads.',
+          : 'Friends loaded. Run the updated Supabase schema to enable all squad and daily-history features.',
       })
     } catch (error) {
       setFriendsStatus({
@@ -1673,7 +1423,8 @@ function App() {
         note: cleanNote,
         reaction,
       }
-      await publishChallengeScore(supabase, user.id, challengeId, summary)
+      const snapshots = buildFriendChallengeSnapshots(user.id, entries, challenge, settings)
+      const historyPublished = await publishChallengeScore(supabase, user.id, challengeId, summary, snapshots)
 
       await recordFriendEvent('challenge_score_published', {
         challengeId,
@@ -1683,7 +1434,12 @@ function App() {
           reaction,
         },
       })
-      setFriendsStatus({ tone: 'success', message: `${challenge.name} score published.` })
+      setFriendsStatus({
+        tone: historyPublished ? 'success' : 'neutral',
+        message: historyPublished
+          ? `${challenge.name} score and daily history published.`
+          : `${challenge.name} score published. Run the updated Supabase schema to add daily history.`,
+      })
       await refreshFriendsData()
     } catch (error) {
       setFriendsStatus({

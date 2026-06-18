@@ -43,6 +43,14 @@
 - Friends leaderboard for last-7-day completion, average completion, streaks, and logged days
 - Invite-only custom friend challenges with personal-target or shared-rule scoring
 - Challenge accept/decline flow and per-challenge score publishing
+- Private squads, challenge templates, stored activity events, and friend profiles
+- Per-day published challenge score history
+
+## Reliability and architecture (in progress)
+
+- Vitest coverage for tracker scoring, privacy, challenge templates, history snapshots, and row normalization
+- Dedicated social and cloud Supabase service modules
+- Next: retryable offline/error states and browser-level smoke tests
 
 ## Ongoing tracker pivot (complete)
 

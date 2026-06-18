@@ -21,6 +21,7 @@ import {
 } from './tracker'
 import type {
   BuiltInRuleKey,
+  ChallengeScoreSnapshot,
   ChallengeSettings,
   ChallengeSummary,
   EntryMap,
@@ -191,6 +192,30 @@ export function buildFriendChallengeSummary(
   }
 }
 
+export function buildFriendChallengeSnapshots(
+  userId: string,
+  entries: EntryMap,
+  challenge: FriendChallenge,
+  personalSettings: ChallengeSettings,
+): ChallengeScoreSnapshot[] {
+  const settings = settingsForFriendChallenge(challenge, personalSettings)
+  const publishedAt = new Date().toISOString()
+  return getChallengeElapsedDates(challenge)
+    .filter((date) => Boolean(entries[date]))
+    .map((date) => {
+      const stats = completionStats(entries[date], settings)
+      return {
+        challengeId: challenge.id,
+        userId,
+        date,
+        completionPercent: stats.percent,
+        completedRules: stats.completed,
+        totalRules: stats.total,
+        publishedAt,
+      }
+    })
+}
+
 export function buildChallengeSettingsForTemplate(
   baseSettings: ChallengeSettings,
   templateId: string | undefined,
@@ -305,6 +330,13 @@ export function isFriendChallengeSchemaError(error: unknown): boolean {
     || message.includes('column')
 }
 
+export function isChallengeScoreHistorySchemaError(error: unknown): boolean {
+  const message = schemaErrorMessage(error)
+  return message.includes('god_mode_challenge_score_history')
+    || message.includes('score_date')
+    || message.includes('completion_percent')
+}
+
 export function isFriendSquadSchemaError(error: unknown): boolean {
   const message = schemaErrorMessage(error)
   return message.includes('god_mode_squads') || message.includes('god_mode_squad_members') || message.includes('relation') || message.includes('column')
@@ -376,6 +408,26 @@ export function normalizeFriendChallengeParticipantRow(row: unknown): FriendChal
     summary: normalizeSummaryRow(candidate.summary),
     createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
     respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
+  }
+}
+
+export function normalizeChallengeScoreSnapshotRow(row: unknown): ChallengeScoreSnapshot | null {
+  const candidate = row && typeof row === 'object' ? row as Record<string, unknown> : null
+  if (!candidate
+    || typeof candidate.challenge_id !== 'string'
+    || typeof candidate.user_id !== 'string'
+    || !isIsoDate(candidate.score_date)) return null
+
+  const totalRules = normalizeBoundedNumber(candidate.total_rules, 0, 0, 100)
+  const completedRules = Math.min(totalRules, normalizeBoundedNumber(candidate.completed_rules, 0, 0, 100))
+  return {
+    challengeId: candidate.challenge_id,
+    userId: candidate.user_id,
+    date: candidate.score_date,
+    completionPercent: normalizeBoundedNumber(candidate.completion_percent, 0, 0, 100),
+    completedRules,
+    totalRules,
+    publishedAt: typeof candidate.published_at === 'string' ? candidate.published_at : new Date().toISOString(),
   }
 }
 

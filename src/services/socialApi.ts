@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import {
+  isChallengeScoreHistorySchemaError,
   isFriendChallengeSchemaError,
   isFriendEventSchemaError,
   isFriendRequestSchemaError,
@@ -7,6 +8,7 @@ import {
   isSummarySchemaError,
   normalizeFriendChallengeParticipantRow,
   normalizeFriendChallengeRow,
+  normalizeChallengeScoreSnapshotRow,
   normalizeFriendEventRow,
   normalizeFriendProfileRow,
   normalizeFriendSquadMemberRow,
@@ -18,6 +20,7 @@ import {
   sortedFriendshipPair,
 } from '../socialData'
 import {
+  SUPABASE_CHALLENGE_SCORE_HISTORY_TABLE,
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIEND_EVENT_TABLE,
@@ -28,6 +31,7 @@ import {
   SUPABASE_SUMMARY_TABLE,
 } from '../supabase'
 import type {
+  ChallengeScoreSnapshot,
   ChallengeSummary,
   ChallengeSettings,
   FriendChallenge,
@@ -54,6 +58,7 @@ export type SocialDashboardData = {
   squads: FriendSquadView[]
   events: FriendEvent[]
   squadSchemaReady: boolean
+  historySchemaReady: boolean
   acceptedFriendCount: number
 }
 
@@ -324,7 +329,8 @@ export async function publishChallengeScore(
   userId: string,
   challengeId: string,
   summary: ChallengeSummary,
-): Promise<void> {
+  snapshots: ChallengeScoreSnapshot[],
+): Promise<boolean> {
   const { error } = await client.from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
     .update({ summary, responded_at: new Date().toISOString() })
     .eq('challenge_id', challengeId)
@@ -334,6 +340,25 @@ export async function publishChallengeScore(
     if (isFriendChallengeSchemaError(error)) throw new Error('Run the updated Supabase schema to enable friend challenges.')
     throw error
   }
+
+  if (snapshots.length === 0) return true
+  const historyResult = await client.from(SUPABASE_CHALLENGE_SCORE_HISTORY_TABLE).upsert(
+    snapshots.map((snapshot) => ({
+      challenge_id: snapshot.challengeId,
+      user_id: snapshot.userId,
+      score_date: snapshot.date,
+      completion_percent: snapshot.completionPercent,
+      completed_rules: snapshot.completedRules,
+      total_rules: snapshot.totalRules,
+      published_at: snapshot.publishedAt,
+    })),
+    { onConflict: 'challenge_id,user_id,score_date' },
+  )
+  if (historyResult.error) {
+    if (isChallengeScoreHistorySchemaError(historyResult.error)) return false
+    throw historyResult.error
+  }
+  return true
 }
 
 export async function publishLeaderboardSummary(client: SupabaseClient, summary: ChallengeSummary): Promise<void> {
@@ -456,7 +481,7 @@ export async function loadSocialDashboard(client: SupabaseClient, user: User): P
     .filter((request): request is FriendRequest => request !== null)
     .sort((a, b) => a.direction.localeCompare(b.direction) || a.displayName.localeCompare(b.displayName))
 
-  const challenges = await loadChallenges(client, user.id, profilesByUserId)
+  const challengeResult = await loadChallenges(client, user.id, profilesByUserId)
   const squadResult = await loadSquads(client, user.id, acceptedFriendIds, profilesByUserId)
   const events = await loadFriendEvents(client, user.id, acceptedFriendIds)
 
@@ -464,10 +489,11 @@ export async function loadSocialDashboard(client: SupabaseClient, user: User): P
     profile,
     leaderboardRows,
     requests,
-    challenges,
+    challenges: challengeResult.challenges,
     squads: squadResult.squads,
     events,
     squadSchemaReady: squadResult.schemaReady,
+    historySchemaReady: challengeResult.historySchemaReady,
     acceptedFriendCount: acceptedFriendIds.length,
   }
 }
@@ -476,7 +502,7 @@ async function loadChallenges(
   client: SupabaseClient,
   userId: string,
   profilesByUserId: Map<string, FriendProfile>,
-): Promise<FriendChallengeView[]> {
+): Promise<{ challenges: FriendChallengeView[]; historySchemaReady: boolean }> {
   const [participantResult, createdResult] = await Promise.all([
     client.from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
       .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
@@ -500,7 +526,7 @@ async function loadChallenges(
     .map(normalizeFriendChallengeRow)
     .filter((row): row is FriendChallenge => row !== null)
   const challengeIds = Array.from(new Set([...mine.map((row) => row.challengeId), ...created.map((row) => row.id)]))
-  if (challengeIds.length === 0) return []
+  if (challengeIds.length === 0) return { challenges: [], historySchemaReady: true }
 
   const [challengeResult, allParticipantResult] = await Promise.all([
     client.from(SUPABASE_FRIEND_CHALLENGE_TABLE)
@@ -536,7 +562,22 @@ async function loadChallenges(
     }
   }
 
-  return challengeRows.map((challenge) => {
+  const historyResult = await client.from(SUPABASE_CHALLENGE_SCORE_HISTORY_TABLE)
+    .select('challenge_id, user_id, score_date, completion_percent, completed_rules, total_rules, published_at')
+    .in('challenge_id', challengeIds)
+    .order('score_date', { ascending: true })
+  let historySchemaReady = true
+  let history: ChallengeScoreSnapshot[] = []
+  if (historyResult.error) {
+    if (isChallengeScoreHistorySchemaError(historyResult.error)) historySchemaReady = false
+    else throw historyResult.error
+  } else {
+    history = (historyResult.data ?? [])
+      .map(normalizeChallengeScoreSnapshotRow)
+      .filter((row): row is ChallengeScoreSnapshot => row !== null)
+  }
+
+  const challenges = challengeRows.map((challenge) => {
     const participantViews = participants
       .filter((participant) => participant.challengeId === challenge.id)
       .map((participant) => {
@@ -551,6 +592,9 @@ async function loadChallenges(
           createdAt: participant.createdAt,
           respondedAt: participant.respondedAt,
           isCurrentUser: participant.userId === userId,
+          history: history.filter((snapshot) => (
+            snapshot.challengeId === challenge.id && snapshot.userId === participant.userId
+          )),
         } satisfies FriendChallengeParticipantView
       })
       .sort((a, b) => a.status !== b.status
@@ -568,6 +612,7 @@ async function loadChallenges(
   }).sort((a, b) => a.currentUserStatus !== b.currentUserStatus
     ? (a.currentUserStatus === 'pending' ? -1 : 1)
     : b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name))
+  return { challenges, historySchemaReady }
 }
 
 async function loadSquads(

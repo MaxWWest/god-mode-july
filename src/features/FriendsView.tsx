@@ -1262,7 +1262,7 @@ function FriendChallengeDetail({
                 </select>
               </label>
               <button className="secondary-button compact-button" type="button" onClick={() => onPublish(scoreNote, scoreReaction)} disabled={busy}>
-                Publish With Note
+                Publish Score & History
               </button>
             </div>
           ) : (
@@ -1295,6 +1295,43 @@ function FriendChallengeDetail({
           </div>
         </section>
       </div>
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">Daily timeline</p>
+            <h3>Published score history</h3>
+          </div>
+          <span>{acceptedParticipants.reduce((count, participant) => count + participant.history.length, 0)} days</span>
+        </div>
+        {acceptedParticipants.some((participant) => participant.history.length > 0) ? (
+          <div className="daily-history-grid">
+            {acceptedParticipants.map((participant) => (
+              <article className="daily-history-person" key={participant.userId}>
+                <div className="daily-history-person-heading">
+                  <strong>{participant.displayName}{participant.isCurrentUser ? ' · You' : ''}</strong>
+                  <small>{participant.history.length} published {participant.history.length === 1 ? 'day' : 'days'}</small>
+                </div>
+                {participant.history.length === 0 ? (
+                  <p>No daily scores published yet.</p>
+                ) : (
+                  <div className="daily-score-list">
+                    {participant.history.map((snapshot) => (
+                      <div className="daily-score-row" key={snapshot.date}>
+                        <span>{formatShortDate(snapshot.date)}</span>
+                        <progress max="100" value={snapshot.completionPercent} aria-label={`${snapshot.completionPercent}% complete`} />
+                        <strong>{snapshot.completionPercent}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-leaderboard">Daily scores appear here after participants publish their challenge score.</p>
+        )}
+      </section>
 
       {challenge.isCreator && (
         <section className="challenge-detail-section">

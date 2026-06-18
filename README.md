@@ -27,6 +27,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Friend privacy controls for published stats
 - Better invite sharing with copy/share text
 - Invite-only custom friend challenges
+- Published per-day friend challenge score history
 - Challenge templates for common competition formats
 - Private challenge squads
 - Squad-specific leaderboards
@@ -60,6 +61,14 @@ npm run preview
 
 Install prompts and service-worker behavior are most reliable from the production preview or a deployed HTTPS site.
 
+## Run automated tests
+
+```bash
+npm test
+```
+
+Vitest covers weighted tracker scoring, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, and Supabase row normalization.
+
 ## Current data model
 
 Entries are stored under this browser key:
@@ -85,7 +94,7 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, private squads, invite-only friend challenges, and the social activity feed use separate Supabase tables for profiles, friendships, challenge summaries, squad definitions, squad members, challenge definitions, challenge participants, and friend events. Friends can compare completion, streak, and logged-day stats according to each user's privacy settings, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
 
 ## Code organization
 
@@ -95,8 +104,10 @@ Friends, leaderboards, private squads, invite-only friend challenges, and the so
 - `src/socialData.ts` holds social score calculations, challenge settings, row normalizers, and Supabase schema compatibility checks.
 - `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
 - `src/services/socialApi.ts` owns profile, friendship, squad, challenge, leaderboard, and activity-feed database operations.
+- `src/services/cloudApi.ts` owns cloud snapshots, account export, and cloud account deletion operations.
+- `src/tracker.test.ts` and `src/socialData.test.ts` cover the highest-risk scoring, privacy, template, history, and normalization behavior.
 - `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
-- `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, Calendar, and navigation. The next cleanup step is to extract cloud account export, deletion, and snapshot sync into a dedicated service.
+- `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, Calendar, and navigation.
 
 Current social beta coverage:
 
@@ -108,23 +119,21 @@ Current social beta coverage:
 - Stored social events for a richer friend/squad activity feed.
 - Challenge templates with preset target and scored-rule overrides.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
+- Per-participant daily score timelines stored when challenge scores are published.
 
 ## Recommended roadmap
 
 ### Next: beta reliability
 
-1. Add Vitest and focused automated coverage for tracker scoring, challenge templates, Supabase row normalization, privacy-safe summaries, friend requests, and challenge invite state changes.
-2. Extract cloud snapshots, conflict resolution, account export, and account deletion from `App.tsx` into a dedicated cloud service.
-3. Add consistent retryable error states for failed sync and social requests, plus clearer offline status when Supabase cannot be reached.
-
-This should be the next sprint. Auth, cloud sync, privacy, squads, and challenges now share enough behavior that regression protection is more valuable than adding another large feature immediately.
+1. Add consistent retryable error states for failed sync and social requests, plus clearer offline status when Supabase cannot be reached.
+2. Extend service tests to friend-request, squad, and challenge mutations with a mocked Supabase client.
+3. Add an end-to-end browser smoke test for account sign-in, daily check-in, and the two-account friend challenge flow.
 
 ### Then: stronger competition
 
-1. Store per-day challenge score snapshots so challenge detail pages can show real daily timelines instead of only the latest published summary.
-2. Add direct challenge links or short join codes so an accepted friend can open the app directly to an invite.
-3. Add owner controls for removing participants, canceling pending invites, leaving challenges, and removing squad members safely.
-4. Add challenge lifecycle controls for editing upcoming challenges, ending active challenges early, and archiving or deleting completed challenges.
+1. Add direct challenge links or short join codes so an accepted friend can open the app directly to an invite.
+2. Add owner controls for removing participants, canceling pending invites, leaving challenges, and removing squad members safely.
+3. Add challenge lifecycle controls for editing upcoming challenges, ending active challenges early, and archiving or deleting completed challenges.
 
 ### Later: engagement
 

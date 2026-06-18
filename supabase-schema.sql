@@ -364,6 +364,24 @@ create table if not exists public.god_mode_friend_challenge_participants (
   constraint god_mode_friend_challenge_participants_status_check check (status in ('pending', 'accepted', 'declined'))
 );
 
+create table if not exists public.god_mode_challenge_score_history (
+  challenge_id uuid not null references public.god_mode_friend_challenges(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  score_date date not null,
+  completion_percent integer not null default 0,
+  completed_rules integer not null default 0,
+  total_rules integer not null default 0,
+  published_at timestamptz not null default now(),
+  primary key (challenge_id, user_id, score_date),
+  constraint god_mode_challenge_score_history_percent_check check (completion_percent between 0 and 100),
+  constraint god_mode_challenge_score_history_rule_counts_check check (
+    completed_rules >= 0 and total_rules >= 0 and completed_rules <= total_rules
+  )
+);
+
+create index if not exists god_mode_challenge_score_history_challenge_date_idx
+  on public.god_mode_challenge_score_history(challenge_id, score_date);
+
 create or replace function public.god_mode_is_friend_challenge_member(target_challenge_id uuid)
 returns boolean
 language sql
@@ -386,6 +404,7 @@ $$;
 
 alter table public.god_mode_friend_challenges enable row level security;
 alter table public.god_mode_friend_challenge_participants enable row level security;
+alter table public.god_mode_challenge_score_history enable row level security;
 
 drop policy if exists "Challenge members can read friend challenges" on public.god_mode_friend_challenges;
 create policy "Challenge members can read friend challenges"
@@ -458,6 +477,40 @@ create policy "Users and creators can delete challenge participants"
         and challenge.creator_id = auth.uid()
     )
   );
+
+drop policy if exists "Challenge members can read score history" on public.god_mode_challenge_score_history;
+create policy "Challenge members can read score history"
+  on public.god_mode_challenge_score_history
+  for select
+  using (public.god_mode_is_friend_challenge_member(challenge_id));
+
+drop policy if exists "Participants can publish their score history" on public.god_mode_challenge_score_history;
+create policy "Participants can publish their score history"
+  on public.god_mode_challenge_score_history
+  for insert
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1
+      from public.god_mode_friend_challenge_participants participant
+      where participant.challenge_id = god_mode_challenge_score_history.challenge_id
+        and participant.user_id = auth.uid()
+        and participant.status = 'accepted'
+    )
+  );
+
+drop policy if exists "Participants can update their score history" on public.god_mode_challenge_score_history;
+create policy "Participants can update their score history"
+  on public.god_mode_challenge_score_history
+  for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Participants can delete their score history" on public.god_mode_challenge_score_history;
+create policy "Participants can delete their score history"
+  on public.god_mode_challenge_score_history
+  for delete
+  using (auth.uid() = user_id);
 
 create table if not exists public.god_mode_friend_events (
   id uuid primary key default gen_random_uuid(),
