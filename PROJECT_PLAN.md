@@ -62,10 +62,13 @@
 ## Reliability and architecture (beta-ready)
 
 - Vitest coverage for tracker scoring, privacy, challenge templates, history snapshots, row normalization, transient retries, and mocked social mutations
+- Playwright smoke coverage for daily logging, scoring, finalization, reload persistence, appearance persistence, and responsive overflow
+- Desktop Chromium and 390px touch-viewport projects with credential-gated cloud authentication coverage
+- CI-ready unit/browser commands plus a GitHub Actions template awaiting workflow-scoped repository authentication
 - Dedicated social and cloud Supabase service modules
 - Shared transient-error classification and safe-operation retry service
 - Clear offline status and retry controls for cloud and social features
-- Next: automated single-account and seeded two-account browser smoke tests
+- Next: isolated Supabase test accounts and a seeded two-account social browser suite
 
 ## Ongoing tracker pivot (complete)
 

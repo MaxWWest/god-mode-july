@@ -59,7 +59,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 ## Project status
 
 - Production beta: [god-mode-july.vercel.app](https://god-mode-july.vercel.app/)
-- Current automated coverage: 24 tracker, normalization, reliability, and social-service tests
+- Current automated coverage: 24 tracker/service tests plus 6 passing desktop/mobile browser scenarios
 - Production build uses feature-level code splitting and remains below Vite's chunk warning threshold
 - Core daily tracking works offline; authentication, cross-device sync, and Social require Supabase
 - The main remaining beta risk is end-to-end validation across real accounts, browsers, and installed iPhone PWAs
@@ -89,6 +89,22 @@ npm test
 ```
 
 Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, appearance normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
+
+Run the desktop and mobile Chromium smoke suite:
+
+```bash
+npm run test:e2e
+```
+
+The smoke suite covers daily meal/workout logging, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
+
+An optional existing-account Supabase check runs when credentials are provided explicitly:
+
+```bash
+E2E_USER_EMAIL="beta@example.com" E2E_USER_PASSWORD="your-password" npm run test:e2e
+```
+
+Credentials are read only by the local test process and should never be committed. A ready-to-enable workflow is included as `github-actions-test.yml.example`; move it to `.github/workflows/test.yml` after authenticating Git with a token that has GitHub's `workflow` scope.
 
 ## Current data model
 
@@ -150,9 +166,9 @@ Current social beta coverage:
 
 ### Priority 1: beta validation
 
-1. Add a browser smoke test for account creation/sign-in, daily logging, finalization, sync, reload persistence, and sign-out.
+1. Set up an isolated Supabase test project and seeded accounts for repeatable cloud-sync testing.
 2. Add a seeded two-account test for friend requests, challenge acceptance, score publishing, comments, and reactions.
-3. Run a real-device matrix across iPhone Safari, installed iPhone PWA, and desktop Chrome.
+3. Run the existing smoke suite against iPhone Safari and an installed iPhone PWA in addition to Chromium.
 4. Record reproducible beta failures with browser, device, app version, and sync state before expanding the feature set further.
 
 ### Priority 2: faster meal logging
