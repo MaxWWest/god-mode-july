@@ -2,11 +2,11 @@
 
 A mobile-first React + TypeScript progressive web app for tracking daily discipline, fitness, and nutrition habits without a fixed end date.
 
-## Included in this starter
+## Current beta capabilities
 
 - Vite + React + TypeScript
 - Installable PWA manifest and service worker
-- Responsive dark/purple interface
+- Responsive light/dark interface with customizable accent colors
 - Daily rule checklist
 - Detailed check-in form
 - Configurable tracker title and start date
@@ -16,7 +16,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Weekday-aware 7-day plans with recovery-day and next-workout guidance
 - Current-cycle exercise progress with completed, missed, and upcoming training dates
 - Common and custom diet goals with minimum, maximum, or avoid scoring plus custom units
-- Breakfast, lunch, dinner, and snack logging with reusable food names, macros, and categories
+- Breakfast, lunch, dinner, and snack logging with user-created food entries, macros, and categories
 - Automatic diet scoring from meal macros and food categories such as alcohol or dessert
 - Home quick logging for meals and workouts, with full review and editing in Check-In
 - Editable rules, goals, categories, and rule weights
@@ -56,6 +56,14 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Node.js 20.19+ or 22.12+
 - npm
 
+## Project status
+
+- Production beta: [god-mode-july.vercel.app](https://god-mode-july.vercel.app/)
+- Current automated coverage: 24 tracker, normalization, reliability, and social-service tests
+- Production build uses feature-level code splitting and remains below Vite's chunk warning threshold
+- Core daily tracking works offline; authentication, cross-device sync, and Social require Supabase
+- The main remaining beta risk is end-to-end validation across real accounts, browsers, and installed iPhone PWAs
+
 ## Run locally
 
 ```bash
@@ -80,7 +88,7 @@ Install prompts and service-worker behavior are most reliable from the productio
 npm test
 ```
 
-Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
+Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, appearance normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
 
 ## Current data model
 
@@ -140,27 +148,34 @@ Current social beta coverage:
 
 ## Recommended roadmap
 
-### Beta reliability completed
+### Priority 1: beta validation
 
-1. Consistent retryable error states now cover failed sync and social requests, with a clear offline banner and local-data reassurance.
-2. Safe reads and upserts retry transient network, timeout, rate-limit, and server failures without replaying non-idempotent creation actions.
-3. Service tests now cover friend-request, squad, and challenge mutations with a mocked Supabase client.
+1. Add a browser smoke test for account creation/sign-in, daily logging, finalization, sync, reload persistence, and sign-out.
+2. Add a seeded two-account test for friend requests, challenge acceptance, score publishing, comments, and reactions.
+3. Run a real-device matrix across iPhone Safari, installed iPhone PWA, and desktop Chrome.
+4. Record reproducible beta failures with browser, device, app version, and sync state before expanding the feature set further.
 
-### Next: beta test automation
+### Priority 2: faster meal logging
 
-1. Add an automated browser smoke test for account sign-in, daily check-in, local persistence, and sign-out.
-2. Add a seeded two-account browser test for friend requests and the challenge accept/publish flow.
-3. Run a small real-device beta matrix across iPhone Safari, installed iPhone PWA, and desktop Chrome.
+1. Add a personal food library so commonly logged foods retain their macros and categories.
+2. Add serving quantity with automatic macro scaling.
+3. Add recent foods, favorites, duplicate meal, and copy-yesterday shortcuts.
+4. Consider barcode lookup only after the manual food-library flow is fast and reliable.
 
-### Then: stronger competition
+### Priority 3: challenge lifecycle controls
 
-1. Add direct challenge links or short join codes so an accepted friend can open the app directly to an invite.
-2. Add owner controls for removing participants, canceling pending invites, leaving challenges, and removing squad members safely.
-3. Add challenge lifecycle controls for editing upcoming challenges, ending active challenges early, and archiving or deleting completed challenges.
-4. Add notification badges for new comments and reactions since the feed was last opened.
+1. Add direct challenge links or short join codes that open the relevant invite in the PWA.
+2. Let owners cancel pending invites, remove participants, and end active challenges safely.
+3. Let members leave challenges and squads with clear score-history behavior.
+4. Add unread badges for new comments, reactions, and challenge updates.
 
-### Later: engagement
+### Priority 4: daily review polish
 
-1. Add lightweight replies or comments only if score reactions prove too limited during friend testing.
-2. Add optional closed-app push notifications only if the extra backend and delivery setup becomes worthwhile; local open-app reminders remain the current default.
-3. Consider custom profile photos, achievement badges, and broader discovery only after private friend competition feels reliable.
+1. Add a clearer end-of-day review showing missing inputs before finalization.
+2. Add weekly summaries that explain which rules helped or hurt the score most.
+3. Add optional notes to individual workouts and meals without exposing them socially.
+4. Continue accessibility, empty-state, and slow-network testing as each workflow changes.
+
+### Deliberately later
+
+- Closed-app push notifications, public discovery, profile photos, achievement systems, and barcode-provider integrations should wait until private beta reliability and repeat daily use are proven.
