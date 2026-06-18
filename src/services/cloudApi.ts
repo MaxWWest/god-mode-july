@@ -8,6 +8,8 @@ import {
   normalizeFriendChallengeRow,
   normalizeChallengeScoreSnapshotRow,
   normalizeFriendEventRow,
+  normalizeFriendEventCommentRow,
+  normalizeFriendEventReactionRow,
   normalizeFriendProfileRow,
   normalizeFriendSquadMemberRow,
   normalizeFriendSquadRow,
@@ -19,6 +21,8 @@ import {
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIEND_EVENT_TABLE,
+  SUPABASE_FRIEND_EVENT_COMMENT_TABLE,
+  SUPABASE_FRIEND_EVENT_REACTION_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_PROFILE_TABLE,
   SUPABASE_SQUAD_MEMBER_TABLE,
@@ -36,6 +40,8 @@ import type {
   FriendChallenge,
   FriendChallengeParticipant,
   FriendEvent,
+  FriendEventComment,
+  FriendEventReaction,
   FriendSquad,
   FriendSquadMember,
   FriendshipRow,
@@ -88,7 +94,7 @@ export async function buildAccountDataExport(
 
   const challengeData = await loadChallengeExportData(client, user.id)
   const squadData = await loadSquadExportData(client, user.id)
-  const events = await loadEventExportData(client, user.id)
+  const eventData = await loadEventExportData(client, user.id)
 
   return {
     app: 'god-mode-july',
@@ -108,7 +114,9 @@ export async function buildAccountDataExport(
       challengeScoreSnapshots: challengeData.history,
       friendSquads: squadData.squads,
       friendSquadMembers: squadData.members,
-      friendEvents: events,
+      friendEvents: eventData.events,
+      friendEventComments: eventData.comments,
+      friendEventReactions: eventData.reactions,
     },
   }
 }
@@ -187,19 +195,44 @@ async function loadSquadExportData(client: SupabaseClient, userId: string) {
   }
 }
 
-async function loadEventExportData(client: SupabaseClient, userId: string): Promise<FriendEvent[]> {
-  const { data, error } = await client.from(SUPABASE_FRIEND_EVENT_TABLE)
-    .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
-    .or(`actor_id.eq.${userId},target_user_id.eq.${userId}`)
-  if (error) {
-    if (isFriendEventSchemaError(error)) return []
-    throw error
+async function loadEventExportData(client: SupabaseClient, userId: string): Promise<{
+  events: FriendEvent[]
+  comments: FriendEventComment[]
+  reactions: FriendEventReaction[]
+}> {
+  const [eventResult, commentResult, reactionResult] = await Promise.all([
+    client.from(SUPABASE_FRIEND_EVENT_TABLE)
+      .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
+      .or(`actor_id.eq.${userId},target_user_id.eq.${userId}`),
+    client.from(SUPABASE_FRIEND_EVENT_COMMENT_TABLE)
+      .select('id, event_id, user_id, body, created_at, updated_at')
+      .eq('user_id', userId),
+    client.from(SUPABASE_FRIEND_EVENT_REACTION_TABLE)
+      .select('event_id, user_id, reaction, created_at')
+      .eq('user_id', userId),
+  ])
+  if (eventResult.error) {
+    if (isFriendEventSchemaError(eventResult.error)) return { events: [], comments: [], reactions: [] }
+    throw eventResult.error
   }
-  return (data ?? []).map(normalizeFriendEventRow).filter((row): row is FriendEvent => row !== null)
+  for (const interactionError of [commentResult.error, reactionResult.error]) {
+    if (interactionError && !isFriendEventSchemaError(interactionError)) throw interactionError
+  }
+  return {
+    events: (eventResult.data ?? []).map(normalizeFriendEventRow).filter((row): row is FriendEvent => row !== null),
+    comments: (commentResult.error ? [] : commentResult.data ?? [])
+      .map(normalizeFriendEventCommentRow)
+      .filter((row): row is FriendEventComment => row !== null),
+    reactions: (reactionResult.error ? [] : reactionResult.data ?? [])
+      .map(normalizeFriendEventReactionRow)
+      .filter((row): row is FriendEventReaction => row !== null),
+  }
 }
 
 export async function deleteCloudAccountData(client: SupabaseClient, userId: string): Promise<void> {
   const deletions = [
+    { query: client.from(SUPABASE_FRIEND_EVENT_COMMENT_TABLE).delete().eq('user_id', userId), optional: isFriendEventSchemaError },
+    { query: client.from(SUPABASE_FRIEND_EVENT_REACTION_TABLE).delete().eq('user_id', userId), optional: isFriendEventSchemaError },
     { query: client.from(SUPABASE_FRIEND_EVENT_TABLE).delete().or(`actor_id.eq.${userId},target_user_id.eq.${userId}`), optional: isFriendEventSchemaError },
     { query: client.from(SUPABASE_CHALLENGE_SCORE_HISTORY_TABLE).delete().eq('user_id', userId), optional: isChallengeScoreHistorySchemaError },
     { query: client.from(SUPABASE_FRIEND_CHALLENGE_TABLE).delete().eq('creator_id', userId), optional: isFriendChallengeSchemaError },

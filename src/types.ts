@@ -144,6 +144,8 @@ export type AccountDataExport = {
     friendSquads: FriendSquad[]
     friendSquadMembers: FriendSquadMember[]
     friendEvents: FriendEvent[]
+    friendEventComments: FriendEventComment[]
+    friendEventReactions: FriendEventReaction[]
   }
 }
 
@@ -338,6 +340,7 @@ export type CreateFriendChallengeInput = {
   endDate: string
   scoringMode: FriendChallengeScoringMode
   inviteeIds: string[]
+  ruleKeys: RuleKey[]
   templateId?: string
 }
 
@@ -390,15 +393,51 @@ export type FriendEvent = {
   eventType: FriendEventType
   metadata: Record<string, unknown>
   createdAt: string
+  comments: FriendEventComment[]
+  reactions: FriendEventReaction[]
+}
+
+export type FriendFeedReaction = 'strong' | 'respect' | 'inspired'
+
+export type FriendEventComment = {
+  id: string
+  eventId: string
+  userId: string
+  body: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type FriendEventReaction = {
+  eventId: string
+  userId: string
+  reaction: FriendFeedReaction
+  createdAt: string
+}
+
+export type FriendActivityComment = FriendEventComment & {
+  displayName: string
+  isCurrentUser: boolean
+}
+
+export type FriendActivityReaction = {
+  key: FriendFeedReaction
+  label: string
+  count: number
+  selected: boolean
 }
 
 export type FriendActivityFeedItem = {
   id: string
+  eventId: string | null
   title: string
   detail: string
   meta: string
   tone: 'success' | 'pending' | 'neutral'
   sortAt: string
+  shareText: string
+  comments: FriendActivityComment[]
+  reactions: FriendActivityReaction[]
 }
 
 export type InstallPromptEvent = Event & {

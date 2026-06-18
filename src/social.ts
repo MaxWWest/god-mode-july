@@ -2,6 +2,7 @@ import type {
   ChallengeTemplate,
   FriendChallenge,
   FriendChallengeParticipantStatus,
+  FriendFeedReaction,
   FriendsTab,
   ScoreReaction,
 } from './types'
@@ -13,13 +14,19 @@ export const SCORE_REACTIONS: { key: ScoreReaction; label: string }[] = [
   { key: 'respect', label: 'Respect' },
 ]
 
+export const FRIEND_FEED_REACTIONS: { key: FriendFeedReaction; label: string }[] = [
+  { key: 'strong', label: 'Strong' },
+  { key: 'respect', label: 'Respect' },
+  { key: 'inspired', label: 'Inspired' },
+]
+
 export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
   {
     id: 'custom',
     name: 'Custom',
     durationDays: 7,
     scoringMode: 'personal',
-    note: 'Start from a blank challenge.',
+    note: 'Start from your active rules, then choose what counts.',
   },
   {
     id: 'no-zero-days',
@@ -102,6 +109,10 @@ export const FRIENDS_TABS: { key: FriendsTab; label: string }[] = [
 
 export function normalizeScoreReaction(value: unknown): ScoreReaction | null {
   return SCORE_REACTIONS.some((reaction) => reaction.key === value) ? value as ScoreReaction : null
+}
+
+export function normalizeFriendFeedReaction(value: unknown): FriendFeedReaction | null {
+  return FRIEND_FEED_REACTIONS.some((reaction) => reaction.key === value) ? value as FriendFeedReaction : null
 }
 
 export function challengeTemplateById(templateId?: string): ChallengeTemplate {

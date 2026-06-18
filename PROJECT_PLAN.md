@@ -48,8 +48,10 @@
 - Share-safe challenge summaries
 - Friends leaderboard for last-7-day completion, average completion, streaks, and logged days
 - Invite-only custom friend challenges with personal-target or shared-rule scoring
+- Selectable built-in and custom rules per friend challenge, with missing controls imported on acceptance
 - Challenge accept/decline flow and per-challenge score publishing
-- Private squads, challenge templates, stored activity events, and friend profiles
+- Private squads, challenge templates, interactive stored activity events, and friend profiles
+- Feed comments, reactions, and native sharing with event-level privacy
 - Per-day published challenge score history
 
 ## Reliability and architecture (beta-ready)

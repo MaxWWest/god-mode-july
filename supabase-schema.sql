@@ -608,3 +608,139 @@ create policy "Users can delete their friend events"
   on public.god_mode_friend_events
   for delete
   using (auth.uid() = actor_id or auth.uid() = target_user_id);
+
+create or replace function public.god_mode_can_view_friend_event(target_event_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.god_mode_friend_events event
+    where event.id = target_event_id
+      and (
+        auth.uid() = event.actor_id
+        or auth.uid() = event.target_user_id
+        or public.god_mode_is_friend_challenge_member(event.challenge_id)
+        or exists (
+          select 1
+          from public.god_mode_squads squad
+          where squad.id = event.squad_id
+            and squad.owner_id = auth.uid()
+        )
+        or exists (
+          select 1
+          from public.god_mode_squad_members member
+          where member.squad_id = event.squad_id
+            and member.user_id = auth.uid()
+        )
+        or exists (
+          select 1
+          from public.god_mode_friendships friendship
+          where friendship.status = 'accepted'
+            and (
+              (friendship.user_a = auth.uid() and friendship.user_b = event.actor_id)
+              or (friendship.user_b = auth.uid() and friendship.user_a = event.actor_id)
+              or (event.target_user_id is not null and friendship.user_a = auth.uid() and friendship.user_b = event.target_user_id)
+              or (event.target_user_id is not null and friendship.user_b = auth.uid() and friendship.user_a = event.target_user_id)
+            )
+        )
+      )
+  );
+$$;
+
+create table if not exists public.god_mode_friend_event_comments (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.god_mode_friend_events(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint god_mode_friend_event_comments_body_check check (
+    char_length(btrim(body)) between 1 and 400
+  )
+);
+
+create table if not exists public.god_mode_friend_event_reactions (
+  event_id uuid not null references public.god_mode_friend_events(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reaction text not null,
+  created_at timestamptz not null default now(),
+  primary key (event_id, user_id),
+  constraint god_mode_friend_event_reactions_type_check check (
+    reaction in ('strong', 'respect', 'inspired')
+  )
+);
+
+create index if not exists god_mode_friend_event_comments_event_created_idx
+  on public.god_mode_friend_event_comments(event_id, created_at);
+
+create index if not exists god_mode_friend_event_reactions_event_idx
+  on public.god_mode_friend_event_reactions(event_id);
+
+alter table public.god_mode_friend_event_comments enable row level security;
+alter table public.god_mode_friend_event_reactions enable row level security;
+
+drop policy if exists "Users can read visible event comments" on public.god_mode_friend_event_comments;
+create policy "Users can read visible event comments"
+  on public.god_mode_friend_event_comments
+  for select
+  using (public.god_mode_can_view_friend_event(event_id));
+
+drop policy if exists "Users can comment on visible events" on public.god_mode_friend_event_comments;
+create policy "Users can comment on visible events"
+  on public.god_mode_friend_event_comments
+  for insert
+  with check (
+    auth.uid() = user_id
+    and public.god_mode_can_view_friend_event(event_id)
+  );
+
+drop policy if exists "Users can update their event comments" on public.god_mode_friend_event_comments;
+create policy "Users can update their event comments"
+  on public.god_mode_friend_event_comments
+  for update
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and public.god_mode_can_view_friend_event(event_id)
+  );
+
+drop policy if exists "Users can delete their event comments" on public.god_mode_friend_event_comments;
+create policy "Users can delete their event comments"
+  on public.god_mode_friend_event_comments
+  for delete
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can read visible event reactions" on public.god_mode_friend_event_reactions;
+create policy "Users can read visible event reactions"
+  on public.god_mode_friend_event_reactions
+  for select
+  using (public.god_mode_can_view_friend_event(event_id));
+
+drop policy if exists "Users can react to visible events" on public.god_mode_friend_event_reactions;
+create policy "Users can react to visible events"
+  on public.god_mode_friend_event_reactions
+  for insert
+  with check (
+    auth.uid() = user_id
+    and public.god_mode_can_view_friend_event(event_id)
+  );
+
+drop policy if exists "Users can update their event reactions" on public.god_mode_friend_event_reactions;
+create policy "Users can update their event reactions"
+  on public.god_mode_friend_event_reactions
+  for update
+  using (auth.uid() = user_id)
+  with check (
+    auth.uid() = user_id
+    and public.god_mode_can_view_friend_event(event_id)
+  );
+
+drop policy if exists "Users can delete their event reactions" on public.god_mode_friend_event_reactions;
+create policy "Users can delete their event reactions"
+  on public.god_mode_friend_event_reactions
+  for delete
+  using (auth.uid() = user_id);

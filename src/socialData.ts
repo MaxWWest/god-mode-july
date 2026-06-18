@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js'
-import { challengeTemplateById, normalizeScoreReaction } from './social'
+import { challengeTemplateById, normalizeFriendFeedReaction, normalizeScoreReaction } from './social'
 import {
   BUILT_IN_RULE_KEYS,
   DEFAULT_PRIVACY_SETTINGS,
@@ -30,6 +30,8 @@ import type {
   FriendChallengeParticipantStatus,
   FriendChallengeScoringMode,
   FriendEvent,
+  FriendEventComment,
+  FriendEventReaction,
   FriendEventType,
   FriendProfile,
   FriendSquad,
@@ -37,6 +39,7 @@ import type {
   FriendshipRow,
   FriendshipStatus,
   PrivacySettings,
+  RuleKey,
 } from './types'
 
 function currentStreak(entries: EntryMap, throughDate: string, settings: ChallengeSettings): number {
@@ -122,7 +125,13 @@ function getChallengeElapsedDates(challenge: Pick<FriendChallenge, 'startDate' |
 }
 
 function settingsForFriendChallenge(challenge: FriendChallenge, personalSettings: ChallengeSettings): ChallengeSettings {
-  const sourceSettings = challenge.scoringMode === 'shared' ? challenge.settings : personalSettings
+  const selectedRuleKeys = new Set(challenge.settings.rules.filter((rule) => rule.enabled && !rule.deleted).map((rule) => rule.key))
+  const sourceSettings = challenge.scoringMode === 'shared'
+    ? challenge.settings
+    : {
+      ...personalSettings,
+      rules: personalSettings.rules.map((rule) => ({ ...rule, enabled: selectedRuleKeys.has(rule.key) })),
+    }
   return normalizeSettings({
     ...sourceSettings,
     title: challenge.name,
@@ -222,9 +231,11 @@ export function buildChallengeSettingsForTemplate(
   title: string,
   startDate: string,
   endDate: string,
+  selectedRuleKeys?: RuleKey[],
 ): ChallengeSettings {
   const template = challengeTemplateById(templateId)
   const targets = { ...baseSettings.targets, ...(template.targetOverrides ?? {}) }
+  const selectedRules = selectedRuleKeys ? new Set(selectedRuleKeys) : null
   const rules = baseSettings.rules.map((rule) => {
     const builtInKey = BUILT_IN_RULE_KEYS.includes(rule.key as BuiltInRuleKey) ? rule.key as BuiltInRuleKey : null
     const override = builtInKey ? template.ruleOverrides?.[builtInKey] : undefined
@@ -243,10 +254,36 @@ export function buildChallengeSettingsForTemplate(
         nextRule.diet = { ...rule.diet, goal: template.targetOverrides.waterLiters }
       }
     }
-    return nextRule
+    return selectedRules ? { ...nextRule, enabled: selectedRules.has(rule.key) } : nextRule
   })
 
   return normalizeSettings({ ...baseSettings, title, startDate, endDate, targets, rules })
+}
+
+export function mergeChallengeRulesIntoSettings(
+  personalSettings: ChallengeSettings,
+  challengeSettings: ChallengeSettings,
+): ChallengeSettings {
+  const selectedRules = challengeSettings.rules.filter((rule) => rule.enabled && !rule.deleted)
+  const selectedByKey = new Map(selectedRules.map((rule) => [rule.key, rule]))
+  const personalRuleKeys = new Set(personalSettings.rules.map((rule) => rule.key))
+  const rules = personalSettings.rules.map((rule) => (
+    selectedByKey.has(rule.key) && !rule.enabled ? { ...rule, enabled: true, deleted: false } : rule
+  ))
+  for (const rule of selectedRules) {
+    if (!personalRuleKeys.has(rule.key)) rules.push({ ...rule, enabled: true, deleted: false })
+  }
+
+  const categoryKeys = new Set(personalSettings.categories.map((category) => category.key))
+  const categories = [...personalSettings.categories]
+  for (const category of challengeSettings.categories) {
+    if (!categoryKeys.has(category.key) && selectedRules.some((rule) => rule.category === category.key)) {
+      categories.push(category)
+      categoryKeys.add(category.key)
+    }
+  }
+
+  return normalizeSettings({ ...personalSettings, categories, rules })
 }
 
 export function generateInviteCode(userId: string): string {
@@ -359,7 +396,7 @@ export function isFriendSquadSchemaError(error: unknown): boolean {
 
 export function isFriendEventSchemaError(error: unknown): boolean {
   const message = schemaErrorMessage(error)
-  return message.includes('god_mode_friend_events') || message.includes('event_type') || message.includes('metadata') || message.includes('relation') || message.includes('column')
+  return message.includes('god_mode_friend_event') || message.includes('event_type') || message.includes('metadata') || message.includes('reaction') || message.includes('relation') || message.includes('column')
 }
 
 export function isSummarySchemaError(error: unknown): boolean {
@@ -483,6 +520,35 @@ export function normalizeFriendEventRow(row: unknown): FriendEvent | null {
     squadId: typeof candidate.squad_id === 'string' ? candidate.squad_id : null,
     eventType: normalizeFriendEventType(candidate.event_type),
     metadata,
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+    comments: [],
+    reactions: [],
+  }
+}
+
+export function normalizeFriendEventCommentRow(row: unknown): FriendEventComment | null {
+  const candidate = row && typeof row === 'object' ? row as Record<string, unknown> : null
+  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.event_id !== 'string' || typeof candidate.user_id !== 'string') return null
+  const body = normalizeText(candidate.body).trim().slice(0, 400)
+  if (!body) return null
+  return {
+    id: candidate.id,
+    eventId: candidate.event_id,
+    userId: candidate.user_id,
+    body,
+    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
+    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : new Date().toISOString(),
+  }
+}
+
+export function normalizeFriendEventReactionRow(row: unknown): FriendEventReaction | null {
+  const candidate = row && typeof row === 'object' ? row as Record<string, unknown> : null
+  const reaction = normalizeFriendFeedReaction(candidate?.reaction)
+  if (!candidate || typeof candidate.event_id !== 'string' || typeof candidate.user_id !== 'string' || !reaction) return null
+  return {
+    eventId: candidate.event_id,
+    userId: candidate.user_id,
+    reaction,
     createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
   }
 }

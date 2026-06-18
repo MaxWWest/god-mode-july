@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
   CHALLENGE_TEMPLATES,
+  FRIEND_FEED_REACTIONS,
   FRIENDS_TABS,
   SCORE_REACTIONS,
   challengeTemplateById,
@@ -21,6 +22,7 @@ import type {
   FriendChallengeScoringMode,
   FriendChallengeView,
   FriendEvent,
+  FriendFeedReaction,
   FriendProfile,
   FriendRequest,
   FriendSquadView,
@@ -29,9 +31,11 @@ import type {
   LeaderboardRow,
   PrivacySettings,
   RuleConfig,
+  RuleKey,
   ScoreReaction,
   UpdateFriendSquadInput,
 } from '../types'
+import { buildChallengeSettingsForTemplate } from '../socialData'
 import { CheckField, TextArea, TextField } from '../ui'
 
 function addDays(date: string, amount: number): string {
@@ -97,6 +101,7 @@ function buildFriendActivityFeed({
   for (const request of friendRequests) {
     feed.push({
       id: `request-${request.userA}-${request.userB}`,
+      eventId: null,
       title: request.direction === 'incoming' ? 'Friend request received' : 'Friend request sent',
       detail: request.direction === 'incoming'
         ? `${request.displayName} wants to connect.`
@@ -104,12 +109,16 @@ function buildFriendActivityFeed({
       meta: formatActivityDate(request.createdAt),
       tone: 'pending',
       sortAt: request.createdAt,
+      shareText: `${request.displayName} joined your God Mode network.`,
+      comments: [],
+      reactions: [],
     })
   }
 
   for (const squad of friendSquads) {
     feed.push({
       id: `squad-${squad.id}`,
+      eventId: null,
       title: `${squad.name} squad`,
       detail: squad.members.length === 0
         ? 'No active members yet.'
@@ -117,6 +126,9 @@ function buildFriendActivityFeed({
       meta: formatActivityDate(squad.updatedAt),
       tone: squad.members.length > 0 ? 'success' : 'neutral',
       sortAt: squad.updatedAt,
+      shareText: `${squad.name} is getting ready in God Mode.`,
+      comments: [],
+      reactions: [],
     })
   }
 
@@ -125,6 +137,7 @@ function buildFriendActivityFeed({
     const pendingCount = challenge.participants.filter((participant) => participant.status === 'pending').length
     feed.push({
       id: `challenge-${challenge.id}`,
+      eventId: null,
       title: challenge.currentUserStatus === 'pending' && !challenge.isCreator ? 'Challenge invite waiting' : challenge.name,
       detail: challenge.currentUserStatus === 'pending' && !challenge.isCreator
         ? `Accept or decline ${challenge.name}.`
@@ -132,6 +145,9 @@ function buildFriendActivityFeed({
       meta: `${formatShortDate(challenge.startDate)} - ${formatShortDate(challenge.endDate)}`,
       tone: challenge.currentUserStatus === 'pending' && !challenge.isCreator ? 'pending' : 'neutral',
       sortAt: challenge.updatedAt,
+      shareText: `${challenge.name} runs ${formatShortDate(challenge.startDate)} - ${formatShortDate(challenge.endDate)} in God Mode.`,
+      comments: [],
+      reactions: [],
     })
   }
 
@@ -139,11 +155,15 @@ function buildFriendActivityFeed({
     if (row.isCurrentUser || !row.summary) continue
     feed.push({
       id: `summary-${row.userId}-${row.summary.updatedAt}`,
+      eventId: null,
       title: `${row.displayName} published a score`,
       detail: `${formatSummaryMetric(row.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)} last 7 days.`,
       meta: formatActivityDate(row.summary.updatedAt),
       tone: 'success',
       sortAt: row.summary.updatedAt,
+      shareText: `${row.displayName} published a ${row.summary.weeklyCompletion}% 7-day score in God Mode.`,
+      comments: [],
+      reactions: [],
     })
   }
 
@@ -267,13 +287,28 @@ function buildStoredFriendActivityFeed({
         break
     }
 
+    const comments = event.comments.map((comment) => ({
+      ...comment,
+      displayName: eventProfileName(comment.userId, profilesByUserId, currentUserId),
+      isCurrentUser: comment.userId === currentUserId,
+    }))
+    const reactions = FRIEND_FEED_REACTIONS.map((feedReaction) => ({
+      ...feedReaction,
+      count: event.reactions.filter((reaction) => reaction.reaction === feedReaction.key).length,
+      selected: event.reactions.some((reaction) => reaction.userId === currentUserId && reaction.reaction === feedReaction.key),
+    }))
+
     return {
       id: `event-${event.id}`,
+      eventId: event.id,
       title,
       detail,
       meta: formatActivityDate(event.createdAt),
       tone,
       sortAt: event.createdAt,
+      shareText: `${title}\n${detail}\nShared from God Mode`,
+      comments,
+      reactions,
     }
   }).sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime()).slice(0, 20)
 }
@@ -289,6 +324,7 @@ export default function FriendsView({
   friendChallenges,
   friendSquads,
   friendEvents,
+  settings,
   privacySettings,
   status,
   busy,
@@ -310,6 +346,10 @@ export default function FriendsView({
   onAcceptChallenge,
   onDeclineChallenge,
   onPublishChallengeScore,
+  onCommentEvent,
+  onDeleteEventComment,
+  onReactEvent,
+  onShareEvent,
   onPublishSummary,
   onRefresh,
   onOpenSettings,
@@ -324,6 +364,7 @@ export default function FriendsView({
   friendChallenges: FriendChallengeView[]
   friendSquads: FriendSquadView[]
   friendEvents: FriendEvent[]
+  settings: ChallengeSettings
   privacySettings: PrivacySettings
   status: DataStatus
   busy: boolean
@@ -345,6 +386,10 @@ export default function FriendsView({
   onAcceptChallenge: (challengeId: string) => void
   onDeclineChallenge: (challengeId: string) => void
   onPublishChallengeScore: (challengeId: string, note?: string, reaction?: ScoreReaction | null) => void
+  onCommentEvent: (eventId: string, body: string) => void
+  onDeleteEventComment: (commentId: string) => void
+  onReactEvent: (eventId: string, reaction: FriendFeedReaction | null) => void
+  onShareEvent: (text: string) => void
   onPublishSummary: () => void
   onRefresh: () => void
   onOpenSettings: () => void
@@ -359,6 +404,7 @@ export default function FriendsView({
   const [challengeEndDate, setChallengeEndDate] = useState(addDays(todayIso(), 6))
   const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>('personal')
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
+  const [challengeRuleKeys, setChallengeRuleKeys] = useState<RuleKey[]>(() => getEnabledRules(settings).map((rule) => rule.key))
   const [squadName, setSquadName] = useState('Training Squad')
   const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null)
@@ -388,12 +434,29 @@ export default function FriendsView({
   const selectedChallenge = selectedChallengeId ? friendChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null : null
   const selectedFriend = selectedFriendId ? acceptedFriends.find((friend) => friend.userId === selectedFriendId) ?? null : null
   const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
+  const availableChallengeRules = settings.rules.filter((rule) => !rule.deleted)
+
+  useEffect(() => {
+    const availableKeys = new Set(availableChallengeRules.map((rule) => rule.key))
+    setChallengeRuleKeys((current) => {
+      const valid = current.filter((key) => availableKeys.has(key))
+      return valid.length > 0 ? valid : getEnabledRules(settings).map((rule) => rule.key)
+    })
+  }, [settings.rules])
 
   function toggleChallengeInvite(userId: string) {
     setChallengeInviteIds((current) => (
       current.includes(userId)
         ? current.filter((id) => id !== userId)
         : [...current, userId]
+    ))
+  }
+
+  function toggleChallengeRule(ruleKey: RuleKey) {
+    setChallengeRuleKeys((current) => (
+      current.includes(ruleKey)
+        ? current.filter((key) => key !== ruleKey)
+        : [...current, ruleKey]
     ))
   }
 
@@ -413,10 +476,21 @@ export default function FriendsView({
   function applyChallengeTemplate(templateId: string) {
     const template = CHALLENGE_TEMPLATES.find((item) => item.id === templateId) ?? CHALLENGE_TEMPLATES[0]
     setChallengeTemplateId(template.id)
-    if (template.id === 'custom') return
+    if (template.id === 'custom') {
+      setChallengeRuleKeys(getEnabledRules(settings).map((rule) => rule.key))
+      return
+    }
 
     setChallengeName(template.name)
     setChallengeScoringMode(template.scoringMode)
+    const previewSettings = buildChallengeSettingsForTemplate(
+      settings,
+      template.id,
+      template.name,
+      challengeStartDate,
+      challengeEndDate,
+    )
+    setChallengeRuleKeys(getEnabledRules(previewSettings).map((rule) => rule.key))
     if (isIsoDate(challengeStartDate)) setChallengeEndDate(addDays(challengeStartDate, template.durationDays - 1))
   }
 
@@ -444,6 +518,7 @@ export default function FriendsView({
       endDate: challengeEndDate,
       scoringMode: challengeScoringMode,
       inviteeIds: challengeInviteIds.filter((userId) => acceptedFriendIds.has(userId)),
+      ruleKeys: challengeRuleKeys,
       templateId: challengeTemplateId,
     })
   }
@@ -603,7 +678,14 @@ export default function FriendsView({
           </div>
           <span>{activityFeed.length}</span>
         </div>
-        <FriendActivityFeed items={activityFeed} />
+        <FriendActivityFeed
+          items={activityFeed}
+          busy={busy}
+          onComment={onCommentEvent}
+          onDeleteComment={onDeleteEventComment}
+          onReact={onReactEvent}
+          onShare={onShareEvent}
+        />
       </section>
         </>
       )}
@@ -754,6 +836,30 @@ export default function FriendsView({
             <TextField label="Start" type="date" value={challengeStartDate} onChange={updateChallengeStartDate} />
             <TextField label="End" type="date" value={challengeEndDate} onChange={setChallengeEndDate} />
           </div>
+          <div className="challenge-rule-picker">
+            <div className="challenge-rule-picker-heading">
+              <div>
+                <small>Challenge rules</small>
+                <p>Choose what counts. Custom rules from your tracker are available here too.</p>
+              </div>
+              <strong>{challengeRuleKeys.length} selected</strong>
+            </div>
+            <div className="challenge-rule-options">
+              {availableChallengeRules.map((rule) => (
+                <label className="challenge-rule-option" key={rule.key}>
+                  <input
+                    type="checkbox"
+                    checked={challengeRuleKeys.includes(rule.key)}
+                    onChange={() => toggleChallengeRule(rule.key)}
+                  />
+                  <span>
+                    <strong>{rule.label}</strong>
+                    <small>{settings.categories.find((category) => category.key === rule.category)?.label ?? rule.category}{rule.key.startsWith('custom-') ? ' · Custom' : ''}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="challenge-invite-picker">
             <small>Invite friends</small>
             {friendSquads.length > 0 && (
@@ -782,7 +888,7 @@ export default function FriendsView({
               </div>
             )}
           </div>
-          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim()}>
+          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim() || challengeRuleKeys.length === 0}>
             Create Challenge
           </button>
         </div>
@@ -934,7 +1040,21 @@ function FriendRequestCard({
   )
 }
 
-function FriendActivityFeed({ items }: { items: FriendActivityFeedItem[] }) {
+function FriendActivityFeed({
+  items,
+  busy,
+  onComment,
+  onDeleteComment,
+  onReact,
+  onShare,
+}: {
+  items: FriendActivityFeedItem[]
+  busy: boolean
+  onComment: (eventId: string, body: string) => void
+  onDeleteComment: (commentId: string) => void
+  onReact: (eventId: string, reaction: FriendFeedReaction | null) => void
+  onShare: (text: string) => void
+}) {
   if (items.length === 0) {
     return <p className="empty-leaderboard">No squad or friend activity yet.</p>
   }
@@ -942,16 +1062,111 @@ function FriendActivityFeed({ items }: { items: FriendActivityFeedItem[] }) {
   return (
     <div className="activity-list">
       {items.map((item) => (
-        <article className={`activity-card ${item.tone}`} key={item.id}>
-          <div className="activity-dot" />
-          <div>
-            <strong>{item.title}</strong>
-            <p>{item.detail}</p>
-          </div>
-          <small>{item.meta}</small>
-        </article>
+        <FriendActivityCard
+          key={item.id}
+          item={item}
+          busy={busy}
+          onComment={onComment}
+          onDeleteComment={onDeleteComment}
+          onReact={onReact}
+          onShare={onShare}
+        />
       ))}
     </div>
+  )
+}
+
+function FriendActivityCard({
+  item,
+  busy,
+  onComment,
+  onDeleteComment,
+  onReact,
+  onShare,
+}: {
+  item: FriendActivityFeedItem
+  busy: boolean
+  onComment: (eventId: string, body: string) => void
+  onDeleteComment: (commentId: string) => void
+  onReact: (eventId: string, reaction: FriendFeedReaction | null) => void
+  onShare: (text: string) => void
+}) {
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [commentDraft, setCommentDraft] = useState('')
+
+  function submitComment() {
+    if (!item.eventId || !commentDraft.trim()) return
+    onComment(item.eventId, commentDraft)
+    setCommentDraft('')
+    setCommentOpen(false)
+  }
+
+  return (
+    <article className={`activity-card ${item.tone}`}>
+      <div className="activity-card-main">
+        <div className="activity-dot" />
+        <div className="activity-copy">
+          <strong>{item.title}</strong>
+          <p>{item.detail}</p>
+        </div>
+        <small>{item.meta}</small>
+      </div>
+
+      {item.eventId && (
+        <div className="activity-reaction-row" aria-label="Reactions">
+          {item.reactions.map((reaction) => (
+            <button
+              className={reaction.selected ? 'selected' : ''}
+              type="button"
+              key={reaction.key}
+              disabled={busy}
+              aria-pressed={reaction.selected}
+              onClick={() => onReact(item.eventId!, reaction.selected ? null : reaction.key)}
+            >
+              {reaction.label}{reaction.count > 0 ? ` ${reaction.count}` : ''}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="activity-action-row">
+        {item.eventId && (
+          <button type="button" onClick={() => setCommentOpen((open) => !open)} disabled={busy}>
+            Comment{item.comments.length > 0 ? ` ${item.comments.length}` : ''}
+          </button>
+        )}
+        <button type="button" onClick={() => onShare(item.shareText)} disabled={busy}>Share</button>
+      </div>
+
+      {item.comments.length > 0 && (
+        <div className="activity-comments">
+          {item.comments.map((comment) => (
+            <div className="activity-comment" key={comment.id}>
+              <div>
+                <strong>{comment.displayName}</strong>
+                <p>{comment.body}</p>
+              </div>
+              {comment.isCurrentUser && (
+                <button type="button" onClick={() => onDeleteComment(comment.id)} disabled={busy}>Delete</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {commentOpen && item.eventId && (
+        <div className="activity-comment-form">
+          <TextField
+            label="Add a comment"
+            value={commentDraft}
+            onChange={(value) => setCommentDraft(value.slice(0, 400))}
+          />
+          <button className="secondary-button compact-button" type="button" onClick={submitComment} disabled={busy || !commentDraft.trim()}>
+            Post
+          </button>
+        </div>
+      )}
+    </article>
   )
 }
 

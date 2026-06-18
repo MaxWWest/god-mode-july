@@ -4,6 +4,7 @@ import {
   buildChallengeSummary,
   buildFriendChallengeSnapshots,
   buildFriendChallengeSummary,
+  mergeChallengeRulesIntoSettings,
   normalizeChallengeScoreSnapshotRow,
   normalizeFriendChallengeParticipantRow,
   normalizeSummaryRow,
@@ -36,6 +37,56 @@ describe('social challenge data', () => {
     })
     expect(settings.rules.find((rule) => rule.key === 'exercise')?.exercise?.targetMinutes).toBe(45)
     expect(settings.rules.find((rule) => rule.key === 'water')?.diet?.goal).toBe(3)
+  })
+
+  it('snapshots an explicit mix of built-in and custom challenge rules', () => {
+    const customRule = {
+      key: 'custom-focus-work' as const,
+      label: 'Deep focus',
+      icon: 'F',
+      enabled: true,
+      weight: 'supporting' as const,
+      category: 'mental',
+    }
+    const baseSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      rules: [...DEFAULT_SETTINGS.rules, customRule],
+    })
+    const settings = buildChallengeSettingsForTemplate(
+      baseSettings,
+      'custom',
+      'Focus week',
+      '2026-06-18',
+      '2026-06-24',
+      ['exercise', customRule.key],
+    )
+
+    expect(settings.rules.filter((rule) => rule.enabled).map((rule) => rule.key)).toEqual(['exercise', customRule.key])
+  })
+
+  it('imports missing shared challenge controls without replacing personal targets', () => {
+    const challengeSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      targets: { ...DEFAULT_SETTINGS.targets, exerciseMinutes: 120 },
+      rules: [
+        ...DEFAULT_SETTINGS.rules.map((rule) => ({ ...rule, enabled: rule.key === 'exercise' })),
+        {
+          key: 'custom-cold-shower',
+          label: 'Cold shower',
+          icon: 'C',
+          enabled: true,
+          weight: 'supporting',
+          category: 'misc',
+        },
+      ],
+    })
+    const merged = mergeChallengeRulesIntoSettings(DEFAULT_SETTINGS, challengeSettings)
+
+    expect(merged.targets.exerciseMinutes).toBe(DEFAULT_SETTINGS.targets.exerciseMinutes)
+    expect(merged.rules.find((rule) => rule.key === 'custom-cold-shower')).toMatchObject({
+      label: 'Cold shower',
+      enabled: true,
+    })
   })
 
   it('redacts hidden values from published leaderboard summaries', () => {

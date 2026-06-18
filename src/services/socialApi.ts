@@ -10,6 +10,8 @@ import {
   normalizeFriendChallengeRow,
   normalizeChallengeScoreSnapshotRow,
   normalizeFriendEventRow,
+  normalizeFriendEventCommentRow,
+  normalizeFriendEventReactionRow,
   normalizeFriendProfileRow,
   normalizeFriendSquadMemberRow,
   normalizeFriendSquadRow,
@@ -24,6 +26,8 @@ import {
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_TABLE,
   SUPABASE_FRIEND_EVENT_TABLE,
+  SUPABASE_FRIEND_EVENT_COMMENT_TABLE,
+  SUPABASE_FRIEND_EVENT_REACTION_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_PROFILE_TABLE,
   SUPABASE_SQUAD_MEMBER_TABLE,
@@ -40,6 +44,7 @@ import type {
   FriendChallengeParticipantView,
   FriendChallengeView,
   FriendEvent,
+  FriendFeedReaction,
   FriendEventType,
   FriendProfile,
   FriendRequest,
@@ -57,6 +62,7 @@ export type SocialDashboardData = {
   challenges: FriendChallengeView[]
   squads: FriendSquadView[]
   events: FriendEvent[]
+  feedInteractionSchemaReady: boolean
   squadSchemaReady: boolean
   historySchemaReady: boolean
   acceptedFriendCount: number
@@ -99,6 +105,70 @@ export async function recordFriendEvent(
     if (error && !isFriendEventSchemaError(error)) console.warn('Could not record friend event', error)
   } catch (error) {
     if (!isFriendEventSchemaError(error)) console.warn('Could not record friend event', error)
+  }
+}
+
+export async function addFriendEventComment(
+  client: SupabaseClient,
+  userId: string,
+  eventId: string,
+  body: string,
+): Promise<void> {
+  const cleanBody = body.trim().slice(0, 400)
+  if (!cleanBody) throw new Error('Write a comment first.')
+  const { error } = await client.from(SUPABASE_FRIEND_EVENT_COMMENT_TABLE).insert({
+    event_id: eventId,
+    user_id: userId,
+    body: cleanBody,
+  })
+  if (error) {
+    if (isFriendEventSchemaError(error)) throw new Error('Run the updated Supabase schema to enable feed comments.')
+    throw error
+  }
+}
+
+export async function deleteFriendEventComment(
+  client: SupabaseClient,
+  userId: string,
+  commentId: string,
+): Promise<void> {
+  const { error } = await client.from(SUPABASE_FRIEND_EVENT_COMMENT_TABLE)
+    .delete()
+    .eq('id', commentId)
+    .eq('user_id', userId)
+  if (error) {
+    if (isFriendEventSchemaError(error)) throw new Error('Run the updated Supabase schema to enable feed comments.')
+    throw error
+  }
+}
+
+export async function setFriendEventReaction(
+  client: SupabaseClient,
+  userId: string,
+  eventId: string,
+  reaction: FriendFeedReaction | null,
+): Promise<void> {
+  if (!reaction) {
+    const { error } = await client.from(SUPABASE_FRIEND_EVENT_REACTION_TABLE)
+      .delete()
+      .eq('event_id', eventId)
+      .eq('user_id', userId)
+    if (error) {
+      if (isFriendEventSchemaError(error)) throw new Error('Run the updated Supabase schema to enable feed reactions.')
+      throw error
+    }
+    return
+  }
+
+  const { error } = await client.from(SUPABASE_FRIEND_EVENT_REACTION_TABLE).upsert({
+    event_id: eventId,
+    user_id: userId,
+    reaction,
+    created_at: new Date().toISOString(),
+  }, { onConflict: 'event_id,user_id' })
+  if (error) {
+    if (isFriendEventSchemaError(error)) throw new Error('Run the updated Supabase schema to enable feed reactions.')
+    throw error
   }
 }
 
@@ -483,7 +553,7 @@ export async function loadSocialDashboard(client: SupabaseClient, user: User): P
 
   const challengeResult = await loadChallenges(client, user.id, profilesByUserId)
   const squadResult = await loadSquads(client, user.id, acceptedFriendIds, profilesByUserId)
-  const events = await loadFriendEvents(client, user.id, acceptedFriendIds)
+  const eventResult = await loadFriendEvents(client, user.id, acceptedFriendIds)
 
   return {
     profile,
@@ -491,7 +561,8 @@ export async function loadSocialDashboard(client: SupabaseClient, user: User): P
     requests,
     challenges: challengeResult.challenges,
     squads: squadResult.squads,
-    events,
+    events: eventResult.events,
+    feedInteractionSchemaReady: eventResult.interactionSchemaReady,
     squadSchemaReady: squadResult.schemaReady,
     historySchemaReady: challengeResult.historySchemaReady,
     acceptedFriendCount: acceptedFriendIds.length,
@@ -655,7 +726,11 @@ async function loadSquads(
   }
 }
 
-async function loadFriendEvents(client: SupabaseClient, userId: string, acceptedFriendIds: string[]): Promise<FriendEvent[]> {
+async function loadFriendEvents(
+  client: SupabaseClient,
+  userId: string,
+  acceptedFriendIds: string[],
+): Promise<{ events: FriendEvent[]; interactionSchemaReady: boolean }> {
   const actorIds = Array.from(new Set([userId, ...acceptedFriendIds]))
   const { data, error } = await client.from(SUPABASE_FRIEND_EVENT_TABLE)
     .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
@@ -663,8 +738,37 @@ async function loadFriendEvents(client: SupabaseClient, userId: string, accepted
     .order('created_at', { ascending: false })
     .limit(40)
   if (error) {
-    if (isFriendEventSchemaError(error)) return []
+    if (isFriendEventSchemaError(error)) return { events: [], interactionSchemaReady: false }
     throw error
   }
-  return (data ?? []).map(normalizeFriendEventRow).filter((row): row is FriendEvent => row !== null)
+  const events = (data ?? []).map(normalizeFriendEventRow).filter((row): row is FriendEvent => row !== null)
+  if (events.length === 0) return { events, interactionSchemaReady: true }
+
+  const eventIds = events.map((event) => event.id)
+  const [commentResult, reactionResult] = await Promise.all([
+    client.from(SUPABASE_FRIEND_EVENT_COMMENT_TABLE)
+      .select('id, event_id, user_id, body, created_at, updated_at')
+      .in('event_id', eventIds)
+      .order('created_at', { ascending: true })
+      .limit(200),
+    client.from(SUPABASE_FRIEND_EVENT_REACTION_TABLE)
+      .select('event_id, user_id, reaction, created_at')
+      .in('event_id', eventIds),
+  ])
+  const interactionError = commentResult.error ?? reactionResult.error
+  if (interactionError) {
+    if (isFriendEventSchemaError(interactionError)) return { events, interactionSchemaReady: false }
+    throw interactionError
+  }
+
+  const comments = (commentResult.data ?? []).map(normalizeFriendEventCommentRow).filter((row) => row !== null)
+  const reactions = (reactionResult.data ?? []).map(normalizeFriendEventReactionRow).filter((row) => row !== null)
+  return {
+    events: events.map((event) => ({
+      ...event,
+      comments: comments.filter((comment) => comment.eventId === event.id),
+      reactions: reactions.filter((reaction) => reaction.eventId === event.id),
+    })),
+    interactionSchemaReady: true,
+  }
 }

@@ -102,7 +102,7 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
 
 Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Seven-day patterns display weekdays, Home and Check-In identify recovery days, and Progress summarizes the current cycle. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
 
@@ -127,8 +127,9 @@ Current social beta coverage:
 - Editable squads with roster changes after creation.
 - Challenge invite management for adding accepted friends after a challenge starts.
 - In-app badges for pending friend requests and challenge invites.
-- Stored social events for a richer friend/squad activity feed.
+- Stored social events with comments, reactions, and device sharing for a richer friend/squad activity feed.
 - Challenge templates with preset target and scored-rule overrides.
+- Explicit challenge rule selection, including custom tracker rules; accepted challenges add missing controls to the participant's tracker.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 - Per-participant daily score timelines stored when challenge scores are published.
 
@@ -151,6 +152,7 @@ Current social beta coverage:
 1. Add direct challenge links or short join codes so an accepted friend can open the app directly to an invite.
 2. Add owner controls for removing participants, canceling pending invites, leaving challenges, and removing squad members safely.
 3. Add challenge lifecycle controls for editing upcoming challenges, ending active challenges early, and archiving or deleting completed challenges.
+4. Add notification badges for new comments and reactions since the feed was last opened.
 
 ### Later: engagement
 

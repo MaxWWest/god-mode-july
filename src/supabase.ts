@@ -10,6 +10,8 @@ export const SUPABASE_CHALLENGE_SCORE_HISTORY_TABLE = 'god_mode_challenge_score_
 export const SUPABASE_SQUAD_TABLE = 'god_mode_squads'
 export const SUPABASE_SQUAD_MEMBER_TABLE = 'god_mode_squad_members'
 export const SUPABASE_FRIEND_EVENT_TABLE = 'god_mode_friend_events'
+export const SUPABASE_FRIEND_EVENT_COMMENT_TABLE = 'god_mode_friend_event_comments'
+export const SUPABASE_FRIEND_EVENT_REACTION_TABLE = 'god_mode_friend_event_reactions'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY

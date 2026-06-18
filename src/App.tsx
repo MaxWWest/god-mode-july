@@ -9,8 +9,10 @@ import {
   writeCloudSnapshot as writeCloudSnapshotApi,
 } from './services/cloudApi'
 import {
+  addFriendEventComment,
   createChallenge as createChallengeRecord,
   createSquad as createSquadRecord,
+  deleteFriendEventComment,
   deleteSquad as deleteSquadRecord,
   ensureFriendProfile as ensureFriendProfileApi,
   inviteChallengeParticipants,
@@ -21,6 +23,7 @@ import {
   requestFriendByInviteCode,
   respondToChallengeInvite,
   respondToFriendRequest as respondToFriendRequestApi,
+  setFriendEventReaction,
   updateFriendProfile as updateFriendProfileApi,
   updateSquad as updateSquadRecord,
 } from './services/socialApi'
@@ -30,6 +33,7 @@ import {
   buildChallengeSummary,
   buildFriendChallengeSnapshots,
   buildFriendChallengeSummary,
+  mergeChallengeRulesIntoSettings,
 } from './socialData'
 import {
   DAY_IN_MS,
@@ -86,6 +90,7 @@ import type {
   FriendChallengeView,
   FriendEvent,
   FriendEventType,
+  FriendFeedReaction,
   FriendProfile,
   FriendRequest,
   FriendSquadView,
@@ -1039,12 +1044,12 @@ function App() {
       setFriendChallenges(data.challenges)
       setFriendSquads(data.squads)
       setFriendEvents(data.events)
-      const schemaReady = data.squadSchemaReady && data.historySchemaReady
+      const schemaReady = data.squadSchemaReady && data.historySchemaReady && data.feedInteractionSchemaReady
       setFriendsStatus({
         tone: schemaReady ? 'success' : 'neutral',
         message: schemaReady
           ? `${data.acceptedFriendCount} ${data.acceptedFriendCount === 1 ? 'friend' : 'friends'} · ${data.squads.length} ${data.squads.length === 1 ? 'squad' : 'squads'} · ${data.requests.length} pending · ${data.challenges.length} challenges.`
-          : 'Friends loaded. Run the updated Supabase schema to enable all squad and daily-history features.',
+          : 'Friends loaded. Run the updated Supabase schema to enable all squad, history, and feed interaction features.',
       })
     } catch (error) {
       setFriendsStatus(serviceErrorStatus(error, 'Could not load friends.'))
@@ -1309,11 +1314,24 @@ function App() {
     }
     const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
     const inviteeIds = Array.from(new Set(input.inviteeIds)).filter((inviteeId) => acceptedFriendIds.has(inviteeId))
+    const availableRuleKeys = new Set(settings.rules.filter((rule) => !rule.deleted).map((rule) => rule.key))
+    const challengeRuleKeys = Array.from(new Set(input.ruleKeys)).filter((ruleKey) => availableRuleKeys.has(ruleKey))
+    if (challengeRuleKeys.length === 0) {
+      setFriendsStatus({ tone: 'error', message: 'Choose at least one rule for the challenge.' })
+      return
+    }
 
     setFriendsBusy(true)
     try {
       await ensureFriendProfile()
-      const challengeSettings = buildChallengeSettingsForTemplate(settings, input.templateId, name, input.startDate, input.endDate)
+      const challengeSettings = buildChallengeSettingsForTemplate(
+        settings,
+        input.templateId,
+        name,
+        input.startDate,
+        input.endDate,
+        challengeRuleKeys,
+      )
       const challenge = await createChallengeRecord(supabase, user.id, {
         name,
         startDate: input.startDate,
@@ -1393,10 +1411,14 @@ function App() {
     setFriendsBusy(true)
     try {
       const challenge = friendChallenges.find((item) => item.id === challengeId)
+      const participantSettings = challenge && nextStatus === 'accepted'
+        ? mergeChallengeRulesIntoSettings(settings, challenge.settings)
+        : settings
       const summary = challenge && nextStatus === 'accepted'
-        ? buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
+        ? buildFriendChallengeSummary(user.id, entries, challenge, participantSettings, privacySettings)
         : null
       await respondToChallengeInvite(supabase, user.id, challengeId, nextStatus, summary)
+      if (challenge && nextStatus === 'accepted') updateSettings(participantSettings)
 
       setFriendsStatus({
         tone: 'success',
@@ -1463,6 +1485,65 @@ function App() {
       setFriendsStatus(serviceErrorStatus(error, 'Could not publish the challenge score.'))
     } finally {
       setFriendsBusy(false)
+    }
+  }
+
+  async function commentOnFriendEvent(eventId: string, body: string) {
+    if (!supabase || !user) return
+    setFriendsBusy(true)
+    try {
+      await addFriendEventComment(supabase, user.id, eventId, body)
+      setFriendsStatus({ tone: 'success', message: 'Comment posted.' })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus(serviceErrorStatus(error, 'Could not post the comment.'))
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function removeFriendEventComment(commentId: string) {
+    if (!supabase || !user) return
+    setFriendsBusy(true)
+    try {
+      await deleteFriendEventComment(supabase, user.id, commentId)
+      setFriendsStatus({ tone: 'success', message: 'Comment deleted.' })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus(serviceErrorStatus(error, 'Could not delete the comment.'))
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function reactToFriendEvent(eventId: string, reaction: FriendFeedReaction | null) {
+    if (!supabase || !user) return
+    setFriendsBusy(true)
+    try {
+      await setFriendEventReaction(supabase, user.id, eventId, reaction)
+      setFriendsStatus({ tone: 'success', message: reaction ? 'Reaction saved.' : 'Reaction removed.' })
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus(serviceErrorStatus(error, 'Could not update the reaction.'))
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
+  async function shareFriendActivity(text: string) {
+    const shareText = `${text}\n${window.location.origin}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'God Mode activity', text: shareText })
+        setFriendsStatus({ tone: 'success', message: 'Activity shared.' })
+        return
+      }
+      await copyTextToClipboard(shareText)
+      setFriendsStatus({ tone: 'success', message: 'Activity copied.' })
+      showAppNotice('Activity copied.')
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      setFriendsStatus(serviceErrorStatus(error, 'Could not share this activity.'))
     }
   }
 
@@ -1712,6 +1793,7 @@ function App() {
               friendChallenges={friendChallenges}
               friendSquads={friendSquads}
               friendEvents={friendEvents}
+              settings={settings}
               privacySettings={privacySettings}
               status={friendsStatus}
               busy={friendsBusy}
@@ -1733,6 +1815,10 @@ function App() {
               onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
               onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
               onPublishChallengeScore={publishFriendChallengeScore}
+              onCommentEvent={commentOnFriendEvent}
+              onDeleteEventComment={removeFriendEventComment}
+              onReactEvent={reactToFriendEvent}
+              onShareEvent={shareFriendActivity}
               onPublishSummary={() => publishFriendSummary(false)}
               onRefresh={refreshFriendsData}
               onOpenSettings={() => setView('settings')}

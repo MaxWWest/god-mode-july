@@ -1976,14 +1976,20 @@ textarea:focus-visible {
 
 .activity-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
+  gap: 9px;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+.activity-card-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
 }
 
 .activity-dot {
@@ -2002,7 +2008,7 @@ textarea:focus-visible {
   background: var(--yellow);
 }
 
-.activity-card div:nth-child(2) {
+.activity-copy {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -2024,6 +2030,88 @@ textarea:focus-visible {
 
 .activity-card small {
   white-space: nowrap;
+}
+
+.activity-reaction-row,
+.activity-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 19px;
+}
+
+.activity-reaction-row button,
+.activity-action-row button,
+.activity-comment button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.activity-reaction-row button.selected {
+  border-color: rgba(87, 217, 121, 0.5);
+  background: rgba(87, 217, 121, 0.12);
+  color: #9cf0ae;
+}
+
+.activity-action-row button {
+  border-color: transparent;
+  background: transparent;
+  color: #bca8dc;
+}
+
+.activity-comments {
+  display: grid;
+  gap: 7px;
+  margin-left: 19px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.activity-comment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+}
+
+.activity-comment > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-comment strong {
+  color: #cdbde4;
+  font-size: 0.7rem;
+}
+
+.activity-comment p {
+  overflow-wrap: anywhere;
+  color: #e8e3ef;
+  font-size: 0.74rem;
+}
+
+.activity-comment button {
+  min-height: 26px;
+  padding: 3px 7px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.activity-comment-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-left: 19px;
 }
 
 .request-badge {
@@ -2194,6 +2282,91 @@ textarea:focus-visible {
 .challenge-invite-picker {
   display: grid;
   gap: 8px;
+}
+
+.challenge-rule-picker {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.challenge-rule-picker-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.challenge-rule-picker-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.challenge-rule-picker-heading small,
+.challenge-rule-picker-heading strong {
+  color: #d7c8ed;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.challenge-rule-picker-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.challenge-rule-picker-heading > strong {
+  white-space: nowrap;
+  color: #9cf0ae;
+}
+
+.challenge-rule-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.challenge-rule-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.challenge-rule-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--purple);
+}
+
+.challenge-rule-option span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.challenge-rule-option strong,
+.challenge-rule-option small {
+  overflow-wrap: anywhere;
+}
+
+.challenge-rule-option strong {
+  color: #f2edf8;
+  font-size: 0.76rem;
+}
+
+.challenge-rule-option small {
+  color: var(--muted);
+  font-size: 0.64rem;
 }
 
 .challenge-invite-picker small,
@@ -2755,12 +2928,21 @@ textarea:focus-visible {
   }
 
   .activity-card {
+    gap: 8px;
+  }
+
+  .activity-card-main {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .activity-card small {
+  .activity-card-main > small {
     grid-column: 2;
     white-space: normal;
+  }
+
+  .activity-comment-form,
+  .challenge-rule-options {
+    grid-template-columns: 1fr;
   }
 
   .cloud-panel .data-actions,

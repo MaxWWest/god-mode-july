@@ -3,13 +3,15 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE,
   SUPABASE_FRIEND_CHALLENGE_TABLE,
+  SUPABASE_FRIEND_EVENT_COMMENT_TABLE,
+  SUPABASE_FRIEND_EVENT_REACTION_TABLE,
   SUPABASE_FRIENDSHIP_TABLE,
   SUPABASE_SQUAD_MEMBER_TABLE,
   SUPABASE_SQUAD_TABLE,
 } from '../supabase'
 import { DEFAULT_PRIVACY_SETTINGS, DEFAULT_SETTINGS } from '../tracker'
 import type { ChallengeSummary } from '../types'
-import { createChallenge, respondToFriendRequest, updateSquad } from './socialApi'
+import { addFriendEventComment, createChallenge, respondToFriendRequest, setFriendEventReaction, updateSquad } from './socialApi'
 
 function resultChain(data: unknown = null) {
   const chain: Record<string, unknown> = { data, error: null }
@@ -23,6 +25,30 @@ function resultChain(data: unknown = null) {
 }
 
 describe('social service mutations', () => {
+  it('stores trimmed feed comments for the signed-in user', async () => {
+    const insert = vi.fn(async () => ({ error: null }))
+    const client = { from: vi.fn(() => ({ insert })) } as unknown as SupabaseClient
+
+    await addFriendEventComment(client, 'user-1', 'event-1', '  Keep going  ')
+
+    expect(client.from).toHaveBeenCalledWith(SUPABASE_FRIEND_EVENT_COMMENT_TABLE)
+    expect(insert).toHaveBeenCalledWith({ event_id: 'event-1', user_id: 'user-1', body: 'Keep going' })
+  })
+
+  it('upserts one reaction per user and event', async () => {
+    const upsert = vi.fn(async () => ({ error: null }))
+    const client = { from: vi.fn(() => ({ upsert })) } as unknown as SupabaseClient
+
+    await setFriendEventReaction(client, 'user-1', 'event-1', 'respect')
+
+    expect(client.from).toHaveBeenCalledWith(SUPABASE_FRIEND_EVENT_REACTION_TABLE)
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'event-1',
+      user_id: 'user-1',
+      reaction: 'respect',
+    }), { onConflict: 'event_id,user_id' })
+  })
+
   it('accepts only an incoming pending friend request', async () => {
     const query = resultChain({ user_a: 'friend-1' })
     const client = {
