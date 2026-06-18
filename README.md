@@ -92,9 +92,11 @@ Friends, leaderboards, private squads, invite-only friend challenges, and the so
 - `src/types.ts` holds shared tracker, cloud sync, friends, squads, challenge, and feed types.
 - `src/ui.tsx` holds reusable field controls, section headers, app notices, icons, and bottom-nav buttons.
 - `src/social.ts` holds shared friend challenge templates, reactions, tabs, and social labels.
+- `src/socialData.ts` holds social score calculations, challenge settings, row normalizers, and Supabase schema compatibility checks.
 - `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
+- `src/services/socialApi.ts` owns profile, friendship, squad, challenge, leaderboard, and activity-feed database operations.
 - `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
-- `src/App.tsx` still owns core app state, Supabase side effects, sync flows, social mutations, Home, Calendar, and navigation. The next cleanup step is to extract Supabase/social data operations into service modules.
+- `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, Calendar, and navigation. The next cleanup step is to extract cloud account export, deletion, and snapshot sync into a dedicated service.
 
 Current social beta coverage:
 

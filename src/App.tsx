@@ -3,16 +3,42 @@ import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
-  challengeTemplateById,
-  normalizeScoreReaction,
-} from './social'
+  createChallenge as createChallengeRecord,
+  createSquad as createSquadRecord,
+  deleteSquad as deleteSquadRecord,
+  ensureFriendProfile as ensureFriendProfileApi,
+  inviteChallengeParticipants,
+  loadSocialDashboard,
+  publishChallengeScore,
+  publishLeaderboardSummary,
+  recordFriendEvent as recordFriendEventApi,
+  requestFriendByInviteCode,
+  respondToChallengeInvite,
+  respondToFriendRequest as respondToFriendRequestApi,
+  updateFriendProfile as updateFriendProfileApi,
+  updateSquad as updateSquadRecord,
+} from './services/socialApi'
 import {
-  BUILT_IN_RULE_KEYS,
+  buildChallengeSettingsForTemplate,
+  buildChallengeSummary,
+  buildFriendChallengeSummary,
+  isFriendChallengeSchemaError,
+  isFriendEventSchemaError,
+  isFriendSquadSchemaError,
+  normalizeFriendChallengeParticipantRow,
+  normalizeFriendChallengeRow,
+  normalizeFriendEventRow,
+  normalizeFriendProfileRow,
+  normalizeFriendSquadMemberRow,
+  normalizeFriendSquadRow,
+  normalizeFriendshipRow,
+  normalizeSummaryRow,
+} from './socialData'
+import {
   DAY_IN_MS,
   DEFAULT_PRIVACY_SETTINGS,
   DEFAULT_SETTINGS,
   DEFAULT_SYNC_META,
-  MAX_TRACKING_DAYS,
   addDays,
   clampDate,
   completionStats,
@@ -33,20 +59,17 @@ import {
   makeEmptyEntry,
   makeEmptyWorkout,
   mergeCloudOnlyEntries,
-  normalizeBoundedNumber,
   normalizeCloudSnapshot,
   normalizeEntries,
   normalizePrivacySettings,
   normalizeReminderSettings,
   normalizeSettings,
   normalizeSyncMeta,
-  normalizeText,
   ruleComplete,
   sanitizeFilenamePart,
   selectableEndDate,
   timestampIsAfter,
   todayIso,
-  trackingLength,
 } from './tracker'
 import {
   SUPABASE_FRIEND_EVENT_TABLE,
@@ -64,7 +87,6 @@ import {
 import type {
   AccountDataExport,
   AppNotice,
-  BuiltInRuleKey,
   ChallengeSettings,
   ChallengeSummary,
   ChallengeTemplate,
@@ -77,9 +99,6 @@ import type {
   FriendActivityFeedItem,
   FriendChallenge,
   FriendChallengeParticipant,
-  FriendChallengeParticipantStatus,
-  FriendChallengeParticipantView,
-  FriendChallengeScoringMode,
   FriendChallengeView,
   FriendEvent,
   FriendEventType,
@@ -89,7 +108,6 @@ import type {
   FriendSquadMember,
   FriendSquadView,
   FriendshipRow,
-  FriendshipStatus,
   FriendsTab,
   InstallPromptEvent,
   InviteFriendChallengeInput,
@@ -148,400 +166,6 @@ const TUTORIAL_STEPS = [
     body: 'Copy your invite code, accept requests, save private squads, publish scores, and create friend challenges.',
   },
 ]
-
-function leaderboardThroughDate(entries: EntryMap, settings: ChallengeSettings): string {
-  const today = todayIso()
-  if (today >= settings.startDate) return today
-
-  const loggedDates = getLoggedDates(entries, settings)
-  return loggedDates[loggedDates.length - 1] ?? settings.startDate
-}
-
-function buildChallengeSummary(userId: string, entries: EntryMap, settings: ChallengeSettings, privacySettings = DEFAULT_PRIVACY_SETTINGS): ChallengeSummary {
-  const privacy = normalizePrivacySettings(privacySettings)
-  const loggedDates = getLoggedDates(entries, settings)
-  const throughDate = leaderboardThroughDate(entries, settings)
-  const weekStart = addDays(throughDate, -6) < settings.startDate ? settings.startDate : addDays(throughDate, -6)
-  const weekDates = loggedDates.filter((date) => date >= weekStart && date <= throughDate)
-  const averageCompletion = loggedDates.length === 0
-    ? 0
-    : Math.round(loggedDates.reduce((sum, date) => sum + completionStats(entries[date], settings).percent, 0) / loggedDates.length)
-  const weeklyCompletion = weekDates.length === 0
-    ? 0
-    : Math.round(weekDates.reduce((sum, date) => sum + completionStats(entries[date], settings).percent, 0) / weekDates.length)
-
-  return {
-    userId,
-    challengeTitle: settings.title,
-    startDate: settings.startDate,
-    endDate: throughDate,
-    loggedDays: privacy.showLoggedDays ? loggedDates.length : 0,
-    totalDays: trackingLength(settings, throughDate),
-    averageCompletion: privacy.showAverageCompletion ? averageCompletion : 0,
-    weeklyCompletion: privacy.showWeeklyCompletion ? weeklyCompletion : 0,
-    currentStreak: privacy.showStreak ? currentStreak(entries, throughDate, settings) : 0,
-    longestStreak: privacy.showStreak ? longestStreak(entries, settings) : 0,
-    lastLoggedDate: privacy.showLoggedDays ? loggedDates[loggedDates.length - 1] ?? null : null,
-    updatedAt: new Date().toISOString(),
-    privacy,
-  }
-}
-
-function getChallengeElapsedDates(challenge: Pick<FriendChallenge, 'startDate' | 'endDate'>): string[] {
-  const today = todayIso()
-  if (today < challenge.startDate) return []
-  const throughDate = today > challenge.endDate ? challenge.endDate : today
-  if (throughDate < challenge.startDate) return []
-  return Array.from({ length: daysBetween(challenge.startDate, throughDate) + 1 }, (_, index) => addDays(challenge.startDate, index))
-}
-
-function settingsForFriendChallenge(
-  challenge: FriendChallenge,
-  personalSettings: ChallengeSettings,
-): ChallengeSettings {
-  const sourceSettings = challenge.scoringMode === 'shared' ? challenge.settings : personalSettings
-  return normalizeSettings({
-    ...sourceSettings,
-    title: challenge.name,
-    startDate: challenge.startDate,
-    endDate: challenge.endDate,
-  })
-}
-
-function streakForChallengeDates(dates: string[], entries: EntryMap, settings: ChallengeSettings): { current: number; longest: number } {
-  let current = 0
-  for (let index = dates.length - 1; index >= 0; index -= 1) {
-    const entry = entries[dates[index]]
-    if (!entry || completionStats(entry, settings).percent < 100) break
-    current += 1
-  }
-
-  let running = 0
-  let longest = 0
-  for (const date of dates) {
-    const entry = entries[date]
-    if (entry && completionStats(entry, settings).percent === 100) {
-      running += 1
-      longest = Math.max(longest, running)
-    } else {
-      running = 0
-    }
-  }
-
-  return { current, longest }
-}
-
-function buildFriendChallengeSummary(
-  userId: string,
-  entries: EntryMap,
-  challenge: FriendChallenge,
-  personalSettings: ChallengeSettings,
-  privacySettings = DEFAULT_PRIVACY_SETTINGS,
-): ChallengeSummary {
-  const privacy = normalizePrivacySettings(privacySettings)
-  const challengeSettings = settingsForFriendChallenge(challenge, personalSettings)
-  const elapsedDates = getChallengeElapsedDates(challenge)
-  const loggedDates = elapsedDates.filter((date) => Boolean(entries[date]))
-  const weekStart = elapsedDates.length === 0 ? challenge.startDate : addDays(elapsedDates[elapsedDates.length - 1], -6)
-  const weekDates = loggedDates.filter((date) => date >= weekStart)
-  const averageCompletion = loggedDates.length === 0
-    ? 0
-    : Math.round(loggedDates.reduce((sum, date) => sum + completionStats(entries[date], challengeSettings).percent, 0) / loggedDates.length)
-  const weeklyCompletion = weekDates.length === 0
-    ? 0
-    : Math.round(weekDates.reduce((sum, date) => sum + completionStats(entries[date], challengeSettings).percent, 0) / weekDates.length)
-  const streaks = streakForChallengeDates(elapsedDates, entries, challengeSettings)
-
-  return {
-    userId,
-    challengeTitle: challenge.name,
-    startDate: challenge.startDate,
-    endDate: challenge.endDate,
-    loggedDays: privacy.showLoggedDays ? loggedDates.length : 0,
-    totalDays: elapsedDates.length,
-    averageCompletion: privacy.showAverageCompletion ? averageCompletion : 0,
-    weeklyCompletion: privacy.showWeeklyCompletion ? weeklyCompletion : 0,
-    currentStreak: privacy.showStreak ? streaks.current : 0,
-    longestStreak: privacy.showStreak ? streaks.longest : 0,
-    lastLoggedDate: privacy.showLoggedDays ? loggedDates[loggedDates.length - 1] ?? null : null,
-    updatedAt: new Date().toISOString(),
-    privacy,
-  }
-}
-
-function buildChallengeSettingsForTemplate(
-  baseSettings: ChallengeSettings,
-  templateId: string | undefined,
-  title: string,
-  startDate: string,
-  endDate: string,
-): ChallengeSettings {
-  const template = challengeTemplateById(templateId)
-  const targets = {
-    ...baseSettings.targets,
-    ...(template.targetOverrides ?? {}),
-  }
-  const rules = baseSettings.rules.map((rule) => {
-    const builtInKey = BUILT_IN_RULE_KEYS.includes(rule.key as BuiltInRuleKey) ? rule.key as BuiltInRuleKey : null
-    const override = builtInKey ? template.ruleOverrides?.[builtInKey] : undefined
-    return override ? { ...rule, ...override } : rule
-  })
-
-  return normalizeSettings({
-    ...baseSettings,
-    title,
-    startDate,
-    endDate,
-    targets,
-    rules,
-  })
-}
-
-function generateInviteCode(userId: string): string {
-  return `GM-${userId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
-}
-
-function sortedFriendshipPair(userId: string, friendId: string): [string, string] {
-  return [userId, friendId].sort() as [string, string]
-}
-
-function defaultDisplayName(user: User): string {
-  return user.email?.split('@')[0] || 'New challenger'
-}
-
-function normalizeFriendProfileRow(row: unknown): FriendProfile | null {
-  const candidate = row && typeof row === 'object'
-    ? row as { user_id?: unknown; display_name?: unknown; invite_code?: unknown }
-    : null
-  if (!candidate || typeof candidate.user_id !== 'string') return null
-
-  return {
-    userId: candidate.user_id,
-    displayName: typeof candidate.display_name === 'string' && candidate.display_name.trim()
-      ? candidate.display_name.trim()
-      : 'Challenger',
-    inviteCode: typeof candidate.invite_code === 'string' ? candidate.invite_code : '',
-  }
-}
-
-function normalizeFriendshipStatus(value: unknown): FriendshipStatus {
-  return value === 'pending' || value === 'accepted' || value === 'declined' ? value : 'accepted'
-}
-
-function normalizeFriendChallengeParticipantStatus(value: unknown): FriendChallengeParticipantStatus {
-  return value === 'pending' || value === 'accepted' || value === 'declined' ? value : 'pending'
-}
-
-function normalizeFriendChallengeScoringMode(value: unknown): FriendChallengeScoringMode {
-  return value === 'shared' || value === 'personal' ? value : 'personal'
-}
-
-function normalizeFriendEventType(value: unknown): FriendEventType {
-  switch (value) {
-    case 'friend_request_sent':
-    case 'friend_request_accepted':
-    case 'friend_request_declined':
-    case 'squad_created':
-    case 'squad_updated':
-    case 'squad_deleted':
-    case 'challenge_created':
-    case 'challenge_invites_sent':
-    case 'challenge_invite_accepted':
-    case 'challenge_invite_declined':
-    case 'challenge_score_published':
-    case 'leaderboard_score_published':
-      return value
-    default:
-      return 'leaderboard_score_published'
-  }
-}
-
-function normalizeFriendshipRow(row: unknown): FriendshipRow | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.user_a !== 'string' || typeof candidate.user_b !== 'string') return null
-
-  const createdBy = typeof candidate.created_by === 'string' ? candidate.created_by : candidate.user_a
-  const requestedBy = typeof candidate.requested_by === 'string' ? candidate.requested_by : createdBy
-
-  return {
-    userA: candidate.user_a,
-    userB: candidate.user_b,
-    createdBy,
-    requestedBy,
-    status: normalizeFriendshipStatus(candidate.status),
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-    respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
-  }
-}
-
-function isFriendRequestSchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return message.includes('status')
-    || message.includes('requested_by')
-    || message.includes('responded_at')
-    || message.includes('column')
-}
-
-function isFriendChallengeSchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return message.includes('god_mode_friend_challenges')
-    || message.includes('god_mode_friend_challenge_participants')
-    || message.includes('scoring_mode')
-    || message.includes('summary')
-    || message.includes('relation')
-    || message.includes('column')
-}
-
-function isFriendSquadSchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return message.includes('god_mode_squads')
-    || message.includes('god_mode_squad_members')
-    || message.includes('relation')
-    || message.includes('column')
-}
-
-function isFriendEventSchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return message.includes('god_mode_friend_events')
-    || message.includes('event_type')
-    || message.includes('metadata')
-    || message.includes('relation')
-    || message.includes('column')
-}
-
-function isSummarySchemaError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
-  return message.includes('god_mode_challenge_summaries')
-    || message.includes('privacy')
-    || message.includes('column')
-}
-
-function normalizeSummaryRow(row: unknown): ChallengeSummary | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  const userId = typeof candidate?.user_id === 'string'
-    ? candidate.user_id
-    : typeof candidate?.userId === 'string' ? candidate.userId : null
-  if (!candidate || !userId) return null
-
-  return {
-    userId,
-    challengeTitle: normalizeText(candidate.challenge_title ?? candidate.challengeTitle) || DEFAULT_SETTINGS.title,
-    startDate: isIsoDate(candidate.start_date) ? candidate.start_date : isIsoDate(candidate.startDate) ? candidate.startDate : DEFAULT_SETTINGS.startDate,
-    endDate: isIsoDate(candidate.end_date) ? candidate.end_date : isIsoDate(candidate.endDate) ? candidate.endDate : DEFAULT_SETTINGS.endDate,
-    loggedDays: normalizeBoundedNumber(candidate.logged_days ?? candidate.loggedDays, 0, 0, MAX_TRACKING_DAYS),
-    totalDays: normalizeBoundedNumber(candidate.total_days ?? candidate.totalDays, 0, 0, MAX_TRACKING_DAYS),
-    averageCompletion: normalizeBoundedNumber(candidate.average_completion ?? candidate.averageCompletion, 0, 0, 100),
-    weeklyCompletion: normalizeBoundedNumber(candidate.weekly_completion ?? candidate.weeklyCompletion, 0, 0, 100),
-    currentStreak: normalizeBoundedNumber(candidate.current_streak ?? candidate.currentStreak, 0, 0, MAX_TRACKING_DAYS),
-    longestStreak: normalizeBoundedNumber(candidate.longest_streak ?? candidate.longestStreak, 0, 0, MAX_TRACKING_DAYS),
-    lastLoggedDate: isIsoDate(candidate.last_logged_date) ? candidate.last_logged_date : isIsoDate(candidate.lastLoggedDate) ? candidate.lastLoggedDate : null,
-    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : typeof candidate.updatedAt === 'string' ? candidate.updatedAt : new Date().toISOString(),
-    privacy: normalizePrivacySettings(candidate.privacy),
-    note: normalizeText(candidate.note).slice(0, 180),
-    reaction: normalizeScoreReaction(candidate.reaction),
-  }
-}
-
-function normalizeFriendChallengeRow(row: unknown): FriendChallenge | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.creator_id !== 'string') return null
-
-  const startDate = isIsoDate(candidate.start_date) ? candidate.start_date : todayIso()
-  const endDate = isIsoDate(candidate.end_date) && candidate.end_date >= startDate
-    ? candidate.end_date
-    : addDays(startDate, 6)
-
-  return {
-    id: candidate.id,
-    creatorId: candidate.creator_id,
-    name: normalizeText(candidate.name).trim() || 'Friend Challenge',
-    startDate,
-    endDate,
-    scoringMode: normalizeFriendChallengeScoringMode(candidate.scoring_mode),
-    settings: normalizeSettings(candidate.settings),
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : new Date().toISOString(),
-  }
-}
-
-function normalizeFriendChallengeParticipantRow(row: unknown): FriendChallengeParticipant | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.challenge_id !== 'string' || typeof candidate.user_id !== 'string') return null
-
-  return {
-    challengeId: candidate.challenge_id,
-    userId: candidate.user_id,
-    invitedBy: typeof candidate.invited_by === 'string' ? candidate.invited_by : candidate.user_id,
-    status: normalizeFriendChallengeParticipantStatus(candidate.status),
-    summary: normalizeSummaryRow(candidate.summary),
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-    respondedAt: typeof candidate.responded_at === 'string' ? candidate.responded_at : null,
-  }
-}
-
-function normalizeFriendSquadRow(row: unknown): FriendSquad | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.owner_id !== 'string') return null
-
-  return {
-    id: candidate.id,
-    ownerId: candidate.owner_id,
-    name: normalizeText(candidate.name).trim() || 'Challenge Squad',
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-    updatedAt: typeof candidate.updated_at === 'string' ? candidate.updated_at : new Date().toISOString(),
-  }
-}
-
-function normalizeFriendSquadMemberRow(row: unknown): FriendSquadMember | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.squad_id !== 'string' || typeof candidate.user_id !== 'string') return null
-
-  return {
-    squadId: candidate.squad_id,
-    userId: candidate.user_id,
-    addedBy: typeof candidate.added_by === 'string' ? candidate.added_by : candidate.user_id,
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-  }
-}
-
-function normalizeFriendEventRow(row: unknown): FriendEvent | null {
-  const candidate = row && typeof row === 'object'
-    ? row as Record<string, unknown>
-    : null
-  if (!candidate || typeof candidate.id !== 'string' || typeof candidate.actor_id !== 'string') return null
-
-  const metadata = candidate.metadata && typeof candidate.metadata === 'object' && !Array.isArray(candidate.metadata)
-    ? candidate.metadata as Record<string, unknown>
-    : {}
-
-  return {
-    id: candidate.id,
-    actorId: candidate.actor_id,
-    targetUserId: typeof candidate.target_user_id === 'string' ? candidate.target_user_id : null,
-    challengeId: typeof candidate.challenge_id === 'string' ? candidate.challenge_id : null,
-    squadId: typeof candidate.squad_id === 'string' ? candidate.squad_id : null,
-    eventType: normalizeFriendEventType(candidate.event_type),
-    metadata,
-    createdAt: typeof candidate.created_at === 'string' ? candidate.created_at : new Date().toISOString(),
-  }
-}
 
 function currentStreak(entries: EntryMap, throughDate: string, settings: ChallengeSettings): number {
   let streak = 0
@@ -1612,40 +1236,10 @@ function App() {
   async function ensureFriendProfile(): Promise<FriendProfile | null> {
     if (!supabase || !user) return null
 
-    const { data: existingProfile, error: selectError } = await supabase
-      .from(SUPABASE_PROFILE_TABLE)
-      .select('user_id, display_name, invite_code')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (selectError) throw selectError
-
-    const normalizedExistingProfile = normalizeFriendProfileRow(existingProfile)
-    if (normalizedExistingProfile) {
-      setFriendProfile(normalizedExistingProfile)
-      setDisplayNameDraft(normalizedExistingProfile.displayName)
-      return normalizedExistingProfile
-    }
-
-    const nextProfile = {
-      user_id: user.id,
-      display_name: defaultDisplayName(user),
-      invite_code: generateInviteCode(user.id),
-    }
-    const { data: createdProfile, error: createError } = await supabase
-      .from(SUPABASE_PROFILE_TABLE)
-      .upsert(nextProfile, { onConflict: 'user_id' })
-      .select('user_id, display_name, invite_code')
-      .single()
-
-    if (createError) throw createError
-
-    const normalizedCreatedProfile = normalizeFriendProfileRow(createdProfile)
-    if (normalizedCreatedProfile) {
-      setFriendProfile(normalizedCreatedProfile)
-      setDisplayNameDraft(normalizedCreatedProfile.displayName)
-    }
-    return normalizedCreatedProfile
+    const profile = await ensureFriendProfileApi(supabase, user)
+    setFriendProfile(profile)
+    setDisplayNameDraft(profile.displayName)
+    return profile
   }
 
   async function refreshFriendsData() {
@@ -1653,300 +1247,18 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const profile = await ensureFriendProfile()
-      if (!profile) throw new Error('Could not load your friend profile.')
-
-      const { data: friendships, error: friendshipError } = await supabase
-        .from(SUPABASE_FRIENDSHIP_TABLE)
-        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
-        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
-
-      if (friendshipError) {
-        if (isFriendRequestSchemaError(friendshipError)) {
-          throw new Error('Run the updated Supabase schema to enable friend requests.')
-        }
-        throw friendshipError
-      }
-
-      const friendshipRows = (friendships ?? [])
-        .map(normalizeFriendshipRow)
-        .filter((row): row is FriendshipRow => row !== null)
-      const acceptedFriendIds = friendshipRows
-        .filter((friendship) => friendship.status === 'accepted')
-        .map((friendship) => friendship.userA === user.id ? friendship.userB : friendship.userA)
-        .filter((id): id is string => typeof id === 'string')
-      const pendingFriendships = friendshipRows.filter((friendship) => friendship.status === 'pending')
-      const pendingUserIds = pendingFriendships
-        .map((friendship) => friendship.userA === user.id ? friendship.userB : friendship.userA)
-        .filter((id): id is string => typeof id === 'string')
-      const visibleUserIds = Array.from(new Set([user.id, ...acceptedFriendIds, ...pendingUserIds]))
-
-      const { data: profileRows, error: profileError } = await supabase
-        .from(SUPABASE_PROFILE_TABLE)
-        .select('user_id, display_name, invite_code')
-        .in('user_id', visibleUserIds)
-
-      if (profileError) throw profileError
-
-      const summaryUserIds = Array.from(new Set([user.id, ...acceptedFriendIds]))
-      const { data: summaryRows, error: summaryError } = await supabase
-        .from(SUPABASE_SUMMARY_TABLE)
-        .select('*')
-        .in('user_id', summaryUserIds)
-
-      if (summaryError) throw summaryError
-
-      const profiles = (profileRows ?? [])
-        .map(normalizeFriendProfileRow)
-        .filter((row): row is FriendProfile => row !== null)
-      const profilesByUserId = new Map(profiles.map((profileRow) => [profileRow.userId, profileRow]))
-      const summariesByUserId = new Map(
-        (summaryRows ?? [])
-          .map(normalizeSummaryRow)
-          .filter((row): row is ChallengeSummary => row !== null)
-          .map((summary) => [summary.userId, summary]),
-      )
-
-      if (!profiles.some((row) => row.userId === profile.userId)) profiles.push(profile)
-
-      const rows = profiles
-        .filter((profileRow) => profileRow.userId === user.id || acceptedFriendIds.includes(profileRow.userId))
-        .map((profileRow) => ({
-          ...profileRow,
-          summary: summariesByUserId.get(profileRow.userId) ?? null,
-          isCurrentUser: profileRow.userId === user.id,
-        }))
-        .sort((a, b) => {
-          const aSummary = a.summary
-          const bSummary = b.summary
-          return (bSummary?.weeklyCompletion ?? 0) - (aSummary?.weeklyCompletion ?? 0)
-            || (bSummary?.averageCompletion ?? 0) - (aSummary?.averageCompletion ?? 0)
-            || (bSummary?.currentStreak ?? 0) - (aSummary?.currentStreak ?? 0)
-            || a.displayName.localeCompare(b.displayName)
-        })
-
-      const requests = pendingFriendships
-        .map((friendship) => {
-          const otherUserId = friendship.userA === user.id ? friendship.userB : friendship.userA
-          const requestProfile = profilesByUserId.get(otherUserId)
-          if (!requestProfile) return null
-          return {
-            ...requestProfile,
-            userA: friendship.userA,
-            userB: friendship.userB,
-            requestedBy: friendship.requestedBy,
-            direction: friendship.requestedBy === user.id ? 'outgoing' : 'incoming',
-            createdAt: friendship.createdAt,
-          } satisfies FriendRequest
-        })
-        .filter((request): request is FriendRequest => request !== null)
-        .sort((a, b) => a.direction.localeCompare(b.direction) || a.displayName.localeCompare(b.displayName))
-
-      let challengeViews: FriendChallengeView[] = []
-      let squadViews: FriendSquadView[] = []
-      let eventRows: FriendEvent[] = []
-      let squadSchemaReady = true
-      const [myChallengeParticipantResult, createdChallengeResult] = await Promise.all([
-        supabase
-          .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-          .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
-          .eq('user_id', user.id)
-          .in('status', ['pending', 'accepted']),
-        supabase
-          .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-          .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
-          .eq('creator_id', user.id),
-      ])
-
-      if (myChallengeParticipantResult.error) {
-        if (isFriendChallengeSchemaError(myChallengeParticipantResult.error)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw myChallengeParticipantResult.error
-      }
-      if (createdChallengeResult.error) {
-        if (isFriendChallengeSchemaError(createdChallengeResult.error)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw createdChallengeResult.error
-      }
-
-      const myChallengeParticipants = (myChallengeParticipantResult.data ?? [])
-        .map(normalizeFriendChallengeParticipantRow)
-        .filter((participant): participant is FriendChallengeParticipant => participant !== null)
-      const createdChallenges = (createdChallengeResult.data ?? [])
-        .map(normalizeFriendChallengeRow)
-        .filter((challenge): challenge is FriendChallenge => challenge !== null)
-      const challengeIds = Array.from(new Set([
-        ...myChallengeParticipants.map((participant) => participant.challengeId),
-        ...createdChallenges.map((challenge) => challenge.id),
-      ]))
-
-      if (challengeIds.length > 0) {
-        const [challengeResult, participantResult] = await Promise.all([
-          supabase
-            .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-            .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
-            .in('id', challengeIds),
-          supabase
-            .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-            .select('challenge_id, user_id, invited_by, status, summary, created_at, responded_at')
-            .in('challenge_id', challengeIds),
-        ])
-
-        if (challengeResult.error) {
-          if (isFriendChallengeSchemaError(challengeResult.error)) {
-            throw new Error('Run the updated Supabase schema to enable friend challenges.')
-          }
-          throw challengeResult.error
-        }
-        if (participantResult.error) {
-          if (isFriendChallengeSchemaError(participantResult.error)) {
-            throw new Error('Run the updated Supabase schema to enable friend challenges.')
-          }
-          throw participantResult.error
-        }
-
-        const challenges = (challengeResult.data ?? [])
-          .map(normalizeFriendChallengeRow)
-          .filter((challenge): challenge is FriendChallenge => challenge !== null)
-        const challengeParticipants = (participantResult.data ?? [])
-          .map(normalizeFriendChallengeParticipantRow)
-          .filter((participant): participant is FriendChallengeParticipant => participant !== null)
-        const missingProfileIds = Array.from(new Set(challengeParticipants.map((participant) => participant.userId)))
-          .filter((profileUserId) => !profilesByUserId.has(profileUserId))
-
-        if (missingProfileIds.length > 0) {
-          const { data: challengeProfileRows, error: challengeProfileError } = await supabase
-            .from(SUPABASE_PROFILE_TABLE)
-            .select('user_id, display_name, invite_code')
-            .in('user_id', missingProfileIds)
-
-          if (challengeProfileError) throw challengeProfileError
-          for (const challengeProfile of (challengeProfileRows ?? [])
-            .map(normalizeFriendProfileRow)
-            .filter((profileRow): profileRow is FriendProfile => profileRow !== null)) {
-            profilesByUserId.set(challengeProfile.userId, challengeProfile)
-          }
-        }
-
-        challengeViews = challenges
-          .map((challenge) => {
-            const participants = challengeParticipants
-              .filter((participant) => participant.challengeId === challenge.id)
-              .map((participant) => {
-                const participantProfile = profilesByUserId.get(participant.userId)
-                return {
-                  userId: participant.userId,
-                  displayName: participantProfile?.displayName ?? 'Challenger',
-                  inviteCode: participantProfile?.inviteCode ?? '',
-                  invitedBy: participant.invitedBy,
-                  status: participant.status,
-                  summary: participant.summary,
-                  createdAt: participant.createdAt,
-                  respondedAt: participant.respondedAt,
-                  isCurrentUser: participant.userId === user.id,
-                } satisfies FriendChallengeParticipantView
-              })
-              .sort((a, b) => {
-                if (a.status !== b.status) return a.status === 'accepted' ? -1 : 1
-                return (b.summary?.weeklyCompletion ?? 0) - (a.summary?.weeklyCompletion ?? 0)
-                  || (b.summary?.averageCompletion ?? 0) - (a.summary?.averageCompletion ?? 0)
-                  || a.displayName.localeCompare(b.displayName)
-              })
-            const currentParticipant = challengeParticipants.find((participant) => (
-              participant.challengeId === challenge.id && participant.userId === user.id
-            ))
-
-            return {
-              ...challenge,
-              currentUserStatus: currentParticipant?.status ?? 'pending',
-              isCreator: challenge.creatorId === user.id,
-              participants,
-            } satisfies FriendChallengeView
-          })
-          .sort((a, b) => {
-            if (a.currentUserStatus !== b.currentUserStatus) return a.currentUserStatus === 'pending' ? -1 : 1
-            return b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name)
-          })
-      }
-
-      const { data: squadRows, error: squadError } = await supabase
-        .from(SUPABASE_SQUAD_TABLE)
-        .select('id, owner_id, name, created_at, updated_at')
-        .eq('owner_id', user.id)
-
-      if (squadError) {
-        if (isFriendSquadSchemaError(squadError)) {
-          squadSchemaReady = false
-        } else {
-          throw squadError
-        }
-      } else {
-        const squads = (squadRows ?? [])
-          .map(normalizeFriendSquadRow)
-          .filter((squad): squad is FriendSquad => squad !== null)
-        const squadIds = squads.map((squad) => squad.id)
-        let squadMembers: FriendSquadMember[] = []
-
-        if (squadIds.length > 0) {
-          const { data: memberRows, error: memberError } = await supabase
-            .from(SUPABASE_SQUAD_MEMBER_TABLE)
-            .select('squad_id, user_id, added_by, created_at')
-            .in('squad_id', squadIds)
-
-          if (memberError) {
-            if (isFriendSquadSchemaError(memberError)) {
-              squadSchemaReady = false
-            } else {
-              throw memberError
-            }
-          } else {
-            squadMembers = (memberRows ?? [])
-              .map(normalizeFriendSquadMemberRow)
-              .filter((member): member is FriendSquadMember => member !== null)
-          }
-        }
-
-        squadViews = squadSchemaReady
-          ? squads
-            .map((squad) => ({
-              ...squad,
-              members: squadMembers
-                .filter((member) => member.squadId === squad.id && acceptedFriendIds.includes(member.userId))
-                .map((member) => profilesByUserId.get(member.userId))
-                .filter((memberProfile): memberProfile is FriendProfile => memberProfile !== undefined)
-                .sort((a, b) => a.displayName.localeCompare(b.displayName)),
-            } satisfies FriendSquadView))
-            .sort((a, b) => a.name.localeCompare(b.name))
-          : []
-      }
-
-      const eventActorIds = Array.from(new Set([user.id, ...acceptedFriendIds]))
-      const { data: friendEventRows, error: friendEventError } = await supabase
-        .from(SUPABASE_FRIEND_EVENT_TABLE)
-        .select('id, actor_id, target_user_id, challenge_id, squad_id, event_type, metadata, created_at')
-        .or(`actor_id.in.(${eventActorIds.join(',')}),target_user_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-        .limit(40)
-
-      if (friendEventError) {
-        if (!isFriendEventSchemaError(friendEventError)) throw friendEventError
-      } else {
-        eventRows = (friendEventRows ?? [])
-          .map(normalizeFriendEventRow)
-          .filter((event): event is FriendEvent => event !== null)
-      }
-
-      setLeaderboardRows(rows)
-      setFriendRequests(requests)
-      setFriendChallenges(challengeViews)
-      setFriendSquads(squadViews)
-      setFriendEvents(eventRows)
+      const data = await loadSocialDashboard(supabase, user)
+      setFriendProfile(data.profile)
+      setDisplayNameDraft(data.profile.displayName)
+      setLeaderboardRows(data.leaderboardRows)
+      setFriendRequests(data.requests)
+      setFriendChallenges(data.challenges)
+      setFriendSquads(data.squads)
+      setFriendEvents(data.events)
       setFriendsStatus({
-        tone: squadSchemaReady ? 'success' : 'neutral',
-        message: squadSchemaReady
-          ? `${acceptedFriendIds.length} ${acceptedFriendIds.length === 1 ? 'friend' : 'friends'} · ${squadViews.length} ${squadViews.length === 1 ? 'squad' : 'squads'} · ${requests.length} pending · ${challengeViews.length} challenges.`
+        tone: data.squadSchemaReady ? 'success' : 'neutral',
+        message: data.squadSchemaReady
+          ? `${data.acceptedFriendCount} ${data.acceptedFriendCount === 1 ? 'friend' : 'friends'} · ${data.squads.length} ${data.squads.length === 1 ? 'squad' : 'squads'} · ${data.requests.length} pending · ${data.challenges.length} challenges.`
           : 'Friends loaded. Run the updated Supabase schema to enable squads.',
       })
     } catch (error) {
@@ -1958,7 +1270,6 @@ function App() {
       setFriendsBusy(false)
     }
   }
-
   async function saveFriendProfile() {
     if (!supabase || !user) return
 
@@ -1970,22 +1281,10 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const profile = await ensureFriendProfile()
-      if (!profile) throw new Error('Could not load your friend profile.')
-
-      const { data, error } = await supabase
-        .from(SUPABASE_PROFILE_TABLE)
-        .update({ display_name: displayName })
-        .eq('user_id', user.id)
-        .select('user_id, display_name, invite_code')
-        .single()
-
-      if (error) throw error
-      const normalizedProfile = normalizeFriendProfileRow(data)
-      if (normalizedProfile) {
-        setFriendProfile(normalizedProfile)
-        setDisplayNameDraft(normalizedProfile.displayName)
-      }
+      await ensureFriendProfile()
+      const profile = await updateFriendProfileApi(supabase, user.id, displayName)
+      setFriendProfile(profile)
+      setDisplayNameDraft(profile.displayName)
       setFriendsStatus({ tone: 'success', message: 'Friend profile saved.' })
       await refreshFriendsData()
     } catch (error) {
@@ -2072,25 +1371,7 @@ function App() {
     } = {},
   ) {
     if (!supabase || !user) return
-
-    try {
-      const { error } = await supabase
-        .from(SUPABASE_FRIEND_EVENT_TABLE)
-        .insert({
-          actor_id: user.id,
-          target_user_id: options.targetUserId ?? null,
-          challenge_id: options.challengeId ?? null,
-          squad_id: options.squadId ?? null,
-          event_type: eventType,
-          metadata: options.metadata ?? {},
-        })
-
-      if (error && !isFriendEventSchemaError(error)) {
-        console.warn('Could not record friend event', error)
-      }
-    } catch (error) {
-      if (!isFriendEventSchemaError(error)) console.warn('Could not record friend event', error)
-    }
+    await recordFriendEventApi(supabase, user.id, eventType, options)
   }
 
   async function sendFriendRequestByInviteCode() {
@@ -2104,80 +1385,17 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const profile = await ensureFriendProfile()
-      if (!profile) throw new Error('Could not load your friend profile.')
-
-      const { data: friendProfileRow, error: friendProfileError } = await supabase
-        .from(SUPABASE_PROFILE_TABLE)
-        .select('user_id, display_name, invite_code')
-        .eq('invite_code', inviteCode)
-        .maybeSingle()
-
-      if (friendProfileError) throw friendProfileError
-      const friendProfile = normalizeFriendProfileRow(friendProfileRow)
-      if (!friendProfile) throw new Error('No friend found with that invite code.')
-      if (friendProfile.userId === user.id) throw new Error('That is your own invite code.')
-
-      const [userA, userB] = sortedFriendshipPair(user.id, friendProfile.userId)
-      const { data: existingFriendshipRow, error: existingFriendshipError } = await supabase
-        .from(SUPABASE_FRIENDSHIP_TABLE)
-        .select('user_a, user_b, created_by, requested_by, status, created_at, responded_at')
-        .eq('user_a', userA)
-        .eq('user_b', userB)
-        .maybeSingle()
-
-      if (existingFriendshipError) {
-        if (isFriendRequestSchemaError(existingFriendshipError)) {
-          throw new Error('Run the updated Supabase schema to enable friend requests.')
-        }
-        throw existingFriendshipError
+      await ensureFriendProfile()
+      const result = await requestFriendByInviteCode(supabase, user.id, inviteCode)
+      if (result.incomingRequest) {
+        await respondToFriendRequestApi(supabase, user.id, result.profile.userId, 'accepted')
+        await recordFriendEvent('friend_request_accepted', { targetUserId: result.profile.userId })
+        setFriendsStatus({ tone: 'success', message: `${result.profile.displayName} accepted.` })
+      } else {
+        await recordFriendEvent('friend_request_sent', { targetUserId: result.profile.userId })
+        setFriendsStatus({ tone: 'success', message: `Friend request sent to ${result.profile.displayName}.` })
       }
-
-      const existingFriendship = normalizeFriendshipRow(existingFriendshipRow)
-      if (existingFriendship?.status === 'accepted') {
-        throw new Error(`${friendProfile.displayName} is already on your leaderboard.`)
-      }
-
-      if (existingFriendship?.status === 'pending' && existingFriendship.requestedBy === user.id) {
-        throw new Error(`You already sent ${friendProfile.displayName} a request.`)
-      }
-
-      if (existingFriendship?.status === 'pending' && existingFriendship.requestedBy !== user.id) {
-        await respondToFriendRequest(friendProfile.userId, 'accepted', `${friendProfile.displayName} accepted.`)
-        setInviteCodeDraft('')
-        return
-      }
-
-      const nextRequest = {
-        user_a: userA,
-        user_b: userB,
-        created_by: user.id,
-        requested_by: user.id,
-        status: 'pending',
-        responded_at: null,
-      }
-      const { error: friendshipError } = existingFriendship
-        ? await supabase
-          .from(SUPABASE_FRIENDSHIP_TABLE)
-          .update(nextRequest)
-          .eq('user_a', userA)
-          .eq('user_b', userB)
-        : await supabase
-          .from(SUPABASE_FRIENDSHIP_TABLE)
-          .insert({
-            ...nextRequest,
-            created_at: new Date().toISOString(),
-          })
-
-      if (friendshipError) {
-        if (isFriendRequestSchemaError(friendshipError)) {
-          throw new Error('Run the updated Supabase schema to enable friend requests.')
-        }
-        throw friendshipError
-      }
-      await recordFriendEvent('friend_request_sent', { targetUserId: friendProfile.userId })
       setInviteCodeDraft('')
-      setFriendsStatus({ tone: 'success', message: `Friend request sent to ${friendProfile.displayName}.` })
       await refreshFriendsData()
     } catch (error) {
       setFriendsStatus({
@@ -2188,33 +1406,12 @@ function App() {
       setFriendsBusy(false)
     }
   }
-
   async function respondToFriendRequest(otherUserId: string, nextStatus: 'accepted' | 'declined', successMessage?: string) {
     if (!supabase || !user) return
 
     setFriendsBusy(true)
     try {
-      const [userA, userB] = sortedFriendshipPair(user.id, otherUserId)
-      const { data, error } = await supabase
-        .from(SUPABASE_FRIENDSHIP_TABLE)
-        .update({
-          status: nextStatus,
-          responded_at: new Date().toISOString(),
-        })
-        .eq('user_a', userA)
-        .eq('user_b', userB)
-        .eq('status', 'pending')
-        .neq('requested_by', user.id)
-        .select('user_a')
-        .maybeSingle()
-
-      if (error) {
-        if (isFriendRequestSchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable friend requests.')
-        }
-        throw error
-      }
-      if (!data) throw new Error('No incoming friend request found.')
+      await respondToFriendRequestApi(supabase, user.id, otherUserId, nextStatus)
 
       setFriendsStatus({
         tone: 'success',
@@ -2242,7 +1439,6 @@ function App() {
       setFriendsStatus({ tone: 'error', message: 'Squad name cannot be empty.' })
       return
     }
-
     const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
     const memberIds = Array.from(new Set(input.memberIds)).filter((memberId) => acceptedFriendIds.has(memberId))
     if (memberIds.length === 0) {
@@ -2252,67 +1448,20 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const { data: squadRow, error: squadError } = await supabase
-        .from(SUPABASE_SQUAD_TABLE)
-        .insert({
-          owner_id: user.id,
-          name,
-          updated_at: new Date().toISOString(),
-        })
-        .select('id, owner_id, name, created_at, updated_at')
-        .single()
-
-      if (squadError) {
-        if (isFriendSquadSchemaError(squadError)) {
-          throw new Error('Run the updated Supabase schema to enable squads.')
-        }
-        throw squadError
-      }
-
-      const squad = normalizeFriendSquadRow(squadRow)
-      if (!squad) throw new Error('Could not create the squad.')
-
-      const { error: memberError } = await supabase
-        .from(SUPABASE_SQUAD_MEMBER_TABLE)
-        .insert(memberIds.map((memberId) => ({
-          squad_id: squad.id,
-          user_id: memberId,
-          added_by: user.id,
-        })))
-
-      if (memberError) {
-        await supabase
-          .from(SUPABASE_SQUAD_TABLE)
-          .delete()
-          .eq('id', squad.id)
-          .eq('owner_id', user.id)
-
-        if (isFriendSquadSchemaError(memberError)) {
-          throw new Error('Run the updated Supabase schema to enable squads.')
-        }
-        throw memberError
-      }
-
+      const squad = await createSquadRecord(supabase, user.id, name, memberIds)
       await recordFriendEvent('squad_created', {
         squadId: squad.id,
-        metadata: {
-          squadName: squad.name,
-          memberCount: memberIds.length,
-        },
+        metadata: { squadName: squad.name, memberCount: memberIds.length },
       })
       setFriendsStatus({ tone: 'success', message: `${squad.name} squad created.` })
       showAppNotice('Squad created.')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not create the squad.',
-      })
+      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not create the squad.' })
     } finally {
       setFriendsBusy(false)
     }
   }
-
   async function updateFriendSquad(input: UpdateFriendSquadInput) {
     if (!supabase || !user) return
 
@@ -2321,83 +1470,29 @@ function App() {
       setFriendsStatus({ tone: 'error', message: 'Squad name cannot be empty.' })
       return
     }
-
-    const squad = friendSquads.find((item) => item.id === input.squadId)
-    if (!squad) {
+    if (!friendSquads.some((squad) => squad.id === input.squadId)) {
       setFriendsStatus({ tone: 'error', message: 'Could not find that squad.' })
       return
     }
-
     const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
     const memberIds = Array.from(new Set(input.memberIds)).filter((memberId) => acceptedFriendIds.has(memberId))
 
     setFriendsBusy(true)
     try {
-      const { error: squadError } = await supabase
-        .from(SUPABASE_SQUAD_TABLE)
-        .update({
-          name,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', input.squadId)
-        .eq('owner_id', user.id)
-
-      if (squadError) {
-        if (isFriendSquadSchemaError(squadError)) {
-          throw new Error('Run the updated Supabase schema to enable squads.')
-        }
-        throw squadError
-      }
-
-      const { error: deleteError } = await supabase
-        .from(SUPABASE_SQUAD_MEMBER_TABLE)
-        .delete()
-        .eq('squad_id', input.squadId)
-
-      if (deleteError) {
-        if (isFriendSquadSchemaError(deleteError)) {
-          throw new Error('Run the updated Supabase schema to enable squads.')
-        }
-        throw deleteError
-      }
-
-      if (memberIds.length > 0) {
-        const { error: memberError } = await supabase
-          .from(SUPABASE_SQUAD_MEMBER_TABLE)
-          .insert(memberIds.map((memberId) => ({
-            squad_id: input.squadId,
-            user_id: memberId,
-            added_by: user.id,
-          })))
-
-        if (memberError) {
-          if (isFriendSquadSchemaError(memberError)) {
-            throw new Error('Run the updated Supabase schema to enable squads.')
-          }
-          throw memberError
-        }
-      }
-
+      await updateSquadRecord(supabase, user.id, input.squadId, name, memberIds)
       await recordFriendEvent('squad_updated', {
         squadId: input.squadId,
-        metadata: {
-          squadName: name,
-          memberCount: memberIds.length,
-        },
+        metadata: { squadName: name, memberCount: memberIds.length },
       })
       setFriendsStatus({ tone: 'success', message: `${name} squad updated.` })
       showAppNotice('Squad updated.')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not update the squad.',
-      })
+      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not update the squad.' })
     } finally {
       setFriendsBusy(false)
     }
   }
-
   async function deleteFriendSquad(squadId: string) {
     if (!supabase || !user) return
 
@@ -2410,18 +1505,7 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const { error } = await supabase
-        .from(SUPABASE_SQUAD_TABLE)
-        .delete()
-        .eq('id', squadId)
-        .eq('owner_id', user.id)
-
-      if (error) {
-        if (isFriendSquadSchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable squads.')
-        }
-        throw error
-      }
+      await deleteSquadRecord(supabase, user.id, squadId)
 
       await recordFriendEvent('squad_deleted', {
         squadId,
@@ -2453,78 +1537,25 @@ function App() {
       setFriendsStatus({ tone: 'error', message: 'Choose a valid challenge date range.' })
       return
     }
-
     const acceptedFriendIds = new Set(leaderboardRows.filter((row) => !row.isCurrentUser).map((row) => row.userId))
     const inviteeIds = Array.from(new Set(input.inviteeIds)).filter((inviteeId) => acceptedFriendIds.has(inviteeId))
 
     setFriendsBusy(true)
     try {
-      const profile = await ensureFriendProfile()
-      if (!profile) throw new Error('Could not load your friend profile.')
-
+      await ensureFriendProfile()
       const challengeSettings = buildChallengeSettingsForTemplate(settings, input.templateId, name, input.startDate, input.endDate)
-      const { data: challengeRow, error: challengeError } = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_TABLE)
-        .insert({
-          creator_id: user.id,
-          name,
-          start_date: input.startDate,
-          end_date: input.endDate,
-          scoring_mode: input.scoringMode,
-          settings: challengeSettings,
-          updated_at: new Date().toISOString(),
-        })
-        .select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at')
-        .single()
-
-      if (challengeError) {
-        if (isFriendChallengeSchemaError(challengeError)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw challengeError
-      }
-
-      const challenge = normalizeFriendChallengeRow(challengeRow)
-      if (!challenge) throw new Error('Could not create the challenge.')
-      const ownerSummary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
-      const now = new Date().toISOString()
-      const participantRows = [
-        {
-          challenge_id: challenge.id,
-          user_id: user.id,
-          invited_by: user.id,
-          status: 'accepted',
-          summary: ownerSummary,
-          responded_at: now,
-        },
-        ...inviteeIds.map((inviteeId) => ({
-          challenge_id: challenge.id,
-          user_id: inviteeId,
-          invited_by: user.id,
-          status: 'pending',
-          summary: null,
-          responded_at: null,
-        })),
-      ]
-
-      const { error: participantError } = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .insert(participantRows)
-
-      if (participantError) {
-        if (isFriendChallengeSchemaError(participantError)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw participantError
-      }
-
+      const challenge = await createChallengeRecord(supabase, user.id, {
+        name,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        scoringMode: input.scoringMode,
+        settings: challengeSettings,
+        inviteeIds,
+        ownerSummary: (createdChallenge) => buildFriendChallengeSummary(user.id, entries, createdChallenge, settings, privacySettings),
+      })
       await recordFriendEvent('challenge_created', {
         challengeId: challenge.id,
-        metadata: {
-          challengeName: challenge.name,
-          inviteCount: inviteeIds.length,
-          templateId: input.templateId ?? 'custom',
-        },
+        metadata: { challengeName: challenge.name, inviteCount: inviteeIds.length, templateId: input.templateId ?? 'custom' },
       })
       setFriendsStatus({
         tone: 'success',
@@ -2534,15 +1565,11 @@ function App() {
       })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not create the friend challenge.',
-      })
+      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not create the friend challenge.' })
     } finally {
       setFriendsBusy(false)
     }
   }
-
   async function inviteFriendChallengeParticipants(input: InviteFriendChallengeInput) {
     if (!supabase || !user) return
 
@@ -2568,23 +1595,7 @@ function App() {
 
     setFriendsBusy(true)
     try {
-      const { error } = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .insert(inviteeIds.map((inviteeId) => ({
-          challenge_id: challenge.id,
-          user_id: inviteeId,
-          invited_by: user.id,
-          status: 'pending',
-          summary: null,
-          responded_at: null,
-        })))
-
-      if (error) {
-        if (isFriendChallengeSchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw error
-      }
+      await inviteChallengeParticipants(supabase, user.id, challenge.id, inviteeIds)
 
       await recordFriendEvent('challenge_invites_sent', {
         challengeId: challenge.id,
@@ -2615,30 +1626,10 @@ function App() {
     setFriendsBusy(true)
     try {
       const challenge = friendChallenges.find((item) => item.id === challengeId)
-      const updatePayload: Record<string, unknown> = {
-        status: nextStatus,
-        responded_at: new Date().toISOString(),
-      }
-      if (challenge && nextStatus === 'accepted') {
-        updatePayload.summary = buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
-      }
-
-      const { data, error } = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .update(updatePayload)
-        .eq('challenge_id', challengeId)
-        .eq('user_id', user.id)
-        .eq('status', 'pending')
-        .select('challenge_id')
-        .maybeSingle()
-
-      if (error) {
-        if (isFriendChallengeSchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw error
-      }
-      if (!data) throw new Error('No pending challenge invite found.')
+      const summary = challenge && nextStatus === 'accepted'
+        ? buildFriendChallengeSummary(user.id, entries, challenge, settings, privacySettings)
+        : null
+      await respondToChallengeInvite(supabase, user.id, challengeId, nextStatus, summary)
 
       setFriendsStatus({
         tone: 'success',
@@ -2682,22 +1673,7 @@ function App() {
         note: cleanNote,
         reaction,
       }
-      const { error } = await supabase
-        .from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
-        .update({
-          summary,
-          responded_at: new Date().toISOString(),
-        })
-        .eq('challenge_id', challengeId)
-        .eq('user_id', user.id)
-        .eq('status', 'accepted')
-
-      if (error) {
-        if (isFriendChallengeSchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable friend challenges.')
-        }
-        throw error
-      }
+      await publishChallengeScore(supabase, user.id, challengeId, summary)
 
       await recordFriendEvent('challenge_score_published', {
         challengeId,
@@ -2728,30 +1704,7 @@ function App() {
       if (!profile) throw new Error('Could not load your friend profile.')
 
       const summary = buildChallengeSummary(user.id, sourceEntries, settings, sourcePrivacySettings)
-      const { error } = await supabase
-        .from(SUPABASE_SUMMARY_TABLE)
-        .upsert({
-          user_id: user.id,
-          challenge_title: summary.challengeTitle,
-          start_date: summary.startDate,
-          end_date: summary.endDate,
-          logged_days: summary.loggedDays,
-          total_days: summary.totalDays,
-          average_completion: summary.averageCompletion,
-          weekly_completion: summary.weeklyCompletion,
-          current_streak: summary.currentStreak,
-          longest_streak: summary.longestStreak,
-          last_logged_date: summary.lastLoggedDate,
-          privacy: summary.privacy,
-          updated_at: summary.updatedAt,
-        }, { onConflict: 'user_id' })
-
-      if (error) {
-        if (isSummarySchemaError(error)) {
-          throw new Error('Run the updated Supabase schema to enable privacy settings.')
-        }
-        throw error
-      }
+      await publishLeaderboardSummary(supabase, summary)
       if (!silent) {
         await recordFriendEvent('leaderboard_score_published')
       }
