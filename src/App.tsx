@@ -24,6 +24,7 @@ import {
   updateFriendProfile as updateFriendProfileApi,
   updateSquad as updateSquadRecord,
 } from './services/socialApi'
+import { retryServiceOperation, serviceErrorStatus } from './services/reliability'
 import {
   buildChallengeSettingsForTemplate,
   buildChallengeSummary,
@@ -270,6 +271,7 @@ function App() {
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [cloudBusy, setCloudBusy] = useState(false)
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)).lastCloudUpdatedAt)
   const [cloudStatus, setCloudStatus] = useState<DataStatus>({
     tone: 'neutral',
@@ -351,6 +353,24 @@ function App() {
     const timer = window.setTimeout(() => setAppNotice(null), 3600)
     return () => window.clearTimeout(timer)
   }, [appNotice])
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+      showAppNotice('Back online. Cloud actions are available again.')
+      if (user) void refreshFriendsData()
+    }
+    const handleOffline = () => {
+      setIsOnline(false)
+      showAppNotice('You are offline. Local tracking will keep working.', 'neutral')
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [user])
 
   useEffect(() => {
     if (!supabase) return
@@ -587,21 +607,27 @@ function App() {
 
   async function fetchCloudSnapshot(): Promise<CloudSnapshot | null> {
     if (!supabase || !user) return null
-    return fetchCloudSnapshotApi(supabase, user.id)
+    const client = supabase
+    const userId = user.id
+    return retryServiceOperation(() => fetchCloudSnapshotApi(client, userId))
   }
 
   async function writeCloudSnapshot(nextSettings: ChallengeSettings, nextEntries: EntryMap): Promise<string> {
     if (!supabase || !user) throw new Error('Sign in before syncing.')
-    return writeCloudSnapshotApi(supabase, user.id, nextSettings, nextEntries)
+    const client = supabase
+    const userId = user.id
+    return retryServiceOperation(() => writeCloudSnapshotApi(client, userId, nextSettings, nextEntries))
   }
 
   async function buildAccountDataExport(): Promise<AccountDataExport> {
     if (!supabase || !user) throw new Error('Sign in before exporting account data.')
-    return buildAccountDataExportApi(supabase, user, {
+    const client = supabase
+    const currentUser = user
+    return retryServiceOperation(() => buildAccountDataExportApi(client, currentUser, {
       settings,
       entries,
       privacy: privacySettings,
-    })
+    }))
   }
   async function sendMagicLink() {
     if (!supabase) return
@@ -795,10 +821,7 @@ function App() {
       setSyncConflict(null)
       setCloudStatus({ tone: 'success', message: 'Local data pushed to cloud.' })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not push data to cloud.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not push data to cloud.'))
     } finally {
       setCloudBusy(false)
     }
@@ -831,10 +854,7 @@ function App() {
       setSyncConflict(null)
       setCloudStatus({ tone: 'success', message: 'Cloud data pulled onto this device.' })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not pull cloud data.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not pull cloud data.'))
     } finally {
       setCloudBusy(false)
     }
@@ -850,10 +870,20 @@ function App() {
       downloadTextFile(filename, 'application/json;charset=utf-8', JSON.stringify(payload, null, 2))
       setCloudStatus({ tone: 'success', message: 'Account data export downloaded.' })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not export account data.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not export account data.'))
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function retryCloudConnection() {
+    if (!supabase || !user || !isOnline) return
+    setCloudBusy(true)
+    try {
+      await fetchCloudSnapshot()
+      setCloudStatus({ tone: 'success', message: 'Cloud connection restored. You can sync again.' })
+    } catch (error) {
+      setCloudStatus(serviceErrorStatus(error, 'Could not reconnect to cloud.'))
     } finally {
       setCloudBusy(false)
     }
@@ -888,10 +918,7 @@ function App() {
       setFriendsStatus({ tone: 'neutral', message: 'Cloud friend data deleted.' })
       setCloudStatus({ tone: 'success', message: 'Cloud account data deleted. Local data remains on this device.' })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not delete cloud account data.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not delete cloud account data.'))
     } finally {
       setCloudBusy(false)
     }
@@ -926,10 +953,7 @@ function App() {
       setSyncConflict(null)
       setCloudStatus({ tone: 'success', message: 'Local version kept and pushed to cloud.' })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not keep local version.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not keep local version.'))
     } finally {
       setCloudBusy(false)
     }
@@ -953,10 +977,7 @@ function App() {
           : `Merged ${addedCount} cloud-only ${addedCount === 1 ? 'day' : 'days'} and kept local overlapping days.`,
       })
     } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not merge cloud and local data.',
-      })
+      setCloudStatus(serviceErrorStatus(error, 'Could not merge cloud and local data.'))
     } finally {
       setCloudBusy(false)
     }
@@ -993,10 +1014,12 @@ function App() {
 
   async function refreshFriendsData() {
     if (!supabase || !user) return
+    const client = supabase
+    const currentUser = user
 
     setFriendsBusy(true)
     try {
-      const data = await loadSocialDashboard(supabase, user)
+      const data = await retryServiceOperation(() => loadSocialDashboard(client, currentUser))
       setFriendProfile(data.profile)
       setDisplayNameDraft(data.profile.displayName)
       setLeaderboardRows(data.leaderboardRows)
@@ -1012,10 +1035,7 @@ function App() {
           : 'Friends loaded. Run the updated Supabase schema to enable all squad and daily-history features.',
       })
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not load friends.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not load friends.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1038,10 +1058,7 @@ function App() {
       setFriendsStatus({ tone: 'success', message: 'Friend profile saved.' })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not save friend profile.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not save friend profile.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1148,10 +1165,7 @@ function App() {
       setInviteCodeDraft('')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not send friend request.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not send friend request.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1172,10 +1186,7 @@ function App() {
       })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not update friend request.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not update friend request.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1207,7 +1218,7 @@ function App() {
       showAppNotice('Squad created.')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not create the squad.' })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not create the squad.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1238,7 +1249,7 @@ function App() {
       showAppNotice('Squad updated.')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not update the squad.' })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not update the squad.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1266,10 +1277,7 @@ function App() {
       setFriendsStatus({ tone: 'success', message: 'Squad deleted.' })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not delete the squad.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not delete the squad.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1315,7 +1323,7 @@ function App() {
       })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({ tone: 'error', message: error instanceof Error ? error.message : 'Could not create the friend challenge.' })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not create the friend challenge.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1361,10 +1369,7 @@ function App() {
       showAppNotice('Challenge invite sent.')
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not invite friends to the challenge.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not invite friends to the challenge.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1393,10 +1398,7 @@ function App() {
       })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not update the challenge invite.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not update the challenge invite.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1404,6 +1406,8 @@ function App() {
 
   async function publishFriendChallengeScore(challengeId: string, note = '', reaction: ScoreReaction | null = null) {
     if (!supabase || !user) return
+    const client = supabase
+    const userId = user.id
 
     const challenge = friendChallenges.find((item) => item.id === challengeId)
     if (!challenge) {
@@ -1424,7 +1428,9 @@ function App() {
         reaction,
       }
       const snapshots = buildFriendChallengeSnapshots(user.id, entries, challenge, settings)
-      const historyPublished = await publishChallengeScore(supabase, user.id, challengeId, summary, snapshots)
+      const historyPublished = await retryServiceOperation(() => (
+        publishChallengeScore(client, userId, challengeId, summary, snapshots)
+      ))
 
       await recordFriendEvent('challenge_score_published', {
         challengeId,
@@ -1442,10 +1448,7 @@ function App() {
       })
       await refreshFriendsData()
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not publish the challenge score.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not publish the challenge score.'))
     } finally {
       setFriendsBusy(false)
     }
@@ -1453,6 +1456,7 @@ function App() {
 
   async function publishFriendSummary(silent = false, sourceEntries = entries, sourcePrivacySettings = privacySettings) {
     if (!supabase || !user) return
+    const client = supabase
 
     if (!silent) setFriendsBusy(true)
     try {
@@ -1460,17 +1464,14 @@ function App() {
       if (!profile) throw new Error('Could not load your friend profile.')
 
       const summary = buildChallengeSummary(user.id, sourceEntries, settings, sourcePrivacySettings)
-      await publishLeaderboardSummary(supabase, summary)
+      await retryServiceOperation(() => publishLeaderboardSummary(client, summary))
       if (!silent) {
         await recordFriendEvent('leaderboard_score_published')
       }
       await refreshFriendsData()
       if (!silent) setFriendsStatus({ tone: 'success', message: 'Leaderboard score published.' })
     } catch (error) {
-      setFriendsStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not publish leaderboard score.',
-      })
+      setFriendsStatus(serviceErrorStatus(error, 'Could not publish leaderboard score.'))
     } finally {
       if (!silent) setFriendsBusy(false)
     }
@@ -1560,6 +1561,12 @@ function App() {
         </div>
       </header>
       {appNotice && <AppNoticeToast notice={appNotice} onDismiss={() => setAppNotice(null)} />}
+      {!isOnline && (
+        <section className="connection-banner" role="status">
+          <strong>Offline</strong>
+          <span>Daily tracking still saves on this device. Cloud sync and friends will return when you reconnect.</span>
+        </section>
+      )}
 
       <main>
         <section className="date-strip" aria-label="Selected day">
@@ -1678,6 +1685,7 @@ function App() {
               privacySettings={privacySettings}
               status={friendsStatus}
               busy={friendsBusy}
+              online={isOnline}
               onDisplayNameChange={setDisplayNameDraft}
               onInviteCodeChange={setInviteCodeDraft}
               onSaveProfile={saveFriendProfile}
@@ -1717,6 +1725,7 @@ function App() {
               cloudConfigured={isSupabaseConfigured}
               cloudStatus={cloudStatus}
               cloudBusy={cloudBusy}
+              online={isOnline}
               cloudUpdatedAt={cloudUpdatedAt}
               syncConflict={syncConflict}
               user={user}
@@ -1736,6 +1745,7 @@ function App() {
               onSignOut={signOut}
               onPushCloud={pushCloudData}
               onPullCloud={pullCloudData}
+              onRetryCloud={retryCloudConnection}
               onExportAccountData={exportAccountData}
               onDeleteCloudAccountData={deleteCloudAccountData}
               onUseCloudVersion={useCloudConflictVersion}

@@ -46,11 +46,13 @@
 - Private squads, challenge templates, stored activity events, and friend profiles
 - Per-day published challenge score history
 
-## Reliability and architecture (in progress)
+## Reliability and architecture (beta-ready)
 
-- Vitest coverage for tracker scoring, privacy, challenge templates, history snapshots, and row normalization
+- Vitest coverage for tracker scoring, privacy, challenge templates, history snapshots, row normalization, transient retries, and mocked social mutations
 - Dedicated social and cloud Supabase service modules
-- Next: retryable offline/error states and browser-level smoke tests
+- Shared transient-error classification and safe-operation retry service
+- Clear offline status and retry controls for cloud and social features
+- Next: automated single-account and seeded two-account browser smoke tests
 
 ## Ongoing tracker pivot (complete)
 

@@ -789,6 +789,44 @@ textarea:focus-visible {
   color: #ff9ca2;
 }
 
+.status-with-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.connection-banner {
+  width: min(calc(100% - 32px), 1160px);
+  margin: 10px auto 0;
+  padding: 11px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  border: 1px solid rgba(255, 190, 92, 0.35);
+  border-radius: 8px;
+  background: #241b13;
+  color: #ffd79b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.connection-banner strong {
+  color: #fff3df;
+}
+
+@media (max-width: 540px) {
+  .status-with-action {
+    grid-template-columns: 1fr;
+  }
+
+  .connection-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
 .form-panel {
   display: grid;
   gap: 12px;

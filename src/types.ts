@@ -123,6 +123,7 @@ export type AccountDataExport = {
 export type DataStatus = {
   tone: 'success' | 'error' | 'neutral'
   message: string
+  retryable?: boolean
 }
 
 export type AppNotice = {

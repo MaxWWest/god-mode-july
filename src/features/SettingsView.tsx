@@ -38,6 +38,7 @@ export default function SettingsView({
   cloudConfigured,
   cloudStatus,
   cloudBusy,
+  online,
   cloudUpdatedAt,
   syncConflict,
   user,
@@ -57,6 +58,7 @@ export default function SettingsView({
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onRetryCloud,
   onExportAccountData,
   onDeleteCloudAccountData,
   onUseCloudVersion,
@@ -71,6 +73,7 @@ export default function SettingsView({
   cloudConfigured: boolean
   cloudStatus: DataStatus
   cloudBusy: boolean
+  online: boolean
   cloudUpdatedAt: string | null
   syncConflict: SyncConflict | null
   user: User | null
@@ -90,6 +93,7 @@ export default function SettingsView({
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onRetryCloud: () => void
   onExportAccountData: () => void
   onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
@@ -231,6 +235,7 @@ export default function SettingsView({
           user={user}
           status={cloudStatus}
           busy={cloudBusy}
+          online={online}
           updatedAt={cloudUpdatedAt}
           conflict={syncConflict}
           authEmail={authEmail}
@@ -245,6 +250,7 @@ export default function SettingsView({
           onSignOut={onSignOut}
           onPushCloud={onPushCloud}
           onPullCloud={onPullCloud}
+          onRetryCloud={onRetryCloud}
           onExportAccountData={onExportAccountData}
           onDeleteCloudAccountData={onDeleteCloudAccountData}
           onUseCloudVersion={onUseCloudVersion}
@@ -367,6 +373,7 @@ function CloudSyncPanel({
   user,
   status,
   busy,
+  online,
   updatedAt,
   conflict,
   authEmail,
@@ -381,6 +388,7 @@ function CloudSyncPanel({
   onSignOut,
   onPushCloud,
   onPullCloud,
+  onRetryCloud,
   onExportAccountData,
   onDeleteCloudAccountData,
   onUseCloudVersion,
@@ -392,6 +400,7 @@ function CloudSyncPanel({
   user: User | null
   status: DataStatus
   busy: boolean
+  online: boolean
   updatedAt: string | null
   conflict: SyncConflict | null
   authEmail: string
@@ -406,6 +415,7 @@ function CloudSyncPanel({
   onSignOut: () => void
   onPushCloud: () => void
   onPullCloud: () => void
+  onRetryCloud: () => void
   onExportAccountData: () => void
   onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
@@ -461,10 +471,10 @@ function CloudSyncPanel({
             </button>
           </div>
           <div className="data-actions">
-            <button className="secondary-button" type="button" onClick={onPushCloud} disabled={busy}>
+            <button className="secondary-button" type="button" onClick={onPushCloud} disabled={busy || !online}>
               Push Local
             </button>
-            <button className="secondary-button" type="button" onClick={onPullCloud} disabled={busy}>
+            <button className="secondary-button" type="button" onClick={onPullCloud} disabled={busy || !online}>
               Pull Cloud
             </button>
           </div>
@@ -476,7 +486,7 @@ function CloudSyncPanel({
             </div>
             <div className="password-update-actions">
               <TextField label="New Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
-              <button className="secondary-button" type="button" onClick={onSetAccountPassword} disabled={busy}>
+              <button className="secondary-button" type="button" onClick={onSetAccountPassword} disabled={busy || !online}>
                 Set Password
               </button>
             </div>
@@ -487,10 +497,10 @@ function CloudSyncPanel({
               <p>Export or delete the cloud records this app stores for your signed-in account.</p>
             </div>
             <div className="account-data-actions">
-              <button className="secondary-button" type="button" onClick={onExportAccountData} disabled={busy}>
+              <button className="secondary-button" type="button" onClick={onExportAccountData} disabled={busy || !online}>
                 Export Account Data
               </button>
-              <button className="danger-button" type="button" onClick={onDeleteCloudAccountData} disabled={busy}>
+              <button className="danger-button" type="button" onClick={onDeleteCloudAccountData} disabled={busy || !online}>
                 Delete Cloud Data
               </button>
             </div>
@@ -506,13 +516,13 @@ function CloudSyncPanel({
                 </small>
               </div>
               <div className="sync-conflict-actions">
-                <button className="secondary-button" type="button" onClick={onMergeCloudEntries} disabled={busy}>
+                <button className="secondary-button" type="button" onClick={onMergeCloudEntries} disabled={busy || !online}>
                   Merge Daily Entries
                 </button>
                 <button className="secondary-button" type="button" onClick={onUseCloudVersion} disabled={busy}>
                   Use Cloud
                 </button>
-                <button className="secondary-button" type="button" onClick={onKeepLocalVersion} disabled={busy}>
+                <button className="secondary-button" type="button" onClick={onKeepLocalVersion} disabled={busy || !online}>
                   Keep Local
                 </button>
                 <button className="ghost-button" type="button" onClick={onDismissConflict} disabled={busy}>
@@ -529,24 +539,31 @@ function CloudSyncPanel({
             <TextField label="Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
           </div>
           <div className="auth-actions">
-            <button className="secondary-button" type="button" onClick={onSignInWithPassword} disabled={busy}>
+            <button className="secondary-button" type="button" onClick={onSignInWithPassword} disabled={busy || !online}>
               Sign In
             </button>
-            <button className="secondary-button" type="button" onClick={onCreatePasswordAccount} disabled={busy}>
+            <button className="secondary-button" type="button" onClick={onCreatePasswordAccount} disabled={busy || !online}>
               Create Account
             </button>
           </div>
           <div className="auth-form">
-            <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy}>
+            <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy || !online}>
               Send Magic Link Backup
             </button>
-            <button className="ghost-button" type="button" onClick={onSendPasswordReset} disabled={busy}>
+            <button className="ghost-button" type="button" onClick={onSendPasswordReset} disabled={busy || !online}>
               Reset Password
             </button>
           </div>
         </div>
       )}
-      <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
+      <div className="status-with-action">
+        <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
+        {status.retryable && (
+          <button className="ghost-button compact-button" type="button" onClick={onRetryCloud} disabled={busy || !online}>
+            Retry Connection
+          </button>
+        )}
+      </div>
     </div>
   )
 }

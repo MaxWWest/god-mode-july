@@ -20,6 +20,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - CSV entry export
 - Supabase email/password auth and cloud sync
 - Multi-device conflict detection and resolution
+- Offline status with retryable cloud and social errors
 - Account data JSON export and cloud data deletion controls
 - Friends list with invite-code requests
 - Friend request accept/decline flow
@@ -67,7 +68,7 @@ Install prompts and service-worker behavior are most reliable from the productio
 npm test
 ```
 
-Vitest covers weighted tracker scoring, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, and Supabase row normalization.
+Vitest covers weighted tracker scoring, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
 
 ## Current data model
 
@@ -105,7 +106,8 @@ Friends, leaderboards, private squads, invite-only friend challenges, daily chal
 - `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
 - `src/services/socialApi.ts` owns profile, friendship, squad, challenge, leaderboard, and activity-feed database operations.
 - `src/services/cloudApi.ts` owns cloud snapshots, account export, and cloud account deletion operations.
-- `src/tracker.test.ts` and `src/socialData.test.ts` cover the highest-risk scoring, privacy, template, history, and normalization behavior.
+- `src/services/reliability.ts` classifies transient failures and retries safe cloud/social operations.
+- Tracker, social-data, reliability, and mocked social-service tests cover the highest-risk scoring, privacy, history, normalization, retry, and mutation behavior.
 - `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
 - `src/App.tsx` owns app state, user-facing validation and notices, auth/sync orchestration, Home, Calendar, and navigation.
 
@@ -123,11 +125,17 @@ Current social beta coverage:
 
 ## Recommended roadmap
 
-### Next: beta reliability
+### Beta reliability completed
 
-1. Add consistent retryable error states for failed sync and social requests, plus clearer offline status when Supabase cannot be reached.
-2. Extend service tests to friend-request, squad, and challenge mutations with a mocked Supabase client.
-3. Add an end-to-end browser smoke test for account sign-in, daily check-in, and the two-account friend challenge flow.
+1. Consistent retryable error states now cover failed sync and social requests, with a clear offline banner and local-data reassurance.
+2. Safe reads and upserts retry transient network, timeout, rate-limit, and server failures without replaying non-idempotent creation actions.
+3. Service tests now cover friend-request, squad, and challenge mutations with a mocked Supabase client.
+
+### Next: beta test automation
+
+1. Add an automated browser smoke test for account sign-in, daily check-in, local persistence, and sign-out.
+2. Add a seeded two-account browser test for friend requests and the challenge accept/publish flow.
+3. Run a small real-device beta matrix across iPhone Safari, installed iPhone PWA, and desktop Chrome.
 
 ### Then: stronger competition
 

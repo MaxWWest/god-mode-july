@@ -292,6 +292,7 @@ export default function FriendsView({
   privacySettings,
   status,
   busy,
+  online,
   onDisplayNameChange,
   onInviteCodeChange,
   onSaveProfile,
@@ -326,6 +327,7 @@ export default function FriendsView({
   privacySettings: PrivacySettings
   status: DataStatus
   busy: boolean
+  online: boolean
   onDisplayNameChange: (value: string) => void
   onInviteCodeChange: (value: string) => void
   onSaveProfile: () => void
@@ -583,7 +585,14 @@ export default function FriendsView({
             />
           </div>
         </div>
-        <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
+        <div className="status-with-action">
+          <p className={`data-status ${status.tone}`}>{busy ? 'Working...' : status.message}</p>
+          {status.retryable && (
+            <button className="ghost-button compact-button" type="button" onClick={onRefresh} disabled={busy || !online}>
+              Retry Connection
+            </button>
+          )}
+        </div>
       </section>
 
       <section className="panel friend-activity-panel">
