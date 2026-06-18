@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
 import type {
@@ -6,8 +6,10 @@ import type {
   ChallengeTargets,
   DataStatus,
   DietGoalType,
+  DietTrackingSource,
   EntryMap,
   ExerciseCycleDays,
+  FoodCategory,
   ReminderSettings,
   RuleCategoryConfig,
   RuleConfig,
@@ -17,6 +19,7 @@ import type {
 } from '../types'
 import {
   DEFAULT_RULE_CATEGORIES,
+  FOOD_CATEGORIES,
   WORKOUT_TYPES,
   downloadTextFile,
   entriesToCsv,
@@ -24,6 +27,7 @@ import {
   formatExercisePatternSchedule,
   formatShortDate,
   getEnabledRules,
+  getDietTrackingSource,
   getScoredRules,
   makeBackupPayload,
   makeCustomRule,
@@ -35,11 +39,11 @@ import {
 import { NumberField, SectionTitle, TextField } from '../ui'
 
 const DIET_PRESETS = [
-  { label: 'Carbs', unit: 'g', goal: 250, goalType: 'maximum' as const },
-  { label: 'Fat', unit: 'g', goal: 70, goalType: 'maximum' as const },
-  { label: 'Fiber', unit: 'g', goal: 30, goalType: 'minimum' as const },
-  { label: 'Sodium', unit: 'mg', goal: 2300, goalType: 'maximum' as const },
-  { label: 'Sugar', unit: 'g', goal: 50, goalType: 'maximum' as const },
+  { label: 'Carbs', unit: 'g', goal: 250, goalType: 'maximum' as const, trackingSource: 'carbs' as const },
+  { label: 'Fat', unit: 'g', goal: 70, goalType: 'maximum' as const, trackingSource: 'fat' as const },
+  { label: 'Fiber', unit: 'g', goal: 30, goalType: 'minimum' as const, trackingSource: 'manual' as const },
+  { label: 'Sodium', unit: 'mg', goal: 2300, goalType: 'maximum' as const, trackingSource: 'sodium' as const },
+  { label: 'Sugar', unit: 'g', goal: 50, goalType: 'maximum' as const, trackingSource: 'manual' as const },
 ]
 
 export default function SettingsView({
@@ -120,7 +124,10 @@ export default function SettingsView({
     message: `${entryCount} saved ${entryCount === 1 ? 'entry' : 'entries'}`,
   })
   const [settingsTab, setSettingsTab] = useState<'rules' | 'app'>('rules')
+  const [titleDraft, setTitleDraft] = useState(settings.title)
   const categories = DEFAULT_RULE_CATEGORIES
+
+  useEffect(() => setTitleDraft(settings.title), [settings.title])
 
   function update(patch: Partial<ChallengeSettings>) {
     onSettingsChange(normalizeSettings({ ...settings, ...patch }))
@@ -146,7 +153,7 @@ export default function SettingsView({
     const category = categories.find((item) => item.key === 'diet') ?? categories[1]
     const rule = makeCustomRule(category)
     rule.label = preset.label
-    rule.diet = { unit: preset.unit, goal: preset.goal, goalType: preset.goalType }
+    rule.diet = { unit: preset.unit, goal: preset.goal, goalType: preset.goalType, trackingSource: preset.trackingSource ?? 'manual' }
     update({ rules: [...settings.rules, rule] })
   }
 
@@ -186,6 +193,21 @@ export default function SettingsView({
       startDate,
       endDate: settings.endDate < startDate ? startDate : settings.endDate,
     })
+  }
+
+  function updateTitleDraft(title: string) {
+    setTitleDraft(title)
+    const nextTitle = title.trim()
+    if (nextTitle) update({ title: nextTitle })
+  }
+
+  function saveTitleDraft() {
+    const title = titleDraft.trim()
+    if (!title) {
+      setTitleDraft(settings.title)
+      return
+    }
+    update({ title })
   }
 
   function exportJsonBackup() {
@@ -257,7 +279,7 @@ export default function SettingsView({
         <>
           <section className="panel form-panel">
             <SectionTitle number="1" title="Tracker" />
-            <TextField label="Title" value={settings.title} onChange={(title) => update({ title })} />
+            <TextField label="Title" value={titleDraft} onChange={updateTitleDraft} onBlur={saveTitleDraft} />
             <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
           </section>
           <section className="panel form-panel">
@@ -351,6 +373,8 @@ export default function SettingsView({
                       {rule.diet && (
                         <div className="rule-specific-controls diet-rule-controls">
                           <label className="weight-field"><span>Goal</span><select value={rule.diet.goalType} onChange={(event) => updateDietRule(rule, { goalType: event.target.value as DietGoalType })}><option value="minimum">At least</option><option value="maximum">At most</option><option value="avoid">Avoid</option></select></label>
+                          <label className="weight-field"><span>Meal tracking</span><select value={getDietTrackingSource(rule)} onChange={(event) => updateDietRule(rule, { trackingSource: event.target.value as DietTrackingSource })}><option value="manual">Manual value</option><option value="calories">Meal calories</option><option value="protein">Meal protein</option><option value="carbs">Meal carbs</option><option value="fat">Meal fat</option><option value="sodium">Meal sodium</option><option value="foodCategory">Food category</option></select></label>
+                          {getDietTrackingSource(rule) === 'foodCategory' && <label className="weight-field"><span>Category</span><select value={rule.diet.foodCategory ?? 'other'} onChange={(event) => updateDietRule(rule, { foodCategory: event.target.value as FoodCategory, trackingSource: 'foodCategory' })}>{FOOD_CATEGORIES.map((category) => <option key={category} value={category}>{category.charAt(0).toUpperCase() + category.slice(1)}</option>)}</select></label>}
                           {rule.diet.goalType !== 'avoid' && <NumberField label="Amount" value={rule.diet.goal} min={0} max={100000} step={rule.diet.unit.toLowerCase() === 'l' ? 0.1 : 1} onChange={(value) => value !== null && updateDietRule(rule, { goal: value })} suffix={rule.diet.unit} />}
                           <TextField label="Unit" value={rule.diet.unit} onChange={(unit) => updateDietRule(rule, { unit })} />
                         </div>

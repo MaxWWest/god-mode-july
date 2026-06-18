@@ -7,6 +7,9 @@ export type RuleWeight = 'nonNegotiable' | 'supporting'
 export type RuleCategoryKey = string
 export type ExerciseCycleDays = 1 | 7 | 30
 export type DietGoalType = 'minimum' | 'maximum' | 'avoid'
+export type DietTrackingSource = 'manual' | 'calories' | 'protein' | 'carbs' | 'fat' | 'sodium' | 'foodCategory'
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+export type FoodCategory = 'alcohol' | 'dessert' | 'fruit' | 'vegetable' | 'protein' | 'grain' | 'dairy' | 'other'
 
 export type ExerciseRuleSettings = {
   cycleDays: ExerciseCycleDays
@@ -28,6 +31,8 @@ export type DietRuleSettings = {
   goalType: DietGoalType
   goal: number
   unit: string
+  trackingSource?: DietTrackingSource
+  foodCategory?: FoodCategory
 }
 
 export type RuleCategoryConfig = {
@@ -70,10 +75,31 @@ export type WorkoutLog = {
   minutes: number
 }
 
+export type FoodLog = {
+  id: string
+  meal: MealType
+  name: string
+  calories: number
+  proteinGrams: number
+  carbsGrams: number
+  fatGrams: number
+  sodiumMg: number
+  categories: FoodCategory[]
+}
+
+export type FoodNutritionTotals = {
+  calories: number
+  proteinGrams: number
+  carbsGrams: number
+  fatGrams: number
+  sodiumMg: number
+}
+
 export type DailyEntry = {
   date: string
   exerciseMinutes: number
   workouts: WorkoutLog[]
+  foods: FoodLog[]
   sober: boolean
   foodLogged: boolean
   finalizedAt: string | null

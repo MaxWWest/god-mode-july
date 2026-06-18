@@ -83,17 +83,19 @@ export function TextField({
   type = 'text',
   disabled = false,
   onChange,
+  onBlur,
 }: {
   label: string
   value: string
   type?: 'text' | 'date' | 'email' | 'password' | 'time'
   disabled?: boolean
   onChange: (value: string) => void
+  onBlur?: () => void
 }) {
   return (
     <label className="text-field">
       <span>{label}</span>
-      <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} />
     </label>
   )
 }

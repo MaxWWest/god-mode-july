@@ -4,6 +4,8 @@ import {
   completionStats,
   formatExercisePatternDayLabel,
   formatExercisePatternSchedule,
+  foodLogsEntryPatch,
+  foodNutritionTotals,
   getEnabledRules,
   getExercisePatternProgress,
   getNextExerciseDate,
@@ -120,6 +122,50 @@ describe('tracker scoring', () => {
     expect(ruleComplete(entry, 'custom-fiber-goal', settings)).toBe(true)
     expect(ruleComplete(entry, 'custom-sodium-cap', settings)).toBe(true)
     expect(ruleComplete(entry, 'custom-dessert-avoid', settings)).toBe(true)
+  })
+
+  it('derives macro goals from logged meal items', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      rules: [
+        { key: 'custom-carb-cap', label: 'Carbs', icon: 'C', enabled: true, weight: 'supporting', category: 'diet', diet: { goalType: 'maximum', goal: 200, unit: 'g', trackingSource: 'carbs' } },
+        { key: 'custom-sodium-cap', label: 'Sodium', icon: 'S', enabled: true, weight: 'supporting', category: 'diet', diet: { goalType: 'maximum', goal: 2300, unit: 'mg', trackingSource: 'sodium' } },
+      ],
+    })
+    const foods = [
+      { id: 'oats', meal: 'breakfast' as const, name: 'Oats', calories: 350, proteinGrams: 15, carbsGrams: 60, fatGrams: 8, sodiumMg: 200, categories: ['grain' as const] },
+      { id: 'chicken', meal: 'lunch' as const, name: 'Chicken bowl', calories: 650, proteinGrams: 50, carbsGrams: 70, fatGrams: 18, sodiumMg: 900, categories: ['protein' as const] },
+    ]
+    const entry = { ...makeEmptyEntry(settings.startDate), ...foodLogsEntryPatch(foods) }
+
+    expect(foodNutritionTotals(entry.foods)).toMatchObject({ calories: 1000, proteinGrams: 65, carbsGrams: 130, sodiumMg: 1100 })
+    expect(ruleComplete(entry, 'custom-carb-cap', settings)).toBe(true)
+    expect(ruleComplete(entry, 'custom-sodium-cap', settings)).toBe(true)
+  })
+
+  it('uses food categories to update alcohol and dessert avoidance rules', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      rules: [
+        DEFAULT_SETTINGS.rules.find((rule) => rule.key === 'sober')!,
+        { key: 'custom-no-dessert', label: 'No Dessert', icon: 'D', enabled: true, weight: 'supporting', category: 'diet', diet: { goalType: 'avoid', goal: 0, unit: 'servings' } },
+      ],
+    })
+    const dinner = { id: 'dinner', meal: 'dinner' as const, name: 'Chicken', calories: 500, proteinGrams: 45, carbsGrams: 30, fatGrams: 15, sodiumMg: 700, categories: ['protein' as const] }
+    const cleanEntry = { ...makeEmptyEntry(settings.startDate), ...foodLogsEntryPatch([dinner]) }
+    const beerEntry = { ...makeEmptyEntry(settings.startDate), ...foodLogsEntryPatch([
+      dinner,
+      { id: 'beer', meal: 'dinner' as const, name: 'Beer', calories: 150, proteinGrams: 1, carbsGrams: 12, fatGrams: 0, sodiumMg: 10, categories: ['alcohol' as const] },
+    ]) }
+    const cakeEntry = { ...makeEmptyEntry(settings.startDate), ...foodLogsEntryPatch([
+      dinner,
+      { id: 'cake', meal: 'dinner' as const, name: 'Cake', calories: 400, proteinGrams: 4, carbsGrams: 55, fatGrams: 20, sodiumMg: 300, categories: ['dessert' as const] },
+    ]) }
+
+    expect(ruleComplete(cleanEntry, 'sober', settings)).toBe(true)
+    expect(ruleComplete(beerEntry, 'sober', settings)).toBe(false)
+    expect(ruleComplete(cleanEntry, 'custom-no-dessert', settings)).toBe(true)
+    expect(ruleComplete(cakeEntry, 'custom-no-dessert', settings)).toBe(false)
   })
 })
 

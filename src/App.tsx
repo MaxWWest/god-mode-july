@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { MealLogger, QuickWorkoutLogger } from './components/DailyLoggers'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
   buildAccountDataExport as buildAccountDataExportApi,
@@ -49,6 +50,9 @@ import {
   formatDate,
   formatDateTime,
   formatShortDate,
+  foodCategoryCount,
+  foodLogsEntryPatch,
+  getDietFoodCategory,
   getDietRuleValue,
   getEnabledRules,
   getExerciseRuleMinutes,
@@ -58,18 +62,19 @@ import {
   isEntryFinalized,
   isIsoDate,
   makeEmptyEntry,
-  makeEmptyWorkout,
   mergeCloudOnlyEntries,
   normalizeEntries,
   normalizePrivacySettings,
   normalizeReminderSettings,
   normalizeSettings,
   normalizeSyncMeta,
+  normalizeWorkoutLogs,
   ruleComplete,
   sanitizeFilenamePart,
   selectableEndDate,
   timestampIsAfter,
   todayIso,
+  workoutMinutesTotal,
 } from './tracker'
 import {
   isSupabaseConfigured,
@@ -129,7 +134,7 @@ const TUTORIAL_STEPS: Array<{ eyebrow: string; title: string; body: string; view
   {
     eyebrow: 'Step 1',
     title: 'Start with today on Home.',
-    body: 'Home shows the rules that apply today, your score, streaks, and a clear recovery-day card when no exercise is scheduled.',
+    body: 'Log meals and workouts from Home, check off today’s mental and miscellaneous goals, and see your score and recovery-day guidance at a glance.',
     view: 'home',
     actionLabel: 'Open Home',
   },
@@ -143,14 +148,14 @@ const TUTORIAL_STEPS: Array<{ eyebrow: string; title: string; body: string; view
   {
     eyebrow: 'Step 3',
     title: 'Set diet and mental goals.',
-    body: 'Diet goals can be at least, at most, or avoid with your own units. Mental and miscellaneous rules stay simple daily checks.',
+    body: 'Diet goals can use meal macros or food categories such as alcohol and dessert. Mental and miscellaneous rules stay simple daily checks.',
     view: 'settings',
     actionLabel: 'Open Rules + Goals',
   },
   {
     eyebrow: 'Step 4',
     title: 'Use Check-In for the details.',
-    body: 'Log today’s planned exercise, diet values, mental rules, body signals, and reflections. Optional movement can still be logged on rest days.',
+    body: 'Review and edit every meal and workout, fill in manual goals and body signals, add a reflection, then publish the day when it is complete.',
     view: 'check-in',
     actionLabel: 'Open Check-In',
   },
@@ -207,7 +212,15 @@ function ruleDetail(rule: RuleConfig, entry: DailyEntry, settings: ChallengeSett
     return `${getExerciseRuleMinutes(entry, rule)} / ${rule.exercise.targetMinutes} min · ${cycle}`
   }
   if (rule.diet) {
-    if (rule.diet.goalType === 'avoid') return 'Avoid'
+    if (rule.diet.goalType === 'avoid') {
+      const category = getDietFoodCategory(rule)
+      if (category) {
+        if ((entry.foods ?? []).length === 0) return 'Log a meal to evaluate'
+        const count = foodCategoryCount(entry, category)
+        return count === 0 ? `No ${category} logged` : `${count} ${category} item${count === 1 ? '' : 's'} logged`
+      }
+      return 'Avoid'
+    }
     const value = getDietRuleValue(entry, rule) ?? 0
     const direction = rule.diet.goalType === 'minimum' ? 'at least' : 'at most'
     return `${value} ${rule.diet.unit} · ${direction} ${rule.diet.goal}`
@@ -1574,38 +1587,7 @@ function App() {
     if (entryFinalized) return
     const next = !ruleComplete(entry, key, settings)
     const config = settings.rules.find((rule) => rule.key === key)
-    if (config?.exercise) {
-      const workoutType = config.exercise.workoutType === 'Any exercise' ? 'Workout' : config.exercise.workoutType
-      if (next) {
-        const workout = { ...makeEmptyWorkout(), type: workoutType, minutes: config.exercise.targetMinutes }
-        updateEntry({ exerciseMinutes: workout.minutes, workouts: [workout] })
-      } else {
-        const workouts = config.exercise.workoutType === 'Any exercise'
-          ? []
-          : entry.workouts.filter((workout) => workout.type.toLowerCase() !== config.exercise?.workoutType.toLowerCase())
-        updateEntry({ exerciseMinutes: workouts.reduce((sum, workout) => sum + workout.minutes, 0), workouts })
-      }
-      return
-    }
-    if (config?.diet) {
-      if (config.diet.goalType === 'avoid') {
-        updateEntry({
-          sober: key === 'sober' ? next : entry.sober,
-          ruleCompletions: { ...entry.ruleCompletions, [key]: next },
-        })
-      } else {
-        const ruleValues = { ...entry.ruleValues }
-        if (next) ruleValues[key] = config.diet.goal
-        else delete ruleValues[key]
-        updateEntry({
-          ruleValues,
-          calories: key === 'calories' ? (next ? config.diet.goal : null) : entry.calories,
-          proteinGrams: key === 'protein' ? (next ? config.diet.goal : null) : entry.proteinGrams,
-          waterLiters: key === 'water' ? (next ? config.diet.goal : null) : entry.waterLiters,
-        })
-      }
-      return
-    }
+    if (config?.exercise || config?.diet) return
     switch (key) {
       case 'sober':
         updateEntry({ sober: next })
@@ -1731,6 +1713,7 @@ function App() {
             latestWeight={latestWeight}
             isFinalized={entryFinalized}
             onToggleRule={toggleRule}
+            onUpdate={updateEntryIfUnlocked}
             onOpenCheckIn={() => setView('check-in')}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
@@ -1962,6 +1945,7 @@ function Dashboard({
   latestWeight,
   isFinalized,
   onToggleRule,
+  onUpdate,
   onOpenCheckIn,
   onFinalizeDay,
   onUnlockDay,
@@ -1976,6 +1960,7 @@ function Dashboard({
   latestWeight: number | undefined
   isFinalized: boolean
   onToggleRule: (key: RuleKey) => void
+  onUpdate: (patch: Partial<DailyEntry>) => void
   onOpenCheckIn: () => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
@@ -2020,6 +2005,31 @@ function Dashboard({
         </section>
       )}
 
+      <section className="panel quick-log-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Log the inputs</p>
+            <h2>Meals + Workouts</h2>
+          </div>
+        </div>
+        <div className="quick-log-section">
+          <div className="quick-log-heading"><strong>Workout</strong><span>{entry.exerciseMinutes} min logged</span></div>
+          <QuickWorkoutLogger
+            workouts={entry.workouts ?? []}
+            disabled={isFinalized}
+            plannedType={todayExerciseRules[0]?.exercise?.workoutType}
+            onChange={(nextWorkouts) => {
+              const workouts = normalizeWorkoutLogs(nextWorkouts)
+              onUpdate({ workouts, exerciseMinutes: workoutMinutesTotal(workouts) })
+            }}
+          />
+        </div>
+        <div className="quick-log-section">
+          <div className="quick-log-heading"><strong>Meals</strong><span>{entry.foods?.length ?? 0} items logged</span></div>
+          <MealLogger foods={entry.foods ?? []} disabled={isFinalized} onChange={(foods) => onUpdate(foodLogsEntryPatch(foods))} />
+        </div>
+      </section>
+
       <section className="panel rules-panel">
         <div className="section-heading">
           <div>
@@ -2034,14 +2044,9 @@ function Dashboard({
             const isComplete = ruleComplete(entry, rule.key, settings)
             const detail = ruleDetail(rule, entry, settings)
 
-            return (
-              <button
-                className={`rule-row ${isComplete ? 'is-complete' : ''}`}
-                type="button"
-                key={rule.key}
-                onClick={() => onToggleRule(rule.key)}
-                disabled={isFinalized}
-              >
+            const requiresLog = Boolean(rule.exercise || rule.diet)
+            const content = (
+              <>
                 <span className="rule-icon">{rule.icon}</span>
                 <span className="rule-label">
                   <strong>{rule.label}</strong>
@@ -2050,6 +2055,22 @@ function Dashboard({
                 <span className="rule-check" aria-label={isComplete ? 'Complete' : 'Incomplete'}>
                   {isComplete ? '✓' : ''}
                 </span>
+              </>
+            )
+
+            return requiresLog ? (
+              <article className={`rule-row tracked-rule-row ${isComplete ? 'is-complete' : ''}`} key={rule.key}>
+                {content}
+              </article>
+            ) : (
+              <button
+                className={`rule-row ${isComplete ? 'is-complete' : ''}`}
+                type="button"
+                key={rule.key}
+                onClick={() => onToggleRule(rule.key)}
+                disabled={isFinalized}
+              >
+                {content}
               </button>
             )
           })}

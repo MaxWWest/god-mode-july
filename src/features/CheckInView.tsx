@@ -1,4 +1,5 @@
 import type { ChallengeSettings, DailyEntry, RuleConfig, WorkoutLog } from '../types'
+import { MealLogger } from '../components/DailyLoggers'
 import {
   MAX_WORKOUT_LOGS,
   MAX_WORKOUT_MINUTES,
@@ -6,11 +7,15 @@ import {
   formatDateTime,
   formatExercisePatternSchedule,
   formatShortDate,
+  foodCategoryCount,
+  foodLogsEntryPatch,
+  getDietFoodCategory,
   getDietRuleValue,
   getEnabledRules,
   getExerciseMinutes,
   getExerciseRuleMinutes,
   getNextExerciseDate,
+  isDietRuleAutomaticallyTracked,
   makeEmptyWorkout,
   normalizeWorkoutLogs,
   workoutMinutesTotal,
@@ -70,6 +75,10 @@ export default function CheckInView({
 
   function removeWorkout(id: string) {
     updateWorkouts(workoutLogs.filter((workout) => workout.id !== id))
+  }
+
+  function updateFoods(foods: DailyEntry['foods']) {
+    onUpdate(foodLogsEntryPatch(foods))
   }
 
   function updateDietValue(rule: RuleConfig, value: number | null) {
@@ -162,25 +171,44 @@ export default function CheckInView({
 
       <section className="panel form-panel">
         <SectionTitle number="2" title="Diet" />
+        <MealLogger foods={entry.foods ?? []} disabled={isFinalized} detailed onChange={updateFoods} />
         {dietRules.length === 0 ? (
           <p className="empty-rule-category">No active diet goals. Add them from Settings.</p>
         ) : (
-          <div className="field-grid">
-            {dietRules.map((rule) => rule.diet?.goalType === 'avoid' ? (
-              <CheckField key={rule.key} disabled={isFinalized} label={`Avoided ${rule.label}`} checked={ruleChecked(rule)} onChange={(checked) => updateRuleCheck(rule, checked)} />
-            ) : (
-              <NumberField
-                key={rule.key}
-                disabled={isFinalized}
-                label={`${rule.label} (${rule.diet?.goalType === 'minimum' ? 'at least' : 'at most'} ${rule.diet?.goal} ${rule.diet?.unit})`}
-                value={getDietRuleValue(entry, rule)}
-                min={0}
-                max={100000}
-                step={rule.diet?.unit.toLowerCase() === 'l' ? 0.1 : 1}
-                onChange={(value) => updateDietValue(rule, value)}
-                suffix={rule.diet?.unit ?? ''}
-              />
-            ))}
+          <div className="diet-goal-review">
+            <div className="diet-status-grid">
+              {dietRules.filter(isDietRuleAutomaticallyTracked).map((rule) => {
+                const category = getDietFoodCategory(rule)
+                const categoryHits = category ? foodCategoryCount(entry, category) : 0
+                const value = getDietRuleValue(entry, rule)
+                return (
+                  <article key={rule.key}>
+                    <span>{rule.label}</span>
+                    <strong>{category
+                      ? ((entry.foods ?? []).length === 0 ? 'Awaiting meals' : categoryHits === 0 ? 'Avoided' : `${categoryHits} logged`)
+                      : `${value ?? 0} ${rule.diet?.unit ?? ''}`}</strong>
+                    <small>Updated from meal items</small>
+                  </article>
+                )
+              })}
+            </div>
+            <div className="field-grid">
+              {dietRules.filter((rule) => !isDietRuleAutomaticallyTracked(rule)).map((rule) => rule.diet?.goalType === 'avoid' ? (
+                <CheckField key={rule.key} disabled={isFinalized} label={`Avoided ${rule.label}`} checked={ruleChecked(rule)} onChange={(checked) => updateRuleCheck(rule, checked)} />
+              ) : (
+                <NumberField
+                  key={rule.key}
+                  disabled={isFinalized}
+                  label={`${rule.label} (${rule.diet?.goalType === 'minimum' ? 'at least' : 'at most'} ${rule.diet?.goal} ${rule.diet?.unit})`}
+                  value={getDietRuleValue(entry, rule)}
+                  min={0}
+                  max={100000}
+                  step={rule.diet?.unit.toLowerCase() === 'l' ? 0.1 : 1}
+                  onChange={(value) => updateDietValue(rule, value)}
+                  suffix={rule.diet?.unit ?? ''}
+                />
+              ))}
+            </div>
           </div>
         )}
       </section>

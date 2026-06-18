@@ -18,6 +18,9 @@
 - Weekday-aware 7-day plans, visible recovery days, and next-workout guidance
 - Current-cycle exercise progress with completed, missed, and upcoming training dates
 - Minimum, maximum, and avoid diet goals with common presets and custom names/units
+- Breakfast, lunch, dinner, and snack logs with food macros and categories
+- Meal-derived scoring for macro targets and avoid-category diet rules
+- Home quick logging with detailed meal and workout review in Check-In
 - Editable diet, exercise, and sleep targets
 - Non-negotiable versus supporting-rule weights
 - Custom tracker title and start date

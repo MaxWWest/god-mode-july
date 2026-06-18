@@ -15,6 +15,9 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Weekday-aware 7-day plans with recovery-day and next-workout guidance
 - Current-cycle exercise progress with completed, missed, and upcoming training dates
 - Common and custom diet goals with minimum, maximum, or avoid scoring plus custom units
+- Breakfast, lunch, dinner, and snack logging with reusable food names, macros, and categories
+- Automatic diet scoring from meal macros and food categories such as alcohol or dessert
+- Home quick logging for meals and workouts, with full review and editing in Check-In
 - Editable rules, goals, categories, and rule weights
 - Monthly calendar heatmap inside Progress
 - Rule completion analytics
@@ -75,7 +78,7 @@ Install prompts and service-worker behavior are most reliable from the productio
 npm test
 ```
 
-Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, next-workout lookup, flexible diet goals, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
+Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, settings normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
 
 ## Current data model
 
@@ -104,7 +107,7 @@ See `DEPLOYMENT.md` for Supabase and hosting setup.
 
 Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
 
-Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Seven-day patterns display weekdays, Home and Check-In identify recovery days, and Progress summarizes the current cycle. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
+Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Seven-day patterns display weekdays, Home and Check-In identify recovery days, and Progress summarizes the current cycle. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Meals carry macro values and optional food categories, allowing rules such as protein, calories, no alcohol, or no dessert to update automatically. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
 
 ## Code organization
 

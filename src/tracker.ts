@@ -8,10 +8,15 @@ import type {
   DailyEntry,
   DietGoalType,
   DietRuleSettings,
+  DietTrackingSource,
   EntryMap,
   ExerciseCycleDays,
   ExercisePatternProgress,
   ExerciseRuleSettings,
+  FoodCategory,
+  FoodLog,
+  FoodNutritionTotals,
+  MealType,
   PrivacySettings,
   ReminderSettings,
   RuleCategoryConfig,
@@ -28,9 +33,12 @@ export const MAX_TRACKING_DAYS = 3650
 export const MAX_WORKOUT_LOGS = 12
 export const MAX_WORKOUT_MINUTES = 300
 export const MAX_DAILY_EXERCISE_MINUTES = 600
+export const MAX_FOOD_LOGS = 40
 const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 export const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
+export const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
+export const FOOD_CATEGORIES: FoodCategory[] = ['alcohol', 'dessert', 'fruit', 'vegetable', 'protein', 'grain', 'dairy', 'other']
 const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
 
 export const BUILT_IN_RULE_KEYS: BuiltInRuleKey[] = ['exercise', 'sober', 'foodLogged', 'calories', 'protein', 'water', 'sleep', 'reading', 'journal']
@@ -57,15 +65,15 @@ export const DEFAULT_RULES: RuleConfig[] = [
   },
   {
     key: 'sober', label: 'Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'diet',
-    diet: { goalType: 'avoid', goal: 0, unit: 'drinks' },
+    diet: { goalType: 'avoid', goal: 0, unit: 'drinks', trackingSource: 'foodCategory', foodCategory: 'alcohol' },
   },
   {
     key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'diet',
-    diet: { goalType: 'maximum', goal: 2200, unit: 'kcal' },
+    diet: { goalType: 'maximum', goal: 2200, unit: 'kcal', trackingSource: 'calories' },
   },
   {
     key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'diet',
-    diet: { goalType: 'minimum', goal: 140, unit: 'g' },
+    diet: { goalType: 'minimum', goal: 140, unit: 'g', trackingSource: 'protein' },
   },
   {
     key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'diet',
@@ -247,6 +255,82 @@ export function normalizeWorkoutLogs(value: unknown): WorkoutLog[] {
     .slice(0, MAX_WORKOUT_LOGS)
 }
 
+function isMealType(value: unknown): value is MealType {
+  return typeof value === 'string' && MEAL_TYPES.includes(value as MealType)
+}
+
+function isFoodCategory(value: unknown): value is FoodCategory {
+  return typeof value === 'string' && FOOD_CATEGORIES.includes(value as FoodCategory)
+}
+
+function normalizeFoodLog(value: unknown, index: number): FoodLog | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<FoodLog>
+  const name = normalizeText(candidate.name).trim().slice(0, 80)
+  if (!name) return null
+  return {
+    id: normalizeText(candidate.id).trim() || `food-${index + 1}`,
+    meal: isMealType(candidate.meal) ? candidate.meal : 'snack',
+    name,
+    calories: normalizeBoundedNumber(candidate.calories, 0, 0, 5000),
+    proteinGrams: normalizeBoundedNumber(candidate.proteinGrams, 0, 0, 500),
+    carbsGrams: normalizeBoundedNumber(candidate.carbsGrams, 0, 0, 1000),
+    fatGrams: normalizeBoundedNumber(candidate.fatGrams, 0, 0, 500),
+    sodiumMg: normalizeBoundedNumber(candidate.sodiumMg, 0, 0, 20000),
+    categories: Array.isArray(candidate.categories)
+      ? Array.from(new Set(candidate.categories.filter(isFoodCategory)))
+      : [],
+  }
+}
+
+export function normalizeFoodLogs(value: unknown): FoodLog[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map(normalizeFoodLog)
+    .filter((item): item is FoodLog => item !== null)
+    .slice(0, MAX_FOOD_LOGS)
+}
+
+export function makeEmptyFood(meal: MealType = 'breakfast'): FoodLog {
+  return {
+    id: `food-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    meal,
+    name: '',
+    calories: 0,
+    proteinGrams: 0,
+    carbsGrams: 0,
+    fatGrams: 0,
+    sodiumMg: 0,
+    categories: [],
+  }
+}
+
+export function foodNutritionTotals(foods: FoodLog[] = []): FoodNutritionTotals {
+  return foods.reduce<FoodNutritionTotals>((totals, food) => ({
+    calories: totals.calories + food.calories,
+    proteinGrams: totals.proteinGrams + food.proteinGrams,
+    carbsGrams: totals.carbsGrams + food.carbsGrams,
+    fatGrams: totals.fatGrams + food.fatGrams,
+    sodiumMg: totals.sodiumMg + food.sodiumMg,
+  }), { calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0, sodiumMg: 0 })
+}
+
+export function foodLogsEntryPatch(value: unknown): Pick<DailyEntry, 'foods' | 'foodLogged' | 'calories' | 'proteinGrams' | 'sober'> {
+  const foods = normalizeFoodLogs(value)
+  const totals = foodNutritionTotals(foods)
+  return {
+    foods,
+    foodLogged: foods.length > 0,
+    calories: foods.length > 0 ? totals.calories : null,
+    proteinGrams: foods.length > 0 ? totals.proteinGrams : null,
+    sober: foods.length > 0 && !foods.some((food) => food.categories.includes('alcohol')),
+  }
+}
+
+export function foodCategoryCount(entry: DailyEntry, category: FoodCategory): number {
+  return (entry.foods ?? []).filter((food) => food.categories.includes(category)).length
+}
+
 function normalizeRuleCompletionMap(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(
@@ -298,6 +382,10 @@ function formatWorkoutSummary(workouts: WorkoutLog[] = []): string {
   return completedWorkouts
     .map((workout) => `${workout.type} ${workout.minutes} min`)
     .join('; ')
+}
+
+function formatFoodSummary(foods: FoodLog[] = []): string {
+  return foods.map((food) => `${food.meal}: ${food.name}`).join('; ')
 }
 
 export function normalizeTimestamp(value: unknown): string | null {
@@ -376,6 +464,18 @@ function normalizeDietGoalType(value: unknown, fallback: DietGoalType): DietGoal
   return value === 'minimum' || value === 'maximum' || value === 'avoid' ? value : fallback
 }
 
+function normalizeDietTrackingSource(value: unknown, fallback: DietTrackingSource = 'manual'): DietTrackingSource {
+  return value === 'manual'
+    || value === 'calories'
+    || value === 'protein'
+    || value === 'carbs'
+    || value === 'fat'
+    || value === 'sodium'
+    || value === 'foodCategory'
+    ? value
+    : fallback
+}
+
 function normalizeDietSettings(value: unknown, fallback: DietRuleSettings): DietRuleSettings {
   const candidate = value && typeof value === 'object' ? value as Partial<DietRuleSettings> : {}
   const goalType = normalizeDietGoalType(candidate.goalType, fallback.goalType)
@@ -387,6 +487,10 @@ function normalizeDietSettings(value: unknown, fallback: DietRuleSettings): Diet
     goalType,
     goal: goalType === 'avoid' ? 0 : normalizeBoundedNumber(candidate.goal, fallback.goal, 0, 100000),
     unit,
+    trackingSource: candidate.trackingSource === undefined
+      ? fallback.trackingSource
+      : normalizeDietTrackingSource(candidate.trackingSource),
+    foodCategory: isFoodCategory(candidate.foodCategory) ? candidate.foodCategory : fallback.foodCategory,
   }
 }
 
@@ -534,16 +638,20 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
   const legacyExerciseMinutes = normalizeBoundedNumber(candidate.exerciseMinutes, 0, 0, MAX_DAILY_EXERCISE_MINUTES)
   const workouts = normalizeWorkoutLogs(candidate.workouts)
   const exerciseMinutes = workouts.length > 0 ? workoutMinutesTotal(workouts) : legacyExerciseMinutes
+  const foods = normalizeFoodLogs(candidate.foods)
+  const foodTotals = foodNutritionTotals(foods)
+  const hasFoodLogs = foods.length > 0
 
   return {
     date,
     exerciseMinutes,
     workouts: workouts.length > 0 ? workouts : legacyExerciseMinutes > 0 ? [makeLegacyWorkout(legacyExerciseMinutes)] : [],
-    sober: candidate.sober === true,
-    foodLogged: candidate.foodLogged === true,
+    foods,
+    sober: hasFoodLogs ? !foods.some((food) => food.categories.includes('alcohol')) : candidate.sober === true,
+    foodLogged: hasFoodLogs || candidate.foodLogged === true,
     finalizedAt: normalizeTimestamp(candidate.finalizedAt),
-    calories: normalizeOptionalNumber(candidate.calories, 0, 10000),
-    proteinGrams: normalizeOptionalNumber(candidate.proteinGrams, 0, 500),
+    calories: hasFoodLogs ? foodTotals.calories : normalizeOptionalNumber(candidate.calories, 0, 10000),
+    proteinGrams: hasFoodLogs ? foodTotals.proteinGrams : normalizeOptionalNumber(candidate.proteinGrams, 0, 500),
     waterLiters: normalizeOptionalNumber(candidate.waterLiters, 0, 15),
     weightPounds: normalizeOptionalNumber(candidate.weightPounds, 50, 700),
     readTenPages: candidate.readTenPages === true,
@@ -618,6 +726,7 @@ export function makeEmptyEntry(date: string): DailyEntry {
     date,
     exerciseMinutes: 0,
     workouts: [],
+    foods: [],
     sober: false,
     foodLogged: false,
     finalizedAt: null,
@@ -775,7 +884,50 @@ export function ruleWeightValue(rule: RuleConfig): number {
   return rule.weight === 'nonNegotiable' ? 2 : 1
 }
 
+export function getDietTrackingSource(rule: RuleConfig): DietTrackingSource {
+  const configured = rule.diet?.trackingSource
+  if (configured) return configured
+  if (rule.key === 'calories') return 'calories'
+  if (rule.key === 'protein') return 'protein'
+  const label = rule.label.toLowerCase()
+  if (label.includes('calorie')) return 'calories'
+  if (label.includes('protein')) return 'protein'
+  if (label.includes('carb')) return 'carbs'
+  if (label === 'fat' || label.includes(' fat')) return 'fat'
+  if (label.includes('sodium')) return 'sodium'
+  if (rule.diet?.goalType === 'avoid' && (
+    label.includes('alcohol') || label.includes('beer') || label.includes('dessert') || label.includes('sweet') || label.includes('cake')
+  )) return 'foodCategory'
+  return 'manual'
+}
+
+export function getDietFoodCategory(rule: RuleConfig): FoodCategory | null {
+  if (getDietTrackingSource(rule) !== 'foodCategory') return null
+  if (rule.diet?.foodCategory) return rule.diet.foodCategory
+  const label = rule.label.toLowerCase()
+  if (label.includes('alcohol') || label.includes('beer')) return 'alcohol'
+  if (label.includes('dessert') || label.includes('sweet') || label.includes('cake')) return 'dessert'
+  return null
+}
+
+export function isDietRuleAutomaticallyTracked(rule: RuleConfig): boolean {
+  const source = getDietTrackingSource(rule)
+  return source !== 'manual' && (source !== 'foodCategory' || getDietFoodCategory(rule) !== null)
+}
+
 export function getDietRuleValue(entry: DailyEntry, rule: RuleConfig): number | null {
+  const foods = entry.foods ?? []
+  const source = getDietTrackingSource(rule)
+  if (foods.length > 0 && source !== 'manual' && source !== 'foodCategory') {
+    const totals = foodNutritionTotals(foods)
+    switch (source) {
+      case 'calories': return totals.calories
+      case 'protein': return totals.proteinGrams
+      case 'carbs': return totals.carbsGrams
+      case 'fat': return totals.fatGrams
+      case 'sodium': return totals.sodiumMg
+    }
+  }
   const stored = entry.ruleValues?.[rule.key]
   if (typeof stored === 'number') return stored
   switch (rule.key) {
@@ -802,6 +954,8 @@ export function ruleComplete(entry: DailyEntry, ruleKey: RuleKey, settings: Chal
   }
   if (config?.category === 'diet' && config.diet) {
     if (config.diet.goalType === 'avoid') {
+      const foodCategory = getDietFoodCategory(config)
+      if (foodCategory && (entry.foods ?? []).length > 0) return foodCategoryCount(entry, foodCategory) === 0
       return config.key === 'sober' ? entry.sober : entry.ruleCompletions?.[config.key] === true
     }
     const value = getDietRuleValue(entry, config)
@@ -906,6 +1060,7 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
     'finalized_at',
     'exercise_minutes',
     'workout_log',
+    'meal_log',
     'sober',
     'calories',
     'protein_grams',
@@ -936,6 +1091,7 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
       entry.finalizedAt,
       getExerciseMinutes(entry),
       formatWorkoutSummary(entry.workouts),
+      formatFoodSummary(entry.foods),
       Number(entry.sober),
       entry.calories,
       entry.proteinGrams,
