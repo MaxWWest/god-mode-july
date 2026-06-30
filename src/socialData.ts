@@ -297,6 +297,24 @@ export function generateInviteCode(userId: string): string {
   return `GM-${userId.replace(/-/g, '').slice(0, 8).toUpperCase()}`
 }
 
+function compactChallengeReference(value: unknown): string {
+  return normalizeText(value).replace(/[^a-z0-9]/gi, '').toUpperCase()
+}
+
+export function formatChallengeJoinCode(challengeId: string): string {
+  const compactId = compactChallengeReference(challengeId)
+  return compactId ? `CH-${compactId.slice(0, 8)}` : 'CH-UNKNOWN'
+}
+
+export function challengeReferenceMatches(challengeId: string, reference: string): boolean {
+  const compactId = compactChallengeReference(challengeId)
+  const compactReference = compactChallengeReference(reference)
+  if (!compactId || !compactReference) return false
+  return compactReference === compactId
+    || compactReference === compactId.slice(0, 8)
+    || compactReference === `CH${compactId.slice(0, 8)}`
+}
+
 export function sortedFriendshipPair(userId: string, friendId: string): [string, string] {
   return [userId, friendId].sort() as [string, string]
 }

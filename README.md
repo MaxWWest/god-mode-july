@@ -42,6 +42,9 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Better invite sharing with copy/share text
 - Invite-only custom friend challenges
 - Direct challenge invite links for opening challenge requests in the PWA
+- Short challenge join codes for invited members
+- Challenge owner controls for canceling pending invites and removing participants
+- Member leave controls for exiting accepted challenges
 - Shared, matched-metric, soft-shared, and percent-only challenge scoring modes
 - Published per-day friend challenge score history
 - Per-challenge daily feed posts with comments, reactions, and score notes
@@ -169,13 +172,13 @@ Current social beta coverage:
 - Challenge detail panels with participants, pending invites, shared settings, publishing state, score notes, and reactions.
 - Active challenge lists plus a completed challenge archive for friend-versus-friend history.
 - Editable squads with roster changes after creation.
-- Challenge invite management for adding accepted friends after a challenge starts.
+- Challenge invite management for adding accepted friends after a challenge starts, canceling pending invites, removing participants, and leaving as a member.
 - In-app badges for pending friend requests and challenge invites.
 - Stored social events with comments, reactions, and device sharing for richer friend, squad, and challenge feeds.
 - Challenge templates with preset target and scored-rule overrides.
 - Challenge scoring modes for exact shared rules, matched metrics with personal targets, soft shared mandatory metrics plus personal goals, and percent-only comparison.
 - Explicit challenge rule selection, including custom tracker rules; accepted metric-based challenges add missing controls to the participant's tracker.
-- Direct share links for friend codes and challenge invites.
+- Direct share links for friend codes and challenge invite codes.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 - Per-participant daily score timelines stored when challenge scores are published.
 
@@ -204,9 +207,9 @@ Product ideas pulled from public coaching-app patterns, including Built With Sci
 
 ### Priority 3: challenge lifecycle controls
 
-1. Add short human-readable join codes for challenges in addition to direct links.
-2. Let owners cancel pending invites, remove participants, and end active challenges safely.
-3. Let members leave challenges and squads with clear score-history behavior.
+1. Let owners end or archive active challenges intentionally before the scheduled end date.
+2. Add explicit score-history notes when someone leaves or is removed from a challenge.
+3. Let members leave squads with clear behavior for existing squad-created challenges.
 4. Add unread badges for new comments, reactions, and challenge updates.
 
 ### Priority 4: daily review polish

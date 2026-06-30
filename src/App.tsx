@@ -24,6 +24,7 @@ import {
   publishChallengeScore,
   publishLeaderboardSummary,
   recordFriendEvent as recordFriendEventApi,
+  removeChallengeParticipant as removeChallengeParticipantRecord,
   requestFriendByInviteCode,
   respondToChallengeInvite,
   respondToFriendRequest as respondToFriendRequestApi,
@@ -37,6 +38,8 @@ import {
   buildChallengeSummary,
   buildFriendChallengeSnapshots,
   buildFriendChallengeSummary,
+  challengeReferenceMatches,
+  formatChallengeJoinCode,
   mergeChallengeRulesIntoSettings,
 } from './socialData'
 import {
@@ -456,7 +459,7 @@ function friendInviteLink(inviteCode: string): string {
 }
 
 function challengeInviteLink(challengeId: string): string {
-  return `${window.location.origin}/?challenge=${encodeURIComponent(challengeId)}`
+  return `${window.location.origin}/?challenge=${encodeURIComponent(formatChallengeJoinCode(challengeId))}`
 }
 
 async function consumeAuthRedirectSession(): Promise<{ user: User | null; redirected: boolean }> {
@@ -667,7 +670,7 @@ function App() {
   useEffect(() => {
     if (!pendingChallengeId || !user) return
     setFriendsInitialTab('challenges')
-    if (friendChallenges.length > 0 && !friendChallenges.some((challenge) => challenge.id === pendingChallengeId)) {
+    if (friendChallenges.length > 0 && !friendChallenges.some((challenge) => challengeReferenceMatches(challenge.id, pendingChallengeId))) {
       setFriendsStatus({ tone: 'neutral', message: 'Challenge link loaded. If you were invited, refresh or check the Challenges tab after signing in.' })
     }
   }, [pendingChallengeId, user, friendChallenges])
@@ -1807,6 +1810,83 @@ function App() {
     }
   }
 
+  async function joinFriendChallengeByCode(code: string) {
+    if (!supabase || !user) return
+    const cleanCode = code.trim()
+    if (!cleanCode) {
+      setFriendsStatus({ tone: 'error', message: 'Enter a challenge code first.' })
+      return
+    }
+
+    const challenge = friendChallenges.find((item) => challengeReferenceMatches(item.id, cleanCode))
+    if (!challenge) {
+      setFriendsStatus({ tone: 'error', message: 'No visible challenge found for that code. Ask the owner to invite you first, then refresh.' })
+      return
+    }
+
+    setFriendsInitialTab('challenges')
+    if (challenge.currentUserStatus === 'pending' && !challenge.isCreator) {
+      await respondToFriendChallenge(challenge.id, 'accepted')
+      return
+    }
+
+    setFriendsStatus({
+      tone: 'success',
+      message: challenge.currentUserStatus === 'accepted' || challenge.isCreator
+        ? `${challenge.name} opened.`
+        : `${challenge.name} found. Current status: ${challenge.currentUserStatus}.`,
+    })
+  }
+
+  async function removeFriendChallengeParticipant(challengeId: string, participantUserId: string) {
+    if (!supabase || !user) return
+
+    const challenge = friendChallenges.find((item) => item.id === challengeId)
+    const participant = challenge?.participants.find((item) => item.userId === participantUserId)
+    if (!challenge || !participant) {
+      setFriendsStatus({ tone: 'error', message: 'Could not find that challenge participant.' })
+      return
+    }
+    const isSelf = participantUserId === user.id
+    if (challenge.isCreator && isSelf) {
+      setFriendsStatus({ tone: 'error', message: 'Challenge owners cannot leave their own challenge from roster controls.' })
+      return
+    }
+    if (!challenge.isCreator && !isSelf) {
+      setFriendsStatus({ tone: 'error', message: 'Only the challenge owner can remove other participants.' })
+      return
+    }
+
+    const actionLabel = isSelf
+      ? `Leave ${challenge.name}? Your published scores will no longer appear in this challenge.`
+      : participant.status === 'pending'
+        ? `Cancel ${participant.displayName}'s invite to ${challenge.name}?`
+        : `Remove ${participant.displayName} from ${challenge.name}? Their published scores will no longer appear in this roster.`
+    if (!window.confirm(actionLabel)) {
+      setFriendsStatus({ tone: 'neutral', message: 'Challenge roster change canceled.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      await removeChallengeParticipantRecord(supabase, challenge.id, participantUserId)
+      setFriendsStatus({
+        tone: 'success',
+        message: isSelf
+          ? `You left ${challenge.name}.`
+          : participant.status === 'pending'
+            ? `${participant.displayName}'s invite was canceled.`
+            : `${participant.displayName} was removed from ${challenge.name}.`,
+      })
+      showAppNotice(isSelf ? 'Challenge left.' : 'Challenge roster updated.')
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus(serviceErrorStatus(error, 'Could not update the challenge roster.'))
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
   async function publishFriendChallengeScore(challengeId: string, note = '', reaction: ScoreReaction | null = null) {
     if (!supabase || !user) return
     const client = supabase
@@ -2273,8 +2353,10 @@ function App() {
               onDeleteSquad={deleteFriendSquad}
               onCreateChallenge={createFriendChallenge}
               onInviteChallengeParticipants={inviteFriendChallengeParticipants}
+              onJoinChallengeByCode={joinFriendChallengeByCode}
               onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
               onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
+              onRemoveChallengeParticipant={removeFriendChallengeParticipant}
               onPublishChallengeScore={publishFriendChallengeScore}
               onCommentEvent={commentOnFriendEvent}
               onDeleteEventComment={removeFriendEventComment}

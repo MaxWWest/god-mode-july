@@ -371,6 +371,21 @@ export async function inviteChallengeParticipants(client: SupabaseClient, userId
   }
 }
 
+export async function removeChallengeParticipant(
+  client: SupabaseClient,
+  challengeId: string,
+  participantUserId: string,
+): Promise<void> {
+  const { error } = await client.from(SUPABASE_FRIEND_CHALLENGE_PARTICIPANT_TABLE)
+    .delete()
+    .eq('challenge_id', challengeId)
+    .eq('user_id', participantUserId)
+  if (error) {
+    if (isFriendChallengeSchemaError(error)) throw new Error('Run the updated Supabase schema to enable friend challenge roster controls.')
+    throw error
+  }
+}
+
 export async function respondToChallengeInvite(
   client: SupabaseClient,
   userId: string,

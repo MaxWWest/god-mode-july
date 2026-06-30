@@ -4,6 +4,8 @@ import {
   buildChallengeSummary,
   buildFriendChallengeSnapshots,
   buildFriendChallengeSummary,
+  challengeReferenceMatches,
+  formatChallengeJoinCode,
   mergeChallengeRulesIntoSettings,
   normalizeChallengeScoreSnapshotRow,
   normalizeFriendChallengeParticipantRow,
@@ -19,6 +21,16 @@ describe('social challenge data', () => {
   })
 
   afterEach(() => vi.useRealTimers())
+
+  it('formats and matches short challenge join codes without losing full-id support', () => {
+    const challengeId = '12345678-90ab-cdef-1234-567890abcdef'
+
+    expect(formatChallengeJoinCode(challengeId)).toBe('CH-12345678')
+    expect(challengeReferenceMatches(challengeId, 'CH-12345678')).toBe(true)
+    expect(challengeReferenceMatches(challengeId, '12345678')).toBe(true)
+    expect(challengeReferenceMatches(challengeId, challengeId)).toBe(true)
+    expect(challengeReferenceMatches(challengeId, 'CH-87654321')).toBe(false)
+  })
 
   it('applies challenge template target and rule overrides', () => {
     const settings = buildChallengeSettingsForTemplate(

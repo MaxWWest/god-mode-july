@@ -37,7 +37,7 @@ import type {
   ScoreReaction,
   UpdateFriendSquadInput,
 } from '../types'
-import { buildChallengeSettingsForTemplate } from '../socialData'
+import { buildChallengeSettingsForTemplate, challengeReferenceMatches, formatChallengeJoinCode } from '../socialData'
 import { CheckField, TextArea, TextField } from '../ui'
 
 function addDays(date: string, amount: number): string {
@@ -354,8 +354,10 @@ export default function FriendsView({
   onDeleteSquad,
   onCreateChallenge,
   onInviteChallengeParticipants,
+  onJoinChallengeByCode,
   onAcceptChallenge,
   onDeclineChallenge,
+  onRemoveChallengeParticipant,
   onPublishChallengeScore,
   onCommentEvent,
   onDeleteEventComment,
@@ -397,8 +399,10 @@ export default function FriendsView({
   onDeleteSquad: (squadId: string) => void
   onCreateChallenge: (input: CreateFriendChallengeInput) => void
   onInviteChallengeParticipants: (input: InviteFriendChallengeInput) => void
+  onJoinChallengeByCode: (code: string) => void
   onAcceptChallenge: (challengeId: string) => void
   onDeclineChallenge: (challengeId: string) => void
+  onRemoveChallengeParticipant: (challengeId: string, participantUserId: string) => void
   onPublishChallengeScore: (challengeId: string, note?: string, reaction?: ScoreReaction | null) => void
   onCommentEvent: (eventId: string, body: string) => void
   onDeleteEventComment: (commentId: string) => void
@@ -420,6 +424,7 @@ export default function FriendsView({
   const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>(CHALLENGE_TEMPLATES[1]?.scoringMode ?? 'softShared')
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
   const [challengeRuleKeys, setChallengeRuleKeys] = useState<RuleKey[]>(() => getEnabledRules(settings).map((rule) => rule.key))
+  const [challengeJoinCode, setChallengeJoinCode] = useState('')
   const [squadName, setSquadName] = useState('Training Squad')
   const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null)
@@ -459,7 +464,8 @@ export default function FriendsView({
   useEffect(() => {
     if (!linkedChallengeId) return
     setActiveFriendsTab('challenges')
-    if (friendChallenges.some((challenge) => challenge.id === linkedChallengeId)) setSelectedChallengeId(linkedChallengeId)
+    const linkedChallenge = friendChallenges.find((challenge) => challengeReferenceMatches(challenge.id, linkedChallengeId))
+    if (linkedChallenge) setSelectedChallengeId(linkedChallenge.id)
   }, [linkedChallengeId, friendChallenges])
 
   useEffect(() => {
@@ -547,6 +553,14 @@ export default function FriendsView({
       ruleKeys: challengeRuleKeys,
       templateId: challengeTemplateId,
     })
+  }
+
+  function submitChallengeJoinCode() {
+    const code = challengeJoinCode.trim()
+    const matchedChallenge = friendChallenges.find((challenge) => challengeReferenceMatches(challenge.id, code))
+    if (matchedChallenge) setSelectedChallengeId(matchedChallenge.id)
+    onJoinChallengeByCode(code)
+    if (matchedChallenge) setChallengeJoinCode('')
   }
 
   if (!configured) {
@@ -864,6 +878,18 @@ export default function FriendsView({
           </div>
           <span>{friendChallenges.length}</span>
         </div>
+        <div className="challenge-join-panel">
+          <div>
+            <small>Join by code</small>
+            <p>Paste a challenge code from the group chat. You still need an invite from the owner.</p>
+          </div>
+          <div>
+            <TextField label="Challenge code" value={challengeJoinCode} onChange={(value) => setChallengeJoinCode(value.toUpperCase())} />
+            <button className="secondary-button compact-button" type="button" onClick={submitChallengeJoinCode} disabled={busy || !challengeJoinCode.trim()}>
+              Join Challenge
+            </button>
+          </div>
+        </div>
         <div className="challenge-create-panel">
           <div className="template-picker">
             <label className="select-field">
@@ -961,6 +987,10 @@ export default function FriendsView({
               challengeId: selectedChallenge.id,
               inviteeIds,
             })}
+            onLeave={() => {
+              if (currentUserId) onRemoveChallengeParticipant(selectedChallenge.id, currentUserId)
+            }}
+            onRemoveParticipant={(participantUserId) => onRemoveChallengeParticipant(selectedChallenge.id, participantUserId)}
             onPublish={(note, reaction) => onPublishChallengeScore(selectedChallenge.id, note, reaction)}
             onComment={onCommentEvent}
             onDeleteComment={onDeleteEventComment}
@@ -992,6 +1022,9 @@ export default function FriendsView({
                       onSelect={() => setSelectedChallengeId(challenge.id)}
                       onAccept={() => onAcceptChallenge(challenge.id)}
                       onDecline={() => onDeclineChallenge(challenge.id)}
+                      onLeave={() => {
+                        if (currentUserId) onRemoveChallengeParticipant(challenge.id, currentUserId)
+                      }}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
                       onShareLink={() => onShareChallengeLink(challenge)}
                     />
@@ -1019,6 +1052,9 @@ export default function FriendsView({
                       onSelect={() => setSelectedChallengeId(challenge.id)}
                       onAccept={() => onAcceptChallenge(challenge.id)}
                       onDecline={() => onDeclineChallenge(challenge.id)}
+                      onLeave={() => {
+                        if (currentUserId) onRemoveChallengeParticipant(challenge.id, currentUserId)
+                      }}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
                       onShareLink={() => onShareChallengeLink(challenge)}
                     />
@@ -1370,6 +1406,7 @@ function FriendChallengeCard({
   onSelect,
   onAccept,
   onDecline,
+  onLeave,
   onPublish,
   onShareLink,
 }: {
@@ -1378,6 +1415,7 @@ function FriendChallengeCard({
   onSelect: () => void
   onAccept: () => void
   onDecline: () => void
+  onLeave: () => void
   onPublish: () => void
   onShareLink: () => void
 }) {
@@ -1397,7 +1435,7 @@ function FriendChallengeCard({
         <div>
           <small>{modeLabel} · {formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)}</small>
           <h3>{challenge.name}</h3>
-          <p>{acceptedParticipants.length} active · {pendingParticipants.length} invited</p>
+          <p>{acceptedParticipants.length} active · {pendingParticipants.length} invited · {formatChallengeJoinCode(challenge.id)}</p>
         </div>
         <span className="request-badge">{challenge.isCreator ? 'Owner' : challenge.currentUserStatus}</span>
       </div>
@@ -1422,6 +1460,11 @@ function FriendChallengeCard({
         {challenge.currentUserStatus === 'accepted' && (
           <button className="secondary-button compact-button" type="button" onClick={onPublish} disabled={busy}>
             Publish Today
+          </button>
+        )}
+        {challenge.currentUserStatus === 'accepted' && !challenge.isCreator && (
+          <button className="ghost-button compact-button" type="button" onClick={onLeave} disabled={busy}>
+            Leave
           </button>
         )}
       </div>
@@ -1466,6 +1509,8 @@ function FriendChallengeDetail({
   onClose,
   feedItems,
   onInviteMore,
+  onLeave,
+  onRemoveParticipant,
   onPublish,
   onComment,
   onDeleteComment,
@@ -1478,6 +1523,8 @@ function FriendChallengeDetail({
   onClose: () => void
   feedItems: FriendActivityFeedItem[]
   onInviteMore: (inviteeIds: string[]) => void
+  onLeave: () => void
+  onRemoveParticipant: (participantUserId: string) => void
   onPublish: (note: string, reaction: ScoreReaction | null) => void
   onComment: (eventId: string, body: string) => void
   onDeleteComment: (commentId: string) => void
@@ -1528,10 +1575,15 @@ function FriendChallengeDetail({
         <div>
           <small>{completed ? 'Completed archive' : 'Challenge detail'}</small>
           <h3>{challenge.name}</h3>
-          <p>{formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)} · {modeLabel}</p>
+          <p>{formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)} · {modeLabel} · {formatChallengeJoinCode(challenge.id)}</p>
         </div>
         <div className="challenge-detail-actions">
           <span className="request-badge">{challenge.isCreator ? 'Owner' : statusLabel(challenge.currentUserStatus)}</span>
+          {challenge.currentUserStatus === 'accepted' && !challenge.isCreator && (
+            <button className="ghost-button" type="button" onClick={onLeave} disabled={busy}>
+              Leave Challenge
+            </button>
+          )}
           <button className="ghost-button" type="button" onClick={onClose}>
             Close
           </button>
@@ -1597,7 +1649,14 @@ function FriendChallengeDetail({
                   <strong>{participant.displayName}{participant.isCurrentUser ? ' · You' : ''}</strong>
                   <span>Invited {formatActivityDate(participant.createdAt)}{participant.respondedAt ? ` · Responded ${formatActivityDate(participant.respondedAt)}` : ''}</span>
                 </div>
-                <b>{statusLabel(participant.status)}</b>
+                <div className="participant-status-actions">
+                  <b>{statusLabel(participant.status)}</b>
+                  {challenge.isCreator && !participant.isCurrentUser && (
+                    <button className="ghost-button compact-button" type="button" onClick={() => onRemoveParticipant(participant.userId)} disabled={busy}>
+                      {participant.status === 'pending' ? 'Cancel Invite' : participant.status === 'accepted' ? 'Remove' : 'Clear'}
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>

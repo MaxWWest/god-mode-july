@@ -3403,6 +3403,42 @@ textarea:focus-visible {
   background: var(--accent-faint);
 }
 
+.challenge-join-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid rgba(87, 217, 121, 0.18);
+  border-radius: 13px;
+  background: rgba(87, 217, 121, 0.055);
+}
+
+.challenge-join-panel > div {
+  min-width: 0;
+}
+
+.challenge-join-panel > div:last-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.challenge-join-panel small {
+  color: #9cf0ae;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.challenge-join-panel p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .template-picker {
   display: grid;
   grid-template-columns: minmax(0, 230px) minmax(0, 1fr);
@@ -3685,6 +3721,14 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.participant-history-row .participant-status-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .participant-history-row strong {
   min-width: 0;
   overflow: hidden;
@@ -3702,6 +3746,11 @@ textarea:focus-visible {
   color: var(--accent-text);
   font-size: 0.68rem;
   text-transform: uppercase;
+}
+
+.participant-status-actions .ghost-button {
+  min-height: 30px;
+  padding: 6px 9px;
 }
 
 .daily-history-grid {
@@ -4155,6 +4204,8 @@ textarea:focus-visible {
     display: grid;
   }
 
+  .challenge-join-panel,
+  .challenge-join-panel > div:last-child,
   .challenge-detail-header,
   .challenge-detail-grid,
   .friend-profile-grid,
@@ -4163,6 +4214,14 @@ textarea:focus-visible {
   .challenge-settings-grid,
   .participant-history-row {
     grid-template-columns: 1fr;
+  }
+
+  .participant-history-row .participant-status-actions {
+    justify-content: stretch;
+  }
+
+  .participant-status-actions .ghost-button {
+    width: 100%;
   }
 
   .tutorial-actions {
