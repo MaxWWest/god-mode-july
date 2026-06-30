@@ -1,4 +1,4 @@
-import type { ChallengeSettings, DailyEntry, RuleConfig, WorkoutLog } from '../types'
+import type { ChallengeSettings, DailyEntry, FoodLibraryItem, FoodLog, RuleConfig, WorkoutLog } from '../types'
 import { MealLogger } from '../components/DailyLoggers'
 import {
   MAX_WORKOUT_LOGS,
@@ -33,7 +33,10 @@ export default function CheckInView({
   entry,
   settings,
   isFinalized,
+  foodLibrary,
   onUpdate,
+  onSaveFoodToLibrary,
+  onDeleteFoodFromLibrary,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
@@ -41,7 +44,10 @@ export default function CheckInView({
   entry: DailyEntry
   settings: ChallengeSettings
   isFinalized: boolean
+  foodLibrary: FoodLibraryItem[]
   onUpdate: (patch: Partial<DailyEntry>) => void
+  onSaveFoodToLibrary: (food: FoodLog) => void
+  onDeleteFoodFromLibrary: (foodId: string) => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
   onShareDay: () => void
@@ -173,7 +179,15 @@ export default function CheckInView({
 
       <section className="panel form-panel">
         <SectionTitle number="2" title="Diet" />
-        <MealLogger foods={entry.foods ?? []} disabled={isFinalized} detailed onChange={updateFoods} />
+        <MealLogger
+          foods={entry.foods ?? []}
+          foodLibrary={foodLibrary}
+          disabled={isFinalized}
+          detailed
+          onChange={updateFoods}
+          onSaveFoodToLibrary={onSaveFoodToLibrary}
+          onDeleteFoodFromLibrary={onDeleteFoodFromLibrary}
+        />
         {dietRules.length === 0 ? (
           <p className="empty-rule-category">No active diet goals. Add them from Settings.</p>
         ) : (

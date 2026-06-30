@@ -17,9 +17,11 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Current-cycle exercise progress with completed, missed, and upcoming training dates
 - Common and custom diet goals with minimum, maximum, or avoid scoring plus custom units
 - Breakfast, lunch, dinner, and snack logging with user-created food entries, macros, and categories
+- Personal saved-food library for reusing common meals, macros, and categories
 - Automatic diet scoring from meal macros and food categories such as alcohol or dessert
 - Home quick logging for meals and workouts, with full review and editing in Check-In
 - Finalized-day share cards for group-chat accountability
+- First-run checklist for account setup, goals, meals, workouts, friends, and challenges
 - Editable rules, goals, categories, and rule weights
 - Monthly calendar heatmap inside Progress
 - Rule completion analytics
@@ -32,11 +34,13 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Offline status with retryable cloud and social errors
 - Account data JSON export and cloud data deletion controls
 - Friends list with invite-code requests
+- Direct friend invite links that prefill the add-friend flow
 - Friend request accept/decline flow
 - Share-safe leaderboard competition
 - Friend privacy controls for published stats
 - Better invite sharing with copy/share text
 - Invite-only custom friend challenges
+- Direct challenge invite links for opening challenge requests in the PWA
 - Shared, matched-metric, soft-shared, and percent-only challenge scoring modes
 - Published per-day friend challenge score history
 - Per-challenge daily feed posts with comments, reactions, and score notes
@@ -99,7 +103,7 @@ Run the desktop and mobile Chromium smoke suite:
 npm run test:e2e
 ```
 
-The smoke suite covers the signup/login split, visual guide sections, account guidance, daily meal/workout logging, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
+The smoke suite covers the signup/login split, visual guide sections, account guidance, first-run checklist, daily meal/workout logging, saved-food creation, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
 
 An optional existing-account Supabase check runs when credentials are provided explicitly:
 
@@ -123,6 +127,12 @@ Tracker settings are stored under this browser key:
 god-mode-july-settings-v1
 ```
 
+Saved foods are stored under this browser key:
+
+```text
+god-mode-july-food-library-v1
+```
+
 The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Account provides a dedicated setup flow: new users verify one emailed signup link and then create and confirm a password; returning users sign in with email and password. Settings keeps the Push Local and Pull Cloud controls, account data export, and cloud data deletion. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
 
 Cloud sync uses the Supabase table in `supabase-schema.sql` when these Vite env vars are configured:
@@ -134,7 +144,7 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared. Run the latest `supabase-schema.sql` after deploying social changes; the challenge table now accepts `shared`, `personal`, `softShared`, and `percentOnly` scoring modes.
+Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Direct friend and challenge links are convenience wrappers around invite codes and stored challenge invites; the server-side permissions still come from accepted friendships, challenge participants, and row-level security. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared. Run the latest `supabase-schema.sql` after deploying social changes; the challenge table now accepts `shared`, `personal`, `softShared`, and `percentOnly` scoring modes.
 
 Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Seven-day patterns display weekdays, Home and Check-In identify recovery days, and Progress summarizes the current cycle. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Meals carry macro values and optional food categories, allowing rules such as protein, calories, no alcohol, or no dessert to update automatically. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
 
@@ -164,8 +174,16 @@ Current social beta coverage:
 - Challenge templates with preset target and scored-rule overrides.
 - Challenge scoring modes for exact shared rules, matched metrics with personal targets, soft shared mandatory metrics plus personal goals, and percent-only comparison.
 - Explicit challenge rule selection, including custom tracker rules; accepted metric-based challenges add missing controls to the participant's tracker.
+- Direct share links for friend codes and challenge invites.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 - Per-participant daily score timelines stored when challenge scores are published.
+
+Product ideas pulled from public coaching-app patterns, including Built With Science-style assessment and coaching funnels:
+
+- Make onboarding feel like a guided assessment instead of a settings hunt.
+- Keep the first week focused on one setup loop: account, goals, first meal, first workout, friends, challenge.
+- Let people reuse structured meals and workouts so tracking feels faster each day.
+- Add adaptation prompts for missed days, travel days, and schedule changes instead of treating every slip as failure.
 
 ## Recommended roadmap
 
@@ -178,14 +196,14 @@ Current social beta coverage:
 
 ### Priority 2: faster meal logging
 
-1. Add a personal food library so commonly logged foods retain their macros and categories.
-2. Add serving quantity with automatic macro scaling.
-3. Add recent foods, favorites, duplicate meal, and copy-yesterday shortcuts.
+1. Add serving quantity with automatic macro scaling for saved foods.
+2. Add recent foods, favorites, duplicate meal, and copy-yesterday shortcuts.
+3. Add saved-food search once the library grows beyond a simple dropdown.
 4. Consider barcode lookup only after the manual food-library flow is fast and reliable.
 
 ### Priority 3: challenge lifecycle controls
 
-1. Add direct challenge links or short join codes that open the relevant invite in the PWA.
+1. Add short human-readable join codes for challenges in addition to direct links.
 2. Let owners cancel pending invites, remove participants, and end active challenges safely.
 3. Let members leave challenges and squads with clear score-history behavior.
 4. Add unread badges for new comments, reactions, and challenge updates.

@@ -1711,6 +1711,59 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.quick-start-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.quick-start-list {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-start-list article {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.quick-start-list article > span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--green);
+  font-weight: 950;
+}
+
+.quick-start-list article.is-complete {
+  border-color: rgba(87, 217, 121, 0.24);
+  background: rgba(87, 217, 121, 0.055);
+}
+
+.quick-start-list div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quick-start-list strong {
+  font-size: 0.84rem;
+}
+
+.quick-start-list small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 .quick-log-section {
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
@@ -1813,6 +1866,40 @@ textarea:focus-visible {
   border: 1px solid var(--accent-border);
   border-radius: 8px;
   background: var(--accent-faint);
+}
+
+.food-library-panel {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.food-library-panel > div,
+.food-add-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.food-library-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.food-library-preview span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .meal-type-tabs {
@@ -3886,6 +3973,10 @@ textarea:focus-visible {
   }
 
   .quick-workout-form,
+  .quick-start-list article,
+  .food-library-panel > div,
+  .food-add-actions,
+  .food-library-preview,
   .food-macro-grid,
   .food-macro-grid.is-detailed,
   .food-edit-main,

@@ -95,6 +95,11 @@ export type FoodLog = {
   categories: FoodCategory[]
 }
 
+export type FoodLibraryItem = Omit<FoodLog, 'meal'> & {
+  createdAt: string
+  updatedAt: string
+}
+
 export type FoodNutritionTotals = {
   calories: number
   proteinGrams: number

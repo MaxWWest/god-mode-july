@@ -63,11 +63,13 @@ import {
   getNextExerciseDate,
   getLoggedDates,
   getTrackingDates,
+  foodLibraryItemFromFood,
   isEntryFinalized,
   isIsoDate,
   makeEmptyEntry,
   mergeCloudOnlyEntries,
   normalizeEntries,
+  normalizeFoodLibrary,
   normalizePrivacySettings,
   normalizeReminderSettings,
   normalizeSettings,
@@ -100,6 +102,8 @@ import type {
   FriendEvent,
   FriendEventType,
   FriendFeedReaction,
+  FoodLibraryItem,
+  FoodLog,
   FriendProfile,
   FriendRequest,
   FriendSquadView,
@@ -134,8 +138,29 @@ const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
 const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v2'
 const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
 const PASSWORD_SETUP_STORAGE_KEY = 'god-mode-july-password-setup-required-v1'
+const FOOD_LIBRARY_STORAGE_KEY = 'god-mode-july-food-library-v1'
+const PENDING_FRIEND_INVITE_STORAGE_KEY = 'god-mode-july-pending-friend-invite-v1'
+const PENDING_CHALLENGE_LINK_STORAGE_KEY = 'god-mode-july-pending-challenge-link-v1'
+
+const FRIEND_LINK_KEYS = ['friend', 'invite', 'code']
+const CHALLENGE_LINK_KEYS = ['challenge', 'challengeId']
 
 type TutorialTarget = View | 'account'
+
+type LaunchDeepLink = {
+  friendCode: string
+  challengeId: string
+  initialFriendsTab: FriendsTab | null
+}
+
+type QuickStartItem = {
+  key: string
+  label: string
+  detail: string
+  complete: boolean
+  actionLabel: string
+  onAction: () => void
+}
 
 type TutorialStep = {
   eyebrow: string
@@ -372,6 +397,68 @@ function clearAuthRedirectUrl() {
   window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`)
 }
 
+function normalizeFriendInviteCode(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toUpperCase().slice(0, 32) : ''
+}
+
+function normalizeChallengeLinkId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 80) : ''
+}
+
+function firstParam(params: URLSearchParams, keys: string[]): string {
+  for (const key of keys) {
+    const value = params.get(key)
+    if (value) return value
+  }
+  return ''
+}
+
+function readLaunchDeepLink(): LaunchDeepLink {
+  const empty: LaunchDeepLink = { friendCode: '', challengeId: '', initialFriendsTab: null }
+  if (typeof window === 'undefined') return empty
+
+  const searchParams = new URLSearchParams(window.location.search)
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const friendCode = normalizeFriendInviteCode(firstParam(searchParams, FRIEND_LINK_KEYS) || firstParam(hashParams, FRIEND_LINK_KEYS))
+  const challengeId = normalizeChallengeLinkId(firstParam(searchParams, CHALLENGE_LINK_KEYS) || firstParam(hashParams, CHALLENGE_LINK_KEYS))
+
+  return {
+    friendCode,
+    challengeId,
+    initialFriendsTab: challengeId ? 'challenges' : friendCode ? 'friends' : null,
+  }
+}
+
+function clearDeepLinkParamsFromUrl() {
+  const searchParams = new URLSearchParams(window.location.search)
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const hasAuthParams = searchParams.has('code')
+    || searchParams.has('error_description')
+    || hashParams.has('access_token')
+    || hashParams.has('refresh_token')
+    || hashParams.has('error_description')
+  if (hasAuthParams) return
+
+  let changed = false
+  for (const key of [...FRIEND_LINK_KEYS, ...CHALLENGE_LINK_KEYS]) {
+    if (searchParams.has(key)) {
+      searchParams.delete(key)
+      changed = true
+    }
+  }
+  if (!changed) return
+  const nextSearch = searchParams.toString()
+  window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`)
+}
+
+function friendInviteLink(inviteCode: string): string {
+  return `${window.location.origin}/?friend=${encodeURIComponent(inviteCode)}`
+}
+
+function challengeInviteLink(challengeId: string): string {
+  return `${window.location.origin}/?challenge=${encodeURIComponent(challengeId)}`
+}
+
 async function consumeAuthRedirectSession(): Promise<{ user: User | null; redirected: boolean }> {
   if (!supabase) return { user: null, redirected: false }
 
@@ -404,10 +491,12 @@ async function consumeAuthRedirectSession(): Promise<{ user: User | null; redire
 }
 
 function App() {
+  const [launchDeepLink] = useState<LaunchDeepLink>(() => readLaunchDeepLink())
   const [settings, setSettings] = useState<ChallengeSettings>(() => normalizeSettings(loadFromStorage<unknown>(SETTINGS_STORAGE_KEY, null)))
   const [view, setView] = useState<View>('home')
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
   const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
+  const [foodLibrary, setFoodLibrary] = useState<FoodLibraryItem[]>(() => normalizeFoodLibrary(loadFromStorage<unknown>(FOOD_LIBRARY_STORAGE_KEY, [])))
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => normalizeReminderSettings(loadFromStorage<unknown>(REMINDER_STORAGE_KEY, null)))
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)))
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>(() => normalizePrivacySettings(loadFromStorage<unknown>(PRIVACY_STORAGE_KEY, null)))
@@ -443,6 +532,9 @@ function App() {
   const [friendProfile, setFriendProfile] = useState<FriendProfile | null>(null)
   const [displayNameDraft, setDisplayNameDraft] = useState('')
   const [inviteCodeDraft, setInviteCodeDraft] = useState('')
+  const [pendingFriendCode, setPendingFriendCode] = useState(() => launchDeepLink.friendCode || normalizeFriendInviteCode(loadFromStorage<unknown>(PENDING_FRIEND_INVITE_STORAGE_KEY, '')))
+  const [pendingChallengeId, setPendingChallengeId] = useState(() => launchDeepLink.challengeId || normalizeChallengeLinkId(loadFromStorage<unknown>(PENDING_CHALLENGE_LINK_STORAGE_KEY, '')))
+  const [friendsInitialTab, setFriendsInitialTab] = useState<FriendsTab | null>(launchDeepLink.initialFriendsTab)
   const [leaderboardRows, setLeaderboardRows] = useState<LeaderboardRow[]>([])
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([])
   const [friendChallenges, setFriendChallenges] = useState<FriendChallengeView[]>([])
@@ -513,6 +605,16 @@ function App() {
   }, [entries])
 
   useEffect(() => {
+    saveToStorage(FOOD_LIBRARY_STORAGE_KEY, foodLibrary)
+  }, [foodLibrary])
+
+  useEffect(() => {
+    if (launchDeepLink.friendCode) saveToStorage(PENDING_FRIEND_INVITE_STORAGE_KEY, launchDeepLink.friendCode)
+    if (launchDeepLink.challengeId) saveToStorage(PENDING_CHALLENGE_LINK_STORAGE_KEY, launchDeepLink.challengeId)
+    if (launchDeepLink.friendCode || launchDeepLink.challengeId) clearDeepLinkParamsFromUrl()
+  }, [launchDeepLink])
+
+  useEffect(() => {
     saveToStorage(SETTINGS_STORAGE_KEY, settings)
     setSelectedDate((date) => clampDate(date, settings))
   }, [settings])
@@ -545,6 +647,29 @@ function App() {
   useEffect(() => {
     saveToStorage(PRIVACY_STORAGE_KEY, privacySettings)
   }, [privacySettings])
+
+  useEffect(() => {
+    if (!pendingFriendCode && !pendingChallengeId) return
+    if (pendingFriendCode) {
+      setInviteCodeDraft(pendingFriendCode)
+      setFriendsInitialTab('friends')
+    }
+    if (pendingChallengeId) setFriendsInitialTab('challenges')
+    setView('friends')
+
+    if (!user && isSupabaseConfigured && authReady && !authFlowOpen) {
+      setAuthStatus({ tone: 'neutral', message: 'Invite link loaded. Create an account or sign in to continue.' })
+      openAuthFlow('register')
+    }
+  }, [pendingFriendCode, pendingChallengeId, user, authReady, authFlowOpen])
+
+  useEffect(() => {
+    if (!pendingChallengeId || !user) return
+    setFriendsInitialTab('challenges')
+    if (friendChallenges.length > 0 && !friendChallenges.some((challenge) => challenge.id === pendingChallengeId)) {
+      setFriendsStatus({ tone: 'neutral', message: 'Challenge link loaded. If you were invited, refresh or check the Challenges tab after signing in.' })
+    }
+  }, [pendingChallengeId, user, friendChallenges])
 
   useEffect(() => {
     if (!appNotice) return
@@ -799,6 +924,22 @@ function App() {
       }
       showAppNotice(error instanceof Error ? error.message : 'Could not share this day.', 'error')
     }
+  }
+
+  function saveFoodToLibrary(food: FoodLog) {
+    const name = food.name.trim()
+    if (!name) return
+    setFoodLibrary((current) => {
+      const existing = current.find((item) => item.name.trim().toLowerCase() === name.toLowerCase())
+      const nextItem = foodLibraryItemFromFood({ ...food, name }, existing)
+      return normalizeFoodLibrary([nextItem, ...current.filter((item) => item.id !== existing?.id)])
+    })
+    showAppNotice(`${name} saved to food library.`)
+  }
+
+  function deleteFoodFromLibrary(foodId: string) {
+    setFoodLibrary((current) => current.filter((food) => food.id !== foodId))
+    showAppNotice('Saved food removed.', 'neutral')
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
@@ -1315,7 +1456,7 @@ function App() {
     if (!inviteCode) return null
 
     const name = friendProfile?.displayName || displayNameDraft.trim() || 'me'
-    return `Add ${name} on God Mode: ${inviteCode}\n${window.location.origin}`
+    return `Add ${name} on God Mode.\nInvite code: ${inviteCode}\n${friendInviteLink(inviteCode)}`
   }
 
   async function shareOwnInviteMessage() {
@@ -1388,6 +1529,8 @@ function App() {
         setFriendsStatus({ tone: 'success', message: `Friend request sent to ${result.profile.displayName}.` })
       }
       setInviteCodeDraft('')
+      setPendingFriendCode('')
+      window.localStorage.removeItem(PENDING_FRIEND_INVITE_STORAGE_KEY)
       await refreshFriendsData()
     } catch (error) {
       setFriendsStatus(serviceErrorStatus(error, 'Could not send friend request.'))
@@ -1760,6 +1903,23 @@ function App() {
     }
   }
 
+  async function shareFriendChallengeLink(challenge: FriendChallengeView) {
+    const shareText = `${challenge.name} on God Mode\n${formatShortDate(challenge.startDate)} - ${formatShortDate(challenge.endDate)}\n${challengeInviteLink(challenge.id)}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${challenge.name} invite`, text: shareText })
+        setFriendsStatus({ tone: 'success', message: 'Challenge link shared.' })
+        return
+      }
+      await copyTextToClipboard(shareText)
+      setFriendsStatus({ tone: 'success', message: 'Challenge link copied.' })
+      showAppNotice('Challenge link copied.')
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      setFriendsStatus(serviceErrorStatus(error, 'Could not share challenge link.'))
+    }
+  }
+
   async function publishFriendSummary(silent = false, sourceEntries = entries, sourcePrivacySettings = privacySettings) {
     if (!supabase || !user) return
     const client = supabase
@@ -1833,6 +1993,84 @@ function App() {
 
   const friendsBadgeCount = friendRequests.filter((request) => request.direction === 'incoming').length
     + friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
+  const hasLoggedMeal = Object.values(entries).some((loggedEntry) => (loggedEntry.foods ?? []).length > 0)
+  const hasLoggedWorkout = Object.values(entries).some((loggedEntry) => (loggedEntry.workouts ?? []).length > 0 || loggedEntry.exerciseMinutes > 0)
+  const hasCustomizedGoals = settings.title !== DEFAULT_SETTINGS.title
+    || settings.rules.length !== DEFAULT_SETTINGS.rules.length
+    || settings.rules.some((rule) => {
+      const defaultRule = DEFAULT_SETTINGS.rules.find((item) => item.key === rule.key)
+      return !defaultRule
+        || rule.label !== defaultRule.label
+        || rule.enabled !== defaultRule.enabled
+        || rule.weight !== defaultRule.weight
+        || rule.category !== defaultRule.category
+    })
+  const quickStartItems: QuickStartItem[] = [
+    ...(isSupabaseConfigured ? [
+      {
+        key: 'account',
+        label: 'Create account',
+        detail: user ? 'Signed in for sync and friends.' : 'Create an account or sign in before joining the league.',
+        complete: Boolean(user),
+        actionLabel: user ? 'Account' : 'Start',
+        onAction: () => openAuthFlow(user ? 'account' : 'register'),
+      },
+      {
+        key: 'password',
+        label: 'Set password',
+        detail: passwordSetupRequired ? 'Finish the verified email by creating a password.' : 'Email/password login is ready after setup.',
+        complete: Boolean(user && !passwordSetupRequired),
+        actionLabel: user ? 'Password' : 'Create account',
+        onAction: () => openAuthFlow(user ? passwordSetupRequired ? 'setPassword' : 'account' : 'register'),
+      },
+    ] : []),
+    {
+      key: 'goals',
+      label: 'Customize goals',
+      detail: 'Set exercise patterns, diet targets, and mental rules before the first real challenge.',
+      complete: hasCustomizedGoals,
+      actionLabel: 'Open Settings',
+      onAction: () => setView('settings'),
+    },
+    {
+      key: 'meal',
+      label: 'Log first meal',
+      detail: 'Add a meal once, then save common foods to reuse later.',
+      complete: hasLoggedMeal,
+      actionLabel: 'Log meal',
+      onAction: () => setView('home'),
+    },
+    {
+      key: 'workout',
+      label: 'Log first workout',
+      detail: 'Add workout type and minutes so exercise rules score automatically.',
+      complete: hasLoggedWorkout,
+      actionLabel: 'Log workout',
+      onAction: () => setView('home'),
+    },
+    {
+      key: 'friend',
+      label: 'Add a friend',
+      detail: 'Use an invite link or code to connect with your group chat.',
+      complete: leaderboardRows.some((row) => !row.isCurrentUser) || friendRequests.length > 0,
+      actionLabel: 'Open Friends',
+      onAction: () => {
+        setFriendsInitialTab('friends')
+        setView('friends')
+      },
+    },
+    {
+      key: 'challenge',
+      label: 'Join a challenge',
+      detail: 'Create or accept a challenge once friends are connected.',
+      complete: friendChallenges.length > 0,
+      actionLabel: 'Challenges',
+      onAction: () => {
+        setFriendsInitialTab('challenges')
+        setView('friends')
+      },
+    },
+  ]
 
   return (
     <div className="app-shell">
@@ -1917,8 +2155,12 @@ function App() {
             percent={stats.percent}
             latestWeight={latestWeight}
             isFinalized={entryFinalized}
+            quickStartItems={quickStartItems}
+            foodLibrary={foodLibrary}
             onToggleRule={toggleRule}
             onUpdate={updateEntryIfUnlocked}
+            onSaveFoodToLibrary={saveFoodToLibrary}
+            onDeleteFoodFromLibrary={deleteFoodFromLibrary}
             onOpenCheckIn={() => setView('check-in')}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
@@ -1938,7 +2180,10 @@ function App() {
               entry={entry}
               settings={settings}
               isFinalized={entryFinalized}
+              foodLibrary={foodLibrary}
               onUpdate={updateEntryIfUnlocked}
+              onSaveFoodToLibrary={saveFoodToLibrary}
+              onDeleteFoodFromLibrary={deleteFoodFromLibrary}
               onFinalizeDay={finalizeSelectedDay}
               onUnlockDay={unlockSelectedDay}
               onShareDay={shareSelectedDay}
@@ -1983,6 +2228,8 @@ function App() {
               friendChallenges={friendChallenges}
               friendSquads={friendSquads}
               friendEvents={friendEvents}
+              initialTab={friendsInitialTab}
+              linkedChallengeId={pendingChallengeId}
               settings={settings}
               privacySettings={privacySettings}
               status={friendsStatus}
@@ -2009,9 +2256,10 @@ function App() {
               onDeleteEventComment={removeFriendEventComment}
               onReactEvent={reactToFriendEvent}
               onShareEvent={shareFriendActivity}
+              onShareChallengeLink={shareFriendChallengeLink}
               onPublishSummary={() => publishFriendSummary(false)}
               onRefresh={refreshFriendsData}
-              onOpenSettings={() => setView('settings')}
+              onOpenSettings={() => openAuthFlow(user ? 'account' : 'register')}
             />
           </Suspense>
         )}
@@ -2214,10 +2462,14 @@ function Dashboard({
   isFinalized,
   onToggleRule,
   onUpdate,
+  onSaveFoodToLibrary,
+  onDeleteFoodFromLibrary,
   onOpenCheckIn,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
+  quickStartItems,
+  foodLibrary,
 }: {
   entry: DailyEntry
   entries: EntryMap
@@ -2228,8 +2480,12 @@ function Dashboard({
   percent: number
   latestWeight: number | undefined
   isFinalized: boolean
+  quickStartItems: QuickStartItem[]
+  foodLibrary: FoodLibraryItem[]
   onToggleRule: (key: RuleKey) => void
   onUpdate: (patch: Partial<DailyEntry>) => void
+  onSaveFoodToLibrary: (food: FoodLog) => void
+  onDeleteFoodFromLibrary: (foodId: string) => void
   onOpenCheckIn: () => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
@@ -2265,6 +2521,8 @@ function Dashboard({
         <StatCard label="Latest weight" value={latestWeight ? `${latestWeight.toFixed(1)} lb` : '—'} icon="◒" />
       </section>
 
+      <QuickStartChecklist items={quickStartItems} />
+
       {exerciseRules.length > 0 && todayExerciseRules.length === 0 && (
         <section className="rest-day-banner home-rest-day" aria-label="Exercise rest day">
           <span aria-hidden="true">◒</span>
@@ -2296,7 +2554,14 @@ function Dashboard({
         </div>
         <div className="quick-log-section">
           <div className="quick-log-heading"><strong>Meals</strong><span>{entry.foods?.length ?? 0} items logged</span></div>
-          <MealLogger foods={entry.foods ?? []} disabled={isFinalized} onChange={(foods) => onUpdate(foodLogsEntryPatch(foods))} />
+          <MealLogger
+            foods={entry.foods ?? []}
+            foodLibrary={foodLibrary}
+            disabled={isFinalized}
+            onChange={(foods) => onUpdate(foodLogsEntryPatch(foods))}
+            onSaveFoodToLibrary={onSaveFoodToLibrary}
+            onDeleteFoodFromLibrary={onDeleteFoodFromLibrary}
+          />
         </div>
       </section>
 
@@ -2367,6 +2632,37 @@ function Dashboard({
         </div>
       </section>
     </div>
+  )
+}
+
+function QuickStartChecklist({ items }: { items: QuickStartItem[] }) {
+  const remaining = items.filter((item) => !item.complete)
+  if (remaining.length === 0) return null
+
+  return (
+    <section className="panel quick-start-panel" aria-label="First-run checklist">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Quick start</p>
+          <h2>Get league-ready</h2>
+        </div>
+        <span>{items.length - remaining.length}/{items.length}</span>
+      </div>
+      <div className="quick-start-list">
+        {items.map((item) => (
+          <article className={item.complete ? 'is-complete' : ''} key={item.key}>
+            <span aria-hidden="true">{item.complete ? '✓' : ''}</span>
+            <div>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </div>
+            <button className="ghost-button compact-button" type="button" onClick={item.onAction} disabled={item.complete}>
+              {item.complete ? 'Done' : item.actionLabel}
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 

@@ -14,6 +14,7 @@ import type {
   ExercisePatternProgress,
   ExerciseRuleSettings,
   FoodCategory,
+  FoodLibraryItem,
   FoodLog,
   FoodNutritionTotals,
   MealType,
@@ -34,6 +35,7 @@ export const MAX_WORKOUT_LOGS = 12
 export const MAX_WORKOUT_MINUTES = 300
 export const MAX_DAILY_EXERCISE_MINUTES = 600
 export const MAX_FOOD_LOGS = 40
+export const MAX_FOOD_LIBRARY_ITEMS = 80
 const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 export const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
@@ -303,6 +305,74 @@ export function makeEmptyFood(meal: MealType = 'breakfast'): FoodLog {
     fatGrams: 0,
     sodiumMg: 0,
     categories: [],
+  }
+}
+
+function normalizeFoodLibraryItem(value: unknown, index: number): FoodLibraryItem | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<FoodLibraryItem>
+  const name = normalizeText(candidate.name).trim().slice(0, 80)
+  if (!name) return null
+  const now = new Date().toISOString()
+  return {
+    id: normalizeText(candidate.id).trim() || `food-library-${index + 1}`,
+    name,
+    calories: normalizeBoundedNumber(candidate.calories, 0, 0, 5000),
+    proteinGrams: normalizeBoundedNumber(candidate.proteinGrams, 0, 0, 500),
+    carbsGrams: normalizeBoundedNumber(candidate.carbsGrams, 0, 0, 1000),
+    fatGrams: normalizeBoundedNumber(candidate.fatGrams, 0, 0, 500),
+    sodiumMg: normalizeBoundedNumber(candidate.sodiumMg, 0, 0, 20000),
+    categories: Array.isArray(candidate.categories)
+      ? Array.from(new Set(candidate.categories.filter(isFoodCategory)))
+      : [],
+    createdAt: normalizeTimestamp(candidate.createdAt) ?? now,
+    updatedAt: normalizeTimestamp(candidate.updatedAt) ?? now,
+  }
+}
+
+export function normalizeFoodLibrary(value: unknown): FoodLibraryItem[] {
+  if (!Array.isArray(value)) return []
+  const seenNames = new Set<string>()
+  const items: FoodLibraryItem[] = []
+  for (const [index, rawItem] of value.entries()) {
+    const item = normalizeFoodLibraryItem(rawItem, index)
+    if (!item) continue
+    const key = item.name.trim().toLowerCase()
+    if (seenNames.has(key)) continue
+    seenNames.add(key)
+    items.push(item)
+    if (items.length >= MAX_FOOD_LIBRARY_ITEMS) break
+  }
+  return items.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function foodLibraryItemFromFood(food: FoodLog, existing?: FoodLibraryItem): FoodLibraryItem {
+  const now = new Date().toISOString()
+  return {
+    id: existing?.id ?? `food-library-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: food.name.trim(),
+    calories: food.calories,
+    proteinGrams: food.proteinGrams,
+    carbsGrams: food.carbsGrams,
+    fatGrams: food.fatGrams,
+    sodiumMg: food.sodiumMg,
+    categories: Array.from(new Set(food.categories)),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+export function foodLogFromLibraryItem(item: FoodLibraryItem, meal: MealType): FoodLog {
+  return {
+    id: `food-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    meal,
+    name: item.name,
+    calories: item.calories,
+    proteinGrams: item.proteinGrams,
+    carbsGrams: item.carbsGrams,
+    fatGrams: item.fatGrams,
+    sodiumMg: item.sodiumMg,
+    categories: [...item.categories],
   }
 }
 

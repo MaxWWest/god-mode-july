@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import type { FoodCategory, FoodLog, MealType, WorkoutLog } from '../types'
+import type { FoodCategory, FoodLibraryItem, FoodLog, MealType, WorkoutLog } from '../types'
 import {
   FOOD_CATEGORIES,
+  MAX_FOOD_LIBRARY_ITEMS,
   MAX_FOOD_LOGS,
   MAX_WORKOUT_LOGS,
   MAX_WORKOUT_MINUTES,
   MEAL_TYPES,
   WORKOUT_TYPES,
+  foodLogFromLibraryItem,
   foodNutritionTotals,
   makeEmptyFood,
   makeEmptyWorkout,
@@ -75,17 +77,25 @@ export function QuickWorkoutLogger({
 
 export function MealLogger({
   foods,
+  foodLibrary = [],
   disabled,
   detailed = false,
   onChange,
+  onSaveFoodToLibrary,
+  onDeleteFoodFromLibrary,
 }: {
   foods: FoodLog[]
+  foodLibrary?: FoodLibraryItem[]
   disabled: boolean
   detailed?: boolean
   onChange: (foods: FoodLog[]) => void
+  onSaveFoodToLibrary?: (food: FoodLog) => void
+  onDeleteFoodFromLibrary?: (foodId: string) => void
 }) {
   const [draft, setDraft] = useState<FoodLog>(() => makeEmptyFood('breakfast'))
+  const [selectedLibraryFoodId, setSelectedLibraryFoodId] = useState('')
   const totals = foodNutritionTotals(foods)
+  const selectedLibraryFood = foodLibrary.find((food) => food.id === selectedLibraryFoodId) ?? null
 
   function updateDraft(patch: Partial<FoodLog>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -101,6 +111,16 @@ export function MealLogger({
     if (!draft.name.trim() || foods.length >= MAX_FOOD_LOGS) return
     onChange([...foods, { ...draft, name: draft.name.trim() }])
     setDraft(makeEmptyFood(draft.meal))
+  }
+
+  function addSavedFood() {
+    if (!selectedLibraryFood || foods.length >= MAX_FOOD_LOGS) return
+    onChange([...foods, foodLogFromLibraryItem(selectedLibraryFood, draft.meal)])
+  }
+
+  function saveDraftFood() {
+    if (!draft.name.trim() || !onSaveFoodToLibrary) return
+    onSaveFoodToLibrary({ ...draft, name: draft.name.trim() })
   }
 
   function updateFood(id: string, patch: Partial<FoodLog>) {
@@ -124,6 +144,28 @@ export function MealLogger({
               <button className={draft.meal === meal ? 'active' : ''} type="button" key={meal} aria-pressed={draft.meal === meal} onClick={() => updateDraft({ meal })}>{MEAL_LABELS[meal]}</button>
             ))}
           </div>
+          {foodLibrary.length > 0 && (
+            <div className="food-library-panel">
+              <div>
+                <label className="select-field">
+                  <span>Saved food</span>
+                  <select value={selectedLibraryFoodId} onChange={(event) => setSelectedLibraryFoodId(event.target.value)}>
+                    <option value="">Choose saved food</option>
+                    {foodLibrary.map((food) => (
+                      <option key={food.id} value={food.id}>{food.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <button className="secondary-button compact-button" type="button" onClick={addSavedFood} disabled={!selectedLibraryFood || foods.length >= MAX_FOOD_LOGS}>Add Saved Food</button>
+              </div>
+              {selectedLibraryFood && (
+                <article className="food-library-preview">
+                  <span>{selectedLibraryFood.calories} kcal · {selectedLibraryFood.proteinGrams} g protein{selectedLibraryFood.categories.length > 0 ? ` · ${selectedLibraryFood.categories.map((category) => CATEGORY_LABELS[category]).join(', ')}` : ''}</span>
+                  {onDeleteFoodFromLibrary && <button className="ghost-button" type="button" onClick={() => onDeleteFoodFromLibrary(selectedLibraryFood.id)}>Delete</button>}
+                </article>
+              )}
+            </div>
+          )}
           <div className={`food-macro-grid ${detailed ? 'is-detailed' : ''}`}>
             <TextField label="Food item" value={draft.name} onChange={(name) => updateDraft({ name })} />
             <NumberField label="Calories" value={draft.calories} min={0} max={5000} onChange={(calories) => updateDraft({ calories: calories ?? 0 })} suffix="kcal" />
@@ -135,7 +177,14 @@ export function MealLogger({
             </>}
           </div>
           <FoodCategoryPicker categories={draft.categories} disabled={false} onToggle={toggleDraftCategory} />
-          <button className="secondary-button compact-button" type="button" onClick={addFood} disabled={!draft.name.trim() || foods.length >= MAX_FOOD_LOGS}>Add to {MEAL_LABELS[draft.meal]}</button>
+          <div className="food-add-actions">
+            <button className="secondary-button compact-button" type="button" onClick={addFood} disabled={!draft.name.trim() || foods.length >= MAX_FOOD_LOGS}>Add to {MEAL_LABELS[draft.meal]}</button>
+            {onSaveFoodToLibrary && (
+              <button className="ghost-button compact-button" type="button" onClick={saveDraftFood} disabled={!draft.name.trim() || foodLibrary.length >= MAX_FOOD_LIBRARY_ITEMS}>
+                Save Food
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -5,12 +5,15 @@ import {
   completionStats,
   formatExercisePatternDayLabel,
   formatExercisePatternSchedule,
+  foodLibraryItemFromFood,
+  foodLogFromLibraryItem,
   foodLogsEntryPatch,
   foodNutritionTotals,
   getEnabledRules,
   getExercisePatternProgress,
   getNextExerciseDate,
   makeEmptyEntry,
+  normalizeFoodLibrary,
   normalizePrivacySettings,
   normalizeSettings,
   ruleComplete,
@@ -174,6 +177,34 @@ describe('tracker scoring', () => {
     expect(ruleComplete(beerEntry, 'sober', settings)).toBe(false)
     expect(ruleComplete(cleanEntry, 'custom-no-dessert', settings)).toBe(true)
     expect(ruleComplete(cakeEntry, 'custom-no-dessert', settings)).toBe(false)
+  })
+
+  it('normalizes saved foods and converts them back into meal logs', () => {
+    const savedAt = '2026-07-01T12:00:00.000Z'
+    const library = normalizeFoodLibrary([
+      { id: 'old', name: ' Greek Yogurt ', calories: 150, proteinGrams: 20, carbsGrams: 8, fatGrams: 0, sodiumMg: 90, categories: ['dairy'], createdAt: savedAt, updatedAt: savedAt },
+      { id: 'duplicate', name: 'greek yogurt', calories: 200, proteinGrams: 25, categories: ['protein'], createdAt: savedAt, updatedAt: savedAt },
+      { id: 'invalid', name: '   ' },
+    ])
+
+    expect(library).toHaveLength(1)
+    expect(library[0]).toMatchObject({ name: 'Greek Yogurt', calories: 150, proteinGrams: 20, categories: ['dairy'] })
+
+    const mealFood = foodLogFromLibraryItem(library[0], 'lunch')
+    expect(mealFood).toMatchObject({ meal: 'lunch', name: 'Greek Yogurt', calories: 150, proteinGrams: 20 })
+    expect(mealFood.id).not.toBe(library[0].id)
+  })
+
+  it('updates existing saved food macros when a matching item is saved again', () => {
+    const existing = normalizeFoodLibrary([
+      { id: 'chicken', name: 'Chicken Bowl', calories: 600, proteinGrams: 45, carbsGrams: 60, fatGrams: 15, sodiumMg: 800, categories: ['protein'], createdAt: '2026-06-01T12:00:00.000Z', updatedAt: '2026-06-01T12:00:00.000Z' },
+    ])[0]
+    const next = foodLibraryItemFromFood({ id: 'meal-1', meal: 'dinner', name: 'Chicken Bowl', calories: 700, proteinGrams: 55, carbsGrams: 75, fatGrams: 18, sodiumMg: 950, categories: ['protein', 'grain'] }, existing)
+
+    expect(next.id).toBe(existing.id)
+    expect(next.createdAt).toBe(existing.createdAt)
+    expect(next).toMatchObject({ calories: 700, proteinGrams: 55, categories: ['protein', 'grain'] })
+    expect(new Date(next.updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(existing.updatedAt).getTime())
   })
 
   it('builds a daily share scorecard for group accountability', () => {

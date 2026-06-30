@@ -333,6 +333,8 @@ export default function FriendsView({
   friendChallenges,
   friendSquads,
   friendEvents,
+  initialTab,
+  linkedChallengeId,
   settings,
   privacySettings,
   status,
@@ -359,6 +361,7 @@ export default function FriendsView({
   onDeleteEventComment,
   onReactEvent,
   onShareEvent,
+  onShareChallengeLink,
   onPublishSummary,
   onRefresh,
   onOpenSettings,
@@ -373,6 +376,8 @@ export default function FriendsView({
   friendChallenges: FriendChallengeView[]
   friendSquads: FriendSquadView[]
   friendEvents: FriendEvent[]
+  initialTab: FriendsTab | null
+  linkedChallengeId: string
   settings: ChallengeSettings
   privacySettings: PrivacySettings
   status: DataStatus
@@ -399,6 +404,7 @@ export default function FriendsView({
   onDeleteEventComment: (commentId: string) => void
   onReactEvent: (eventId: string, reaction: FriendFeedReaction | null) => void
   onShareEvent: (text: string) => void
+  onShareChallengeLink: (challenge: FriendChallengeView) => void
   onPublishSummary: () => void
   onRefresh: () => void
   onOpenSettings: () => void
@@ -445,6 +451,16 @@ export default function FriendsView({
   const challengeRequiresRuleSelection = challengeScoringMode !== 'percentOnly'
   const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
   const availableChallengeRules = settings.rules.filter((rule) => !rule.deleted)
+
+  useEffect(() => {
+    if (initialTab) setActiveFriendsTab(initialTab)
+  }, [initialTab])
+
+  useEffect(() => {
+    if (!linkedChallengeId) return
+    setActiveFriendsTab('challenges')
+    if (friendChallenges.some((challenge) => challenge.id === linkedChallengeId)) setSelectedChallengeId(linkedChallengeId)
+  }, [linkedChallengeId, friendChallenges])
 
   useEffect(() => {
     const availableKeys = new Set(availableChallengeRules.map((rule) => rule.key))
@@ -560,10 +576,10 @@ export default function FriendsView({
         </section>
         <section className="panel focus-panel">
           <p className="eyebrow">Account needed</p>
-          <h2>Sign in from Settings.</h2>
+          <h2>Sign in to join.</h2>
           <p>Friends only see share-safe stats like completion, streaks, and logged days.</p>
           <button className="primary-button" type="button" onClick={onOpenSettings}>
-            Open Settings
+            Open Account
           </button>
         </section>
       </div>
@@ -977,6 +993,7 @@ export default function FriendsView({
                       onAccept={() => onAcceptChallenge(challenge.id)}
                       onDecline={() => onDeclineChallenge(challenge.id)}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
+                      onShareLink={() => onShareChallengeLink(challenge)}
                     />
                   ))}
                 </div>
@@ -1003,6 +1020,7 @@ export default function FriendsView({
                       onAccept={() => onAcceptChallenge(challenge.id)}
                       onDecline={() => onDeclineChallenge(challenge.id)}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
+                      onShareLink={() => onShareChallengeLink(challenge)}
                     />
                   ))}
                 </div>
@@ -1353,6 +1371,7 @@ function FriendChallengeCard({
   onAccept,
   onDecline,
   onPublish,
+  onShareLink,
 }: {
   challenge: FriendChallengeView
   busy: boolean
@@ -1360,6 +1379,7 @@ function FriendChallengeCard({
   onAccept: () => void
   onDecline: () => void
   onPublish: () => void
+  onShareLink: () => void
 }) {
   const modeLabel = challengeScoringModeLabel(challenge.scoringMode)
   const acceptedParticipants = challenge.participants.filter((participant) => participant.status === 'accepted')
@@ -1385,6 +1405,9 @@ function FriendChallengeCard({
       <div className="challenge-card-actions">
         <button className="secondary-button compact-button" type="button" onClick={onSelect} disabled={busy}>
           Details
+        </button>
+        <button className="ghost-button compact-button" type="button" onClick={onShareLink} disabled={busy}>
+          Share Link
         </button>
         {challenge.currentUserStatus === 'pending' && !challenge.isCreator && (
           <>
