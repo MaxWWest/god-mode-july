@@ -1,17 +1,22 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FoodCategory, FoodLibraryItem, FoodLog, MealType, WorkoutLog } from '../types'
 import {
   FOOD_CATEGORIES,
   MAX_FOOD_LIBRARY_ITEMS,
+  MAX_FOOD_SERVINGS,
   MAX_FOOD_LOGS,
+  MIN_FOOD_SERVINGS,
   MAX_WORKOUT_LOGS,
   MAX_WORKOUT_MINUTES,
   MEAL_TYPES,
   WORKOUT_TYPES,
+  duplicateFoodLog,
+  formatFoodServingAmount,
   foodLogFromLibraryItem,
   foodNutritionTotals,
   makeEmptyFood,
   makeEmptyWorkout,
+  normalizeFoodServingAmount,
 } from '../tracker'
 import { NumberField, SelectField, TextField } from '../ui'
 
@@ -80,22 +85,45 @@ export function MealLogger({
   foodLibrary = [],
   disabled,
   detailed = false,
+  previousFoods = [],
   onChange,
   onSaveFoodToLibrary,
   onDeleteFoodFromLibrary,
+  onUseFoodFromLibrary,
+  onToggleFoodFavorite,
 }: {
   foods: FoodLog[]
   foodLibrary?: FoodLibraryItem[]
   disabled: boolean
   detailed?: boolean
+  previousFoods?: FoodLog[]
   onChange: (foods: FoodLog[]) => void
   onSaveFoodToLibrary?: (food: FoodLog) => void
   onDeleteFoodFromLibrary?: (foodId: string) => void
+  onUseFoodFromLibrary?: (foodId: string) => void
+  onToggleFoodFavorite?: (foodId: string) => void
 }) {
   const [draft, setDraft] = useState<FoodLog>(() => makeEmptyFood('breakfast'))
   const [selectedLibraryFoodId, setSelectedLibraryFoodId] = useState('')
+  const [foodSearch, setFoodSearch] = useState('')
+  const [savedFoodServings, setSavedFoodServings] = useState(1)
   const totals = foodNutritionTotals(foods)
+  const sortedFoodLibrary = useMemo(() => [...foodLibrary].sort((a, b) => {
+    if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
+    const bLastUsed = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0
+    const aLastUsed = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0
+    if (aLastUsed !== bLastUsed) return bLastUsed - aLastUsed
+    if (a.useCount !== b.useCount) return b.useCount - a.useCount
+    return a.name.localeCompare(b.name)
+  }), [foodLibrary])
+  const filteredFoodLibrary = useMemo(() => {
+    const query = foodSearch.trim().toLowerCase()
+    if (!query) return sortedFoodLibrary
+    return sortedFoodLibrary.filter((food) => food.name.toLowerCase().includes(query))
+  }, [foodSearch, sortedFoodLibrary])
+  const shortcutFoods = sortedFoodLibrary.filter((food) => food.favorite || food.useCount > 0).slice(0, 6)
   const selectedLibraryFood = foodLibrary.find((food) => food.id === selectedLibraryFoodId) ?? null
+  const selectedLibraryPreview = selectedLibraryFood ? foodLogFromLibraryItem(selectedLibraryFood, draft.meal, savedFoodServings) : null
 
   function updateDraft(patch: Partial<FoodLog>) {
     setDraft((current) => ({ ...current, ...patch }))
@@ -115,7 +143,21 @@ export function MealLogger({
 
   function addSavedFood() {
     if (!selectedLibraryFood || foods.length >= MAX_FOOD_LOGS) return
-    onChange([...foods, foodLogFromLibraryItem(selectedLibraryFood, draft.meal)])
+    onChange([...foods, foodLogFromLibraryItem(selectedLibraryFood, draft.meal, savedFoodServings)])
+    onUseFoodFromLibrary?.(selectedLibraryFood.id)
+  }
+
+  function addShortcutFood(food: FoodLibraryItem) {
+    if (foods.length >= MAX_FOOD_LOGS) return
+    setSelectedLibraryFoodId(food.id)
+    onChange([...foods, foodLogFromLibraryItem(food, draft.meal, savedFoodServings)])
+    onUseFoodFromLibrary?.(food.id)
+  }
+
+  function copyPreviousFoods() {
+    if (previousFoods.length === 0 || foods.length >= MAX_FOOD_LOGS) return
+    const availableSlots = MAX_FOOD_LOGS - foods.length
+    onChange([...foods, ...previousFoods.slice(0, availableSlots).map((food) => duplicateFoodLog(food))])
   }
 
   function saveDraftFood() {
@@ -144,24 +186,46 @@ export function MealLogger({
               <button className={draft.meal === meal ? 'active' : ''} type="button" key={meal} aria-pressed={draft.meal === meal} onClick={() => updateDraft({ meal })}>{MEAL_LABELS[meal]}</button>
             ))}
           </div>
+          {previousFoods.length > 0 && (
+            <button className="ghost-button compact-button copy-previous-foods-button" type="button" onClick={copyPreviousFoods} disabled={foods.length >= MAX_FOOD_LOGS}>
+              Copy Yesterday&apos;s Meals
+            </button>
+          )}
           {foodLibrary.length > 0 && (
             <div className="food-library-panel">
-              <div>
+              {shortcutFoods.length > 0 && (
+                <div className="food-library-shortcuts" aria-label="Saved food shortcuts">
+                  {shortcutFoods.map((food) => (
+                    <button className={food.id === selectedLibraryFoodId ? 'active' : ''} type="button" key={food.id} onClick={() => addShortcutFood(food)} disabled={foods.length >= MAX_FOOD_LOGS}>
+                      {food.favorite ? '★ ' : ''}{food.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="food-library-controls">
+                <TextField label="Search saved foods" value={foodSearch} onChange={setFoodSearch} />
                 <label className="select-field">
                   <span>Saved food</span>
                   <select value={selectedLibraryFoodId} onChange={(event) => setSelectedLibraryFoodId(event.target.value)}>
                     <option value="">Choose saved food</option>
-                    {foodLibrary.map((food) => (
+                    {filteredFoodLibrary.map((food) => (
                       <option key={food.id} value={food.id}>{food.name}</option>
                     ))}
                   </select>
                 </label>
+                <NumberField label="Servings" value={savedFoodServings} min={MIN_FOOD_SERVINGS} max={MAX_FOOD_SERVINGS} step={0.25} onChange={(value) => setSavedFoodServings(normalizeFoodServingAmount(value ?? 1))} suffix="x" />
                 <button className="secondary-button compact-button" type="button" onClick={addSavedFood} disabled={!selectedLibraryFood || foods.length >= MAX_FOOD_LOGS}>Add Saved Food</button>
               </div>
               {selectedLibraryFood && (
                 <article className="food-library-preview">
-                  <span>{selectedLibraryFood.calories} kcal · {selectedLibraryFood.proteinGrams} g protein{selectedLibraryFood.categories.length > 0 ? ` · ${selectedLibraryFood.categories.map((category) => CATEGORY_LABELS[category]).join(', ')}` : ''}</span>
-                  {onDeleteFoodFromLibrary && <button className="ghost-button" type="button" onClick={() => onDeleteFoodFromLibrary(selectedLibraryFood.id)}>Delete</button>}
+                  <span>
+                    {selectedLibraryPreview?.calories ?? selectedLibraryFood.calories} kcal · {selectedLibraryPreview?.proteinGrams ?? selectedLibraryFood.proteinGrams} g protein · {formatFoodServingAmount(savedFoodServings)} serving{savedFoodServings === 1 ? '' : 's'}
+                    {selectedLibraryFood.categories.length > 0 ? ` · ${selectedLibraryFood.categories.map((category) => CATEGORY_LABELS[category]).join(', ')}` : ''}
+                  </span>
+                  <div className="food-library-preview-actions">
+                    {onToggleFoodFavorite && <button className="ghost-button" type="button" onClick={() => onToggleFoodFavorite(selectedLibraryFood.id)}>{selectedLibraryFood.favorite ? 'Unfavorite' : 'Favorite'}</button>}
+                    {onDeleteFoodFromLibrary && <button className="ghost-button" type="button" onClick={() => onDeleteFoodFromLibrary(selectedLibraryFood.id)}>Delete</button>}
+                  </div>
                 </article>
               )}
             </div>
@@ -231,6 +295,18 @@ function MealGroups({
   onUpdateFood: (id: string, patch: Partial<FoodLog>) => void
 }) {
   if (foods.length === 0) return <p className="empty-workout-log">No meals logged yet.</p>
+
+  function duplicateFood(food: FoodLog) {
+    if (disabled || foods.length >= MAX_FOOD_LOGS) return
+    onChange([...foods, duplicateFoodLog(food)])
+  }
+
+  function duplicateMeal(mealFoods: FoodLog[]) {
+    if (disabled || foods.length >= MAX_FOOD_LOGS) return
+    const availableSlots = MAX_FOOD_LOGS - foods.length
+    onChange([...foods, ...mealFoods.slice(0, availableSlots).map((food) => duplicateFoodLog(food))])
+  }
+
   return (
     <div className="meal-groups">
       {MEAL_TYPES.map((meal) => {
@@ -238,16 +314,27 @@ function MealGroups({
         if (mealFoods.length === 0) return null
         return (
           <section className="meal-group" key={meal}>
-            <div className="meal-group-heading"><strong>{MEAL_LABELS[meal]}</strong><span>{mealFoods.length} {mealFoods.length === 1 ? 'item' : 'items'}</span></div>
+            <div className="meal-group-heading">
+              <strong>{MEAL_LABELS[meal]}</strong>
+              <div className="meal-group-actions">
+                <span>{mealFoods.length} {mealFoods.length === 1 ? 'item' : 'items'}</span>
+                {!disabled && <button className="ghost-button compact-button" type="button" onClick={() => duplicateMeal(mealFoods)} disabled={foods.length >= MAX_FOOD_LOGS}>Duplicate Meal</button>}
+              </div>
+            </div>
             {mealFoods.map((food) => detailed ? (
-              <FoodEditRow key={food.id} food={food} disabled={disabled} onUpdate={(patch) => onUpdateFood(food.id, patch)} onRemove={() => onChange(foods.filter((item) => item.id !== food.id))} />
+              <FoodEditRow key={food.id} food={food} disabled={disabled} onUpdate={(patch) => onUpdateFood(food.id, patch)} onDuplicate={() => duplicateFood(food)} onRemove={() => onChange(foods.filter((item) => item.id !== food.id))} />
             ) : (
               <article className="food-summary-row" key={food.id}>
                 <div>
                   <strong>{food.name}</strong>
                   <span>{food.calories} kcal · {food.proteinGrams} g protein{food.categories.length > 0 ? ` · ${food.categories.map((category) => CATEGORY_LABELS[category]).join(', ')}` : ''}</span>
                 </div>
-                {!disabled && <button className="ghost-button" type="button" onClick={() => onChange(foods.filter((item) => item.id !== food.id))}>Remove</button>}
+                {!disabled && (
+                  <div className="food-row-actions">
+                    <button className="ghost-button" type="button" onClick={() => duplicateFood(food)} disabled={foods.length >= MAX_FOOD_LOGS}>Duplicate</button>
+                    <button className="ghost-button" type="button" onClick={() => onChange(foods.filter((item) => item.id !== food.id))}>Remove</button>
+                  </div>
+                )}
               </article>
             ))}
           </section>
@@ -257,10 +344,11 @@ function MealGroups({
   )
 }
 
-function FoodEditRow({ food, disabled, onUpdate, onRemove }: {
+function FoodEditRow({ food, disabled, onUpdate, onDuplicate, onRemove }: {
   food: FoodLog
   disabled: boolean
   onUpdate: (patch: Partial<FoodLog>) => void
+  onDuplicate: () => void
   onRemove: () => void
 }) {
   function toggleCategory(category: FoodCategory) {
@@ -282,7 +370,10 @@ function FoodEditRow({ food, disabled, onUpdate, onRemove }: {
         <NumberField label="Sodium" value={food.sodiumMg} min={0} max={20000} disabled={disabled} onChange={(value) => onUpdate({ sodiumMg: value ?? 0 })} suffix="mg" />
       </div>
       <FoodCategoryPicker categories={food.categories} disabled={disabled} onToggle={toggleCategory} />
-      <button className="ghost-button workout-remove-button" type="button" disabled={disabled} onClick={onRemove}>Remove</button>
+      <div className="food-edit-actions">
+        <button className="ghost-button workout-remove-button" type="button" disabled={disabled} onClick={onDuplicate}>Duplicate</button>
+        <button className="ghost-button workout-remove-button" type="button" disabled={disabled} onClick={onRemove}>Remove</button>
+      </div>
     </article>
   )
 }

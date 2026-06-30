@@ -1877,12 +1877,48 @@ textarea:focus-visible {
   background: var(--surface-faint);
 }
 
-.food-library-panel > div,
+.copy-previous-foods-button {
+  justify-self: start;
+}
+
+.food-library-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(98px, 0.45fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
 .food-add-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
+}
+
+.food-library-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.food-library-shortcuts button {
+  min-height: 30px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-subtle);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.food-library-shortcuts button.active {
+  border-color: var(--accent-border-strong);
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
 }
 
 .food-library-preview {
@@ -1900,6 +1936,28 @@ textarea:focus-visible {
   font-size: 0.7rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.food-library-preview-actions,
+.food-row-actions,
+.food-edit-actions,
+.meal-group-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.food-library-preview-actions .ghost-button,
+.food-row-actions .ghost-button,
+.meal-group-actions .ghost-button {
+  min-height: 32px;
+  padding: 7px 10px;
+}
+
+.meal-group-actions span {
+  white-space: nowrap;
 }
 
 .meal-type-tabs {
@@ -3974,7 +4032,7 @@ textarea:focus-visible {
 
   .quick-workout-form,
   .quick-start-list article,
-  .food-library-panel > div,
+  .food-library-controls,
   .food-add-actions,
   .food-library-preview,
   .food-macro-grid,
@@ -3983,6 +4041,20 @@ textarea:focus-visible {
   .food-edit-macros,
   .diet-status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .food-library-preview-actions,
+  .food-row-actions,
+  .food-edit-actions,
+  .meal-group-actions {
+    justify-content: stretch;
+  }
+
+  .food-library-preview-actions .ghost-button,
+  .food-row-actions .ghost-button,
+  .food-edit-actions .ghost-button,
+  .meal-group-actions .ghost-button {
+    width: 100%;
   }
 
   .nutrition-summary {

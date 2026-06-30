@@ -27,10 +27,14 @@ test('logs a complete day, finalizes it, and restores it after reload', async ({
   await page.getByRole('button', { name: 'Save Food', exact: true }).click()
   await expect(page.getByText('Greek yogurt bowl saved to food library.', { exact: true })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Saved food', exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Saved food', exact: true }).selectOption({ label: 'Greek yogurt bowl' })
+  await page.getByRole('spinbutton', { name: 'Servings x', exact: true }).fill('0.5')
+  await page.getByRole('button', { name: 'Add Saved Food', exact: true }).click()
+  await expect(page.getByText('Greek yogurt bowl (0.5x)', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Add to Breakfast', exact: true }).click()
 
   await expect(page.getByText('No alcohol logged', { exact: true })).toBeVisible()
-  await expect(page.getByText('140 g · at least 140', { exact: true })).toBeVisible()
+  await expect(page.getByText('210 g · at least 140', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: /Read 10 Pages/ }).click()
   await page.getByRole('button', { name: /Journal/ }).click()

@@ -18,6 +18,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Common and custom diet goals with minimum, maximum, or avoid scoring plus custom units
 - Breakfast, lunch, dinner, and snack logging with user-created food entries, macros, and categories
 - Personal saved-food library for reusing common meals, macros, and categories
+- Saved-food search, favorite/recent shortcuts, serving scaling, copy-yesterday meals, and duplicate meal/food actions
 - Automatic diet scoring from meal macros and food categories such as alcohol or dessert
 - Home quick logging for meals and workouts, with full review and editing in Check-In
 - Finalized-day share cards for group-chat accountability
@@ -103,7 +104,7 @@ Run the desktop and mobile Chromium smoke suite:
 npm run test:e2e
 ```
 
-The smoke suite covers the signup/login split, visual guide sections, account guidance, first-run checklist, daily meal/workout logging, saved-food creation, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
+The smoke suite covers the signup/login split, visual guide sections, account guidance, first-run checklist, daily meal/workout logging, saved-food creation and serving scaling, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
 
 An optional existing-account Supabase check runs when credentials are provided explicitly:
 
@@ -196,9 +197,9 @@ Product ideas pulled from public coaching-app patterns, including Built With Sci
 
 ### Priority 2: faster meal logging
 
-1. Add serving quantity with automatic macro scaling for saved foods.
-2. Add recent foods, favorites, duplicate meal, and copy-yesterday shortcuts.
-3. Add saved-food search once the library grows beyond a simple dropdown.
+1. Add optional serving labels such as scoop, can, slice, bowl, or grams to saved foods.
+2. Add meal templates for recurring breakfasts, packed lunches, and default dinners.
+3. Add copy-from-any-date, not just yesterday.
 4. Consider barcode lookup only after the manual food-library flow is fast and reliable.
 
 ### Priority 3: challenge lifecycle controls

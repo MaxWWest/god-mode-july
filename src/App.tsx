@@ -552,6 +552,7 @@ function App() {
   const [tutorialStep, setTutorialStep] = useState(0)
 
   const entry = entries[selectedDate] ?? makeEmptyEntry(selectedDate)
+  const previousFoods = selectedDate === settings.startDate ? [] : (entries[addDays(selectedDate, -1)]?.foods ?? [])
   const entryFinalized = isEntryFinalized(entry)
   const stats = completionStats(entry, settings)
   const trackerHasStarted = todayIso() >= settings.startDate
@@ -940,6 +941,23 @@ function App() {
   function deleteFoodFromLibrary(foodId: string) {
     setFoodLibrary((current) => current.filter((food) => food.id !== foodId))
     showAppNotice('Saved food removed.', 'neutral')
+  }
+
+  function markFoodLibraryItemUsed(foodId: string) {
+    const usedAt = new Date().toISOString()
+    setFoodLibrary((current) => normalizeFoodLibrary(current.map((food) => food.id === foodId
+      ? { ...food, useCount: food.useCount + 1, lastUsedAt: usedAt }
+      : food)))
+  }
+
+  function toggleFoodLibraryFavorite(foodId: string) {
+    let nextFavorite = false
+    setFoodLibrary((current) => normalizeFoodLibrary(current.map((food) => {
+      if (food.id !== foodId) return food
+      nextFavorite = !food.favorite
+      return { ...food, favorite: nextFavorite, updatedAt: new Date().toISOString() }
+    })))
+    showAppNotice(nextFavorite ? 'Saved food marked as favorite.' : 'Saved food removed from favorites.', 'neutral')
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
@@ -2149,6 +2167,7 @@ function App() {
             entry={entry}
             entries={entries}
             selectedDate={selectedDate}
+            previousFoods={previousFoods}
             settings={settings}
             completed={stats.completed}
             totalRules={stats.total}
@@ -2161,6 +2180,8 @@ function App() {
             onUpdate={updateEntryIfUnlocked}
             onSaveFoodToLibrary={saveFoodToLibrary}
             onDeleteFoodFromLibrary={deleteFoodFromLibrary}
+            onUseFoodFromLibrary={markFoodLibraryItemUsed}
+            onToggleFoodFavorite={toggleFoodLibraryFavorite}
             onOpenCheckIn={() => setView('check-in')}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
@@ -2178,12 +2199,15 @@ function App() {
           )}>
             <CheckInView
               entry={entry}
+              previousFoods={previousFoods}
               settings={settings}
               isFinalized={entryFinalized}
               foodLibrary={foodLibrary}
               onUpdate={updateEntryIfUnlocked}
               onSaveFoodToLibrary={saveFoodToLibrary}
               onDeleteFoodFromLibrary={deleteFoodFromLibrary}
+              onUseFoodFromLibrary={markFoodLibraryItemUsed}
+              onToggleFoodFavorite={toggleFoodLibraryFavorite}
               onFinalizeDay={finalizeSelectedDay}
               onUnlockDay={unlockSelectedDay}
               onShareDay={shareSelectedDay}
@@ -2454,6 +2478,7 @@ function Dashboard({
   entry,
   entries,
   selectedDate,
+  previousFoods,
   settings,
   completed,
   totalRules,
@@ -2464,6 +2489,8 @@ function Dashboard({
   onUpdate,
   onSaveFoodToLibrary,
   onDeleteFoodFromLibrary,
+  onUseFoodFromLibrary,
+  onToggleFoodFavorite,
   onOpenCheckIn,
   onFinalizeDay,
   onUnlockDay,
@@ -2474,6 +2501,7 @@ function Dashboard({
   entry: DailyEntry
   entries: EntryMap
   selectedDate: string
+  previousFoods: FoodLog[]
   settings: ChallengeSettings
   completed: number
   totalRules: number
@@ -2486,6 +2514,8 @@ function Dashboard({
   onUpdate: (patch: Partial<DailyEntry>) => void
   onSaveFoodToLibrary: (food: FoodLog) => void
   onDeleteFoodFromLibrary: (foodId: string) => void
+  onUseFoodFromLibrary: (foodId: string) => void
+  onToggleFoodFavorite: (foodId: string) => void
   onOpenCheckIn: () => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
@@ -2557,10 +2587,13 @@ function Dashboard({
           <MealLogger
             foods={entry.foods ?? []}
             foodLibrary={foodLibrary}
+            previousFoods={previousFoods}
             disabled={isFinalized}
             onChange={(foods) => onUpdate(foodLogsEntryPatch(foods))}
             onSaveFoodToLibrary={onSaveFoodToLibrary}
             onDeleteFoodFromLibrary={onDeleteFoodFromLibrary}
+            onUseFoodFromLibrary={onUseFoodFromLibrary}
+            onToggleFoodFavorite={onToggleFoodFavorite}
           />
         </div>
       </section>

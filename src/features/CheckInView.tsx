@@ -31,23 +31,29 @@ import {
 
 export default function CheckInView({
   entry,
+  previousFoods,
   settings,
   isFinalized,
   foodLibrary,
   onUpdate,
   onSaveFoodToLibrary,
   onDeleteFoodFromLibrary,
+  onUseFoodFromLibrary,
+  onToggleFoodFavorite,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
 }: {
   entry: DailyEntry
+  previousFoods: FoodLog[]
   settings: ChallengeSettings
   isFinalized: boolean
   foodLibrary: FoodLibraryItem[]
   onUpdate: (patch: Partial<DailyEntry>) => void
   onSaveFoodToLibrary: (food: FoodLog) => void
   onDeleteFoodFromLibrary: (foodId: string) => void
+  onUseFoodFromLibrary: (foodId: string) => void
+  onToggleFoodFavorite: (foodId: string) => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
   onShareDay: () => void
@@ -182,11 +188,14 @@ export default function CheckInView({
         <MealLogger
           foods={entry.foods ?? []}
           foodLibrary={foodLibrary}
+          previousFoods={previousFoods}
           disabled={isFinalized}
           detailed
           onChange={updateFoods}
           onSaveFoodToLibrary={onSaveFoodToLibrary}
           onDeleteFoodFromLibrary={onDeleteFoodFromLibrary}
+          onUseFoodFromLibrary={onUseFoodFromLibrary}
+          onToggleFoodFavorite={onToggleFoodFavorite}
         />
         {dietRules.length === 0 ? (
           <p className="empty-rule-category">No active diet goals. Add them from Settings.</p>

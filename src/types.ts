@@ -96,6 +96,9 @@ export type FoodLog = {
 }
 
 export type FoodLibraryItem = Omit<FoodLog, 'meal'> & {
+  favorite: boolean
+  useCount: number
+  lastUsedAt: string | null
   createdAt: string
   updatedAt: string
 }

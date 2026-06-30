@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS,
   buildDailyShareText,
   completionStats,
+  duplicateFoodLog,
   formatExercisePatternDayLabel,
   formatExercisePatternSchedule,
   foodLibraryItemFromFood,
@@ -182,29 +183,38 @@ describe('tracker scoring', () => {
   it('normalizes saved foods and converts them back into meal logs', () => {
     const savedAt = '2026-07-01T12:00:00.000Z'
     const library = normalizeFoodLibrary([
-      { id: 'old', name: ' Greek Yogurt ', calories: 150, proteinGrams: 20, carbsGrams: 8, fatGrams: 0, sodiumMg: 90, categories: ['dairy'], createdAt: savedAt, updatedAt: savedAt },
+      { id: 'old', name: ' Greek Yogurt ', calories: 150, proteinGrams: 20, carbsGrams: 8, fatGrams: 0, sodiumMg: 90, categories: ['dairy'], favorite: true, useCount: 3, lastUsedAt: savedAt, createdAt: savedAt, updatedAt: savedAt },
       { id: 'duplicate', name: 'greek yogurt', calories: 200, proteinGrams: 25, categories: ['protein'], createdAt: savedAt, updatedAt: savedAt },
       { id: 'invalid', name: '   ' },
     ])
 
     expect(library).toHaveLength(1)
-    expect(library[0]).toMatchObject({ name: 'Greek Yogurt', calories: 150, proteinGrams: 20, categories: ['dairy'] })
+    expect(library[0]).toMatchObject({ name: 'Greek Yogurt', calories: 150, proteinGrams: 20, categories: ['dairy'], favorite: true, useCount: 3, lastUsedAt: savedAt })
 
-    const mealFood = foodLogFromLibraryItem(library[0], 'lunch')
-    expect(mealFood).toMatchObject({ meal: 'lunch', name: 'Greek Yogurt', calories: 150, proteinGrams: 20 })
+    const mealFood = foodLogFromLibraryItem(library[0], 'lunch', 0.5)
+    expect(mealFood).toMatchObject({ meal: 'lunch', name: 'Greek Yogurt (0.5x)', calories: 75, proteinGrams: 10 })
     expect(mealFood.id).not.toBe(library[0].id)
   })
 
   it('updates existing saved food macros when a matching item is saved again', () => {
     const existing = normalizeFoodLibrary([
-      { id: 'chicken', name: 'Chicken Bowl', calories: 600, proteinGrams: 45, carbsGrams: 60, fatGrams: 15, sodiumMg: 800, categories: ['protein'], createdAt: '2026-06-01T12:00:00.000Z', updatedAt: '2026-06-01T12:00:00.000Z' },
+      { id: 'chicken', name: 'Chicken Bowl', calories: 600, proteinGrams: 45, carbsGrams: 60, fatGrams: 15, sodiumMg: 800, categories: ['protein'], favorite: true, useCount: 4, lastUsedAt: '2026-06-02T12:00:00.000Z', createdAt: '2026-06-01T12:00:00.000Z', updatedAt: '2026-06-01T12:00:00.000Z' },
     ])[0]
     const next = foodLibraryItemFromFood({ id: 'meal-1', meal: 'dinner', name: 'Chicken Bowl', calories: 700, proteinGrams: 55, carbsGrams: 75, fatGrams: 18, sodiumMg: 950, categories: ['protein', 'grain'] }, existing)
 
     expect(next.id).toBe(existing.id)
     expect(next.createdAt).toBe(existing.createdAt)
-    expect(next).toMatchObject({ calories: 700, proteinGrams: 55, categories: ['protein', 'grain'] })
+    expect(next).toMatchObject({ calories: 700, proteinGrams: 55, categories: ['protein', 'grain'], favorite: true, useCount: 4, lastUsedAt: '2026-06-02T12:00:00.000Z' })
     expect(new Date(next.updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(existing.updatedAt).getTime())
+  })
+
+  it('duplicates logged foods with a new id while preserving macros', () => {
+    const food = { id: 'beer', meal: 'dinner' as const, name: 'Beer', calories: 150, proteinGrams: 1, carbsGrams: 12, fatGrams: 0, sodiumMg: 10, categories: ['alcohol' as const] }
+    const duplicate = duplicateFoodLog(food, 'snack')
+
+    expect(duplicate).toMatchObject({ meal: 'snack', name: 'Beer', calories: 150, proteinGrams: 1, categories: ['alcohol'] })
+    expect(duplicate.id).not.toBe(food.id)
+    expect(duplicate.categories).not.toBe(food.categories)
   })
 
   it('builds a daily share scorecard for group accountability', () => {

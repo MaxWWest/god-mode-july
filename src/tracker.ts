@@ -36,6 +36,8 @@ export const MAX_WORKOUT_MINUTES = 300
 export const MAX_DAILY_EXERCISE_MINUTES = 600
 export const MAX_FOOD_LOGS = 40
 export const MAX_FOOD_LIBRARY_ITEMS = 80
+export const MIN_FOOD_SERVINGS = 0.25
+export const MAX_FOOD_SERVINGS = 20
 const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
 export const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
@@ -308,6 +310,30 @@ export function makeEmptyFood(meal: MealType = 'breakfast'): FoodLog {
   }
 }
 
+export function duplicateFoodLog(food: FoodLog, meal: MealType = food.meal): FoodLog {
+  return {
+    ...food,
+    id: `food-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    meal,
+    categories: [...food.categories],
+  }
+}
+
+export function normalizeFoodServingAmount(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed)) return 1
+  return Math.min(MAX_FOOD_SERVINGS, Math.max(MIN_FOOD_SERVINGS, parsed))
+}
+
+function scaleFoodAmount(value: number, servings: number): number {
+  return Math.round(value * normalizeFoodServingAmount(servings) * 10) / 10
+}
+
+export function formatFoodServingAmount(servings: number): string {
+  const normalized = normalizeFoodServingAmount(servings)
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
 function normalizeFoodLibraryItem(value: unknown, index: number): FoodLibraryItem | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as Partial<FoodLibraryItem>
@@ -325,6 +351,9 @@ function normalizeFoodLibraryItem(value: unknown, index: number): FoodLibraryIte
     categories: Array.isArray(candidate.categories)
       ? Array.from(new Set(candidate.categories.filter(isFoodCategory)))
       : [],
+    favorite: candidate.favorite === true,
+    useCount: Math.floor(normalizeBoundedNumber(candidate.useCount, 0, 0, 100000)),
+    lastUsedAt: normalizeTimestamp(candidate.lastUsedAt) ?? null,
     createdAt: normalizeTimestamp(candidate.createdAt) ?? now,
     updatedAt: normalizeTimestamp(candidate.updatedAt) ?? now,
   }
@@ -357,21 +386,26 @@ export function foodLibraryItemFromFood(food: FoodLog, existing?: FoodLibraryIte
     fatGrams: food.fatGrams,
     sodiumMg: food.sodiumMg,
     categories: Array.from(new Set(food.categories)),
+    favorite: existing?.favorite ?? false,
+    useCount: existing?.useCount ?? 0,
+    lastUsedAt: existing?.lastUsedAt ?? null,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
 }
 
-export function foodLogFromLibraryItem(item: FoodLibraryItem, meal: MealType): FoodLog {
+export function foodLogFromLibraryItem(item: FoodLibraryItem, meal: MealType, servings = 1): FoodLog {
+  const servingAmount = normalizeFoodServingAmount(servings)
+  const servingSuffix = servingAmount === 1 ? '' : ` (${formatFoodServingAmount(servingAmount)}x)`
   return {
     id: `food-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     meal,
-    name: item.name,
-    calories: item.calories,
-    proteinGrams: item.proteinGrams,
-    carbsGrams: item.carbsGrams,
-    fatGrams: item.fatGrams,
-    sodiumMg: item.sodiumMg,
+    name: `${item.name}${servingSuffix}`,
+    calories: scaleFoodAmount(item.calories, servingAmount),
+    proteinGrams: scaleFoodAmount(item.proteinGrams, servingAmount),
+    carbsGrams: scaleFoodAmount(item.carbsGrams, servingAmount),
+    fatGrams: scaleFoodAmount(item.fatGrams, servingAmount),
+    sodiumMg: scaleFoodAmount(item.sodiumMg, servingAmount),
     categories: [...item.categories],
   }
 }
