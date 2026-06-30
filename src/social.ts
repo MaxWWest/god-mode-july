@@ -25,15 +25,15 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     id: 'custom',
     name: 'Custom',
     durationDays: 7,
-    scoringMode: 'personal',
-    note: 'Start from your active rules, then choose what counts.',
+    scoringMode: 'softShared',
+    note: 'Pick shared minimums while everyone can keep personal goals.',
   },
   {
     id: 'no-zero-days',
     name: 'No Zero Days',
     durationDays: 7,
-    scoringMode: 'personal',
-    note: 'One-week push using everyone’s own targets.',
+    scoringMode: 'percentOnly',
+    note: 'One-week push comparing everyone’s own daily percent.',
     ruleOverrides: {
       exercise: { enabled: true, weight: 'nonNegotiable' },
       protein: { enabled: true, weight: 'nonNegotiable' },
@@ -67,8 +67,8 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     id: 'month-sprint',
     name: '30-Day Sprint',
     durationDays: 30,
-    scoringMode: 'personal',
-    note: 'Longer personal-target challenge.',
+    scoringMode: 'softShared',
+    note: 'Longer challenge with shared minimums plus personal goals.',
     ruleOverrides: {
       exercise: { enabled: true, weight: 'nonNegotiable' },
       protein: { enabled: true, weight: 'nonNegotiable' },
@@ -101,11 +101,29 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
 
 export const FRIENDS_TABS: { key: FriendsTab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
-  { key: 'network', label: 'Network' },
+  { key: 'friends', label: 'Friends' },
   { key: 'squads', label: 'Squads' },
   { key: 'challenges', label: 'Challenges' },
   { key: 'leaderboard', label: 'Leaderboard' },
 ]
+
+export function challengeScoringModeLabel(mode: FriendChallenge['scoringMode']): string {
+  switch (mode) {
+    case 'shared': return 'Shared rules'
+    case 'personal': return 'Matched metrics'
+    case 'softShared': return 'Soft shared metrics'
+    case 'percentOnly': return 'Percent only'
+  }
+}
+
+export function challengeScoringModeDescription(mode: FriendChallenge['scoringMode']): string {
+  switch (mode) {
+    case 'shared': return 'Everyone uses the exact same selected rules and targets.'
+    case 'personal': return 'Everyone scores the same selected metrics, using their own targets where available.'
+    case 'softShared': return 'Selected metrics are mandatory minimums, and each person’s extra active goals also count.'
+    case 'percentOnly': return 'Everyone publishes their own daily percent complete with no required overlap.'
+  }
+}
 
 export function normalizeScoreReaction(value: unknown): ScoreReaction | null {
   return SCORE_REACTIONS.some((reaction) => reaction.key === value) ? value as ScoreReaction : null

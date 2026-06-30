@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { MealLogger, QuickWorkoutLogger } from './components/DailyLoggers'
+import AuthFlow from './components/AuthFlow'
+import type { AuthEmailPurpose, AuthFlowMode } from './components/AuthFlow'
+import { passwordPairError } from './auth'
 import { loadFromStorage, saveToStorage } from './storage'
 import {
   buildAccountDataExport as buildAccountDataExportApi,
@@ -42,6 +45,7 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_SYNC_META,
   addDays,
+  buildDailyShareText,
   clampDate,
   completionStats,
   countCloudOnlyEntries,
@@ -127,51 +131,164 @@ const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
 const REMINDER_STORAGE_KEY = 'god-mode-july-reminder-v1'
 const SYNC_META_STORAGE_KEY = 'god-mode-july-sync-meta-v1'
-const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v1'
+const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v2'
 const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
+const PASSWORD_SETUP_STORAGE_KEY = 'god-mode-july-password-setup-required-v1'
 
-const TUTORIAL_STEPS: Array<{ eyebrow: string; title: string; body: string; view: View; actionLabel: string }> = [
+type TutorialTarget = View | 'account'
+
+type TutorialStep = {
+  eyebrow: string
+  navLabel: string
+  title: string
+  body: string
+  target: TutorialTarget
+  actionLabel: string
+  visualTitle: string
+  visualItems: Array<{ label: string; detail: string }>
+  checklist: string[]
+}
+
+const TUTORIAL_STEPS: TutorialStep[] = [
   {
     eyebrow: 'Step 1',
-    title: 'Start with today on Home.',
-    body: 'Log meals and workouts from Home, check off today’s mental and miscellaneous goals, and see your score and recovery-day guidance at a glance.',
-    view: 'home',
-    actionLabel: 'Open Home',
+    navLabel: 'Account',
+    title: 'Create your account.',
+    body: 'New users start with one signup email. The link verifies the email, then the password screen turns that verified email into a normal account.',
+    target: 'account',
+    actionLabel: 'Open Account Setup',
+    visualTitle: 'Account flow',
+    visualItems: [
+      { label: 'Create Account', detail: 'Enter email and send one signup link.' },
+      { label: 'Verify Email', detail: 'Open the email link. Check Spam or Junk if it is missing.' },
+      { label: 'Set Password', detail: 'Create and confirm the password after the link opens the app.' },
+      { label: 'Return Later', detail: 'Use Sign In with email and password after the account is made.' },
+    ],
+    checklist: [
+      'Use the same email on the signup link and password screen.',
+      'If the email is slow, wait before requesting another link to avoid rate limits.',
+      'After a password is set, magic links are only for recovery or new signup setup.',
+    ],
   },
   {
     eyebrow: 'Step 2',
-    title: 'Build your exercise pattern.',
-    body: 'In Settings, choose a daily, 7-day, or 30-day cycle. Seven-day plans use weekdays; selected days are training and the rest are recovery.',
-    view: 'settings',
-    actionLabel: 'Open Rules + Goals',
+    navLabel: 'Home',
+    title: 'Start with today on Home.',
+    body: 'Home is the quick daily cockpit. Log the big things fast, see the score move, then finalize and share when the day is finished.',
+    target: 'home',
+    actionLabel: 'Open Home',
+    visualTitle: 'Daily rhythm',
+    visualItems: [
+      { label: 'Meals', detail: 'Add breakfast, lunch, dinner, or snacks.' },
+      { label: 'Workouts', detail: 'Add workout type and minutes instead of checking a generic exercise box.' },
+      { label: 'Other Goals', detail: 'Check mental and miscellaneous goals as they happen.' },
+      { label: 'Share Day', detail: 'Finalize, copy the day summary, and paste it into the group chat.' },
+    ],
+    checklist: [
+      'Home is for quick logging during the day.',
+      'A finalized day is locked so the score feels official.',
+      'Unlock only when a real correction is needed.',
+    ],
   },
   {
     eyebrow: 'Step 3',
-    title: 'Set diet and mental goals.',
-    body: 'Diet goals can use meal macros or food categories such as alcohol and dessert. Mental and miscellaneous rules stay simple daily checks.',
-    view: 'settings',
+    navLabel: 'Goals',
+    title: 'Customize goals.',
+    body: 'Settings is where each person makes the tracker fit their own plan before joining challenges or comparing scores.',
+    target: 'settings',
     actionLabel: 'Open Rules + Goals',
+    visualTitle: 'Rules + Goals',
+    visualItems: [
+      { label: 'Exercise Patterns', detail: 'Choose 1-day, 7-day, or 30-day cycles with scheduled training days.' },
+      { label: 'Diet Goals', detail: 'Track macros, water, alcohol, dessert, or custom items.' },
+      { label: 'Mental Goals', detail: 'Keep simple daily checks like reading, journaling, or custom habits.' },
+      { label: 'Weights', detail: 'Mark rules as non-negotiable or supporting to shape the score.' },
+    ],
+    checklist: [
+      'Change the tracker title and start date from Settings.',
+      'Turn rules inactive instead of deleting if you might bring them back.',
+      'App + Account holds sync, export, privacy, appearance, and reminders.',
+    ],
   },
   {
     eyebrow: 'Step 4',
-    title: 'Use Check-In for the details.',
-    body: 'Review and edit every meal and workout, fill in manual goals and body signals, add a reflection, then publish the day when it is complete.',
-    view: 'check-in',
+    navLabel: 'Check-In',
+    title: 'Review the full check-in.',
+    body: 'Check-In is the detailed version of the day. Use it when you want to audit meals, workouts, body signals, and reflections before publishing.',
+    target: 'check-in',
     actionLabel: 'Open Check-In',
+    visualTitle: 'Full daily review',
+    visualItems: [
+      { label: 'Meals', detail: 'Edit food names, macros, and categories.' },
+      { label: 'Exercises', detail: 'Review workout logs and target progress.' },
+      { label: 'Signals', detail: 'Add sleep, mood, energy, hunger, weight, and water.' },
+      { label: 'Reflection', detail: 'Write what went well and what was difficult.' },
+    ],
+    checklist: [
+      'Use Check-In before finalizing when the day has a lot of detail.',
+      'Food categories can automatically satisfy avoid goals like no alcohol or no dessert.',
+      'Reflections stay private unless you choose to share a challenge note.',
+    ],
   },
   {
     eyebrow: 'Step 5',
+    navLabel: 'Progress',
     title: 'Watch the pattern in Progress.',
-    body: 'Current Cycle shows completed, missed, and upcoming training days. Calendar and longer-term rule trends live here too.',
-    view: 'progress',
+    body: 'Progress shows whether the daily work is turning into a streak, a better week, or a stronger month.',
+    target: 'progress',
     actionLabel: 'Open Progress',
+    visualTitle: 'Progress views',
+    visualItems: [
+      { label: 'Overview', detail: 'See last-week or last-month completion and rule trends.' },
+      { label: 'Calendar', detail: 'Scan which days were complete, partial, missed, or finalized.' },
+      { label: 'Exercise Cycle', detail: 'Check completed, missed, and upcoming training days.' },
+      { label: 'Trends', detail: 'Follow sleep, weight, mood, calories, and other patterns.' },
+    ],
+    checklist: [
+      'Use Progress when you want the honest pattern, not just today.',
+      'Missed rules help show which goals need adjustment.',
+      'Calendar belongs here, so Home can stay focused on today.',
+    ],
   },
   {
     eyebrow: 'Step 6',
-    title: 'Finalize and share when ready.',
-    body: 'Finalize a day to lock its score. Social lets you add friends, build squads, and publish selected challenge results.',
-    view: 'friends',
-    actionLabel: 'Open Social',
+    navLabel: 'Friends',
+    title: 'Add friends safely.',
+    body: 'Friends is private by default. Add people by invite code, accept requests, and decide which high-level stats are visible.',
+    target: 'friends',
+    actionLabel: 'Open Friends',
+    visualTitle: 'Friend setup',
+    visualItems: [
+      { label: 'Your Code', detail: 'Copy or share your invite code with the group chat.' },
+      { label: 'Add Code', detail: 'Paste a friend code to send or accept a request.' },
+      { label: 'Requests', detail: 'Accept or decline people before they appear in your list.' },
+      { label: 'Privacy', detail: 'Choose which score, streak, and logged-day stats friends can see.' },
+    ],
+    checklist: [
+      'Friends cannot see raw meals, calories, weight, or private reflections.',
+      'The Friends list is the base for squads and challenge invites.',
+      'Badges show pending friend and challenge requests.',
+    ],
+  },
+  {
+    eyebrow: 'Step 7',
+    navLabel: 'Challenges',
+    title: 'Join squads and challenges.',
+    body: 'Squads are small private groups. Challenges decide what everyone compares: the same rules, soft shared metrics, or percent complete on personal goals.',
+    target: 'friends',
+    actionLabel: 'Open Challenges',
+    visualTitle: 'League flow',
+    visualItems: [
+      { label: 'Create Squad', detail: 'Pick accepted friends for a private leaderboard and feed.' },
+      { label: 'Start Challenge', detail: 'Choose dates, scoring mode, rules, and invited friends.' },
+      { label: 'Accept Invite', detail: 'Join from the Challenges tab when a request arrives.' },
+      { label: 'Publish Score', detail: 'Each person posts their own daily score and optional note.' },
+    ],
+    checklist: [
+      'Shared mode means everyone uses the same challenge rules.',
+      'Soft shared mode sets mandatory metrics but allows personal extras.',
+      'Percent-only mode compares completion percentages even when goals differ.',
+    ],
   },
 ]
 
@@ -255,8 +372,8 @@ function clearAuthRedirectUrl() {
   window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`)
 }
 
-async function consumeAuthRedirectSession(): Promise<User | null> {
-  if (!supabase) return null
+async function consumeAuthRedirectSession(): Promise<{ user: User | null; redirected: boolean }> {
+  if (!supabase) return { user: null, redirected: false }
 
   const searchParams = new URLSearchParams(window.location.search)
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
@@ -272,7 +389,7 @@ async function consumeAuthRedirectSession(): Promise<User | null> {
     })
     if (error) throw error
     clearAuthRedirectUrl()
-    return data.user ?? data.session?.user ?? null
+    return { user: data.user ?? data.session?.user ?? null, redirected: true }
   }
 
   const authCode = searchParams.get('code')
@@ -280,10 +397,10 @@ async function consumeAuthRedirectSession(): Promise<User | null> {
     const { data, error } = await supabase.auth.exchangeCodeForSession(authCode)
     if (error) throw error
     clearAuthRedirectUrl()
-    return data.user ?? data.session?.user ?? null
+    return { user: data.user ?? data.session?.user ?? null, redirected: true }
   }
 
-  return null
+  return { user: null, redirected: false }
 }
 
 function App() {
@@ -300,6 +417,18 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [authPasswordConfirmation, setAuthPasswordConfirmation] = useState('')
+  const [authFlowMode, setAuthFlowMode] = useState<AuthFlowMode>('signIn')
+  const [authEmailPurpose, setAuthEmailPurpose] = useState<AuthEmailPurpose>('signup')
+  const [authFlowOpen, setAuthFlowOpen] = useState(false)
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured)
+  const [passwordSetupRequired, setPasswordSetupRequired] = useState(() => {
+    return loadFromStorage<unknown>(PASSWORD_SETUP_STORAGE_KEY, false) === true
+  })
+  const [authStatus, setAuthStatus] = useState<DataStatus>({
+    tone: 'neutral',
+    message: '',
+  })
   const [cloudBusy, setCloudBusy] = useState(false)
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
   const [cloudUpdatedAt, setCloudUpdatedAt] = useState<string | null>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)).lastCloudUpdatedAt)
@@ -352,6 +481,28 @@ function App() {
   function closeTutorial(markSeen = true) {
     if (markSeen) saveToStorage(TUTORIAL_STORAGE_KEY, true)
     setShowTutorial(false)
+  }
+
+  function openAuthFlow(mode: AuthFlowMode = user ? 'account' : 'signIn') {
+    setAuthFlowMode(mode)
+    setAuthPassword('')
+    setAuthPasswordConfirmation('')
+    setAuthStatus({ tone: 'neutral', message: '' })
+    setAuthFlowOpen(true)
+  }
+
+  function closeAuthFlow() {
+    if (passwordSetupRequired) return
+    setAuthFlowOpen(false)
+    setAuthPassword('')
+    setAuthPasswordConfirmation('')
+  }
+
+  function changeAuthFlowMode(mode: AuthFlowMode) {
+    setAuthFlowMode(mode)
+    setAuthPassword('')
+    setAuthPasswordConfirmation('')
+    setAuthStatus({ tone: 'neutral', message: '' })
   }
 
   useEffect(() => {
@@ -427,28 +578,46 @@ function App() {
 
     async function initializeAuthSession() {
       try {
-        const redirectedUser = await consumeAuthRedirectSession()
+        const authRedirect = await consumeAuthRedirectSession()
         if (!isMounted) return
 
-        if (redirectedUser) {
-          setUser(redirectedUser)
+        if (authRedirect.redirected && authRedirect.user) {
+          setUser(authRedirect.user)
+          setAuthEmail(authRedirect.user.email ?? '')
+          setPasswordSetupRequired(true)
+          saveToStorage(PASSWORD_SETUP_STORAGE_KEY, true)
+          setAuthFlowMode('setPassword')
+          setAuthStatus({ tone: 'neutral', message: 'Email verified. Finish by creating your password.' })
+          setAuthFlowOpen(true)
           setCloudStatus({ tone: 'success', message: 'Signed in. Push local data or pull cloud data.' })
+          setAuthReady(true)
           return
         }
 
         const { data, error } = await client.auth.getSession()
         if (error) throw error
         if (!isMounted) return
-        setUser(data.session?.user ?? null)
+        const sessionUser = data.session?.user ?? null
+        setUser(sessionUser)
+        if (sessionUser?.email) setAuthEmail(sessionUser.email)
+        setAuthFlowMode(sessionUser ? passwordSetupRequired ? 'setPassword' : 'account' : 'signIn')
+        setAuthFlowOpen(Boolean(sessionUser && passwordSetupRequired))
+        setAuthReady(true)
       } catch (error) {
         if (!isMounted) return
-        setCloudStatus({
+        const message = error instanceof Error ? error.message : 'The email link could not be verified.'
+        setAuthStatus({
           tone: 'error',
-          message: error instanceof Error ? `Magic link sign-in failed: ${error.message}` : 'Magic link sign-in failed.',
+          message: `Email verification failed: ${message}`,
         })
 
         const { data } = await client.auth.getSession()
-        if (isMounted) setUser(data.session?.user ?? null)
+        if (isMounted) {
+          setUser(data.session?.user ?? null)
+          setAuthFlowMode('signIn')
+          setAuthFlowOpen(true)
+          setAuthReady(true)
+        }
       }
     }
 
@@ -456,11 +625,18 @@ function App() {
 
     const { data } = client.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
+      if (session?.user.email) setAuthEmail(session.user.email)
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordSetupRequired(true)
+        saveToStorage(PASSWORD_SETUP_STORAGE_KEY, true)
+        setAuthEmailPurpose('reset')
+        setAuthFlowMode('setPassword')
+        setAuthStatus({ tone: 'neutral', message: 'Reset link verified. Create your new password.' })
+        setAuthFlowOpen(true)
+      }
       setCloudStatus({
-        tone: event === 'PASSWORD_RECOVERY' ? 'success' : 'neutral',
-        message: event === 'PASSWORD_RECOVERY'
-          ? 'Password reset verified. Enter a new password below and tap Set Password.'
-          : session?.user ? 'Signed in. Push local data or pull cloud data.' : 'Sign in to sync across devices.',
+        tone: 'neutral',
+        message: session?.user ? 'Signed in. Push local data or pull cloud data.' : 'Sign in to sync across devices.',
       })
     })
 
@@ -602,6 +778,29 @@ function App() {
     setEntries(nextEntries)
   }
 
+  async function shareSelectedDay() {
+    const shareText = buildDailyShareText(entry, entries, settings)
+    try {
+      if ('share' in navigator && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: `${settings.title} daily check-in`,
+          text: shareText,
+        })
+        showAppNotice('Day shared.')
+        return
+      }
+
+      await copyTextToClipboard(shareText)
+      showAppNotice('Daily check-in copied. Paste it into the group chat.')
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        showAppNotice('Share canceled.', 'neutral')
+        return
+      }
+      showAppNotice(error instanceof Error ? error.message : 'Could not share this day.', 'error')
+    }
+  }
+
   function updateSettings(nextSettings: ChallengeSettings) {
     markLocalChanged()
     setSettings(normalizeSettings(nextSettings))
@@ -676,11 +875,11 @@ function App() {
       privacy: privacySettings,
     }))
   }
-  async function sendMagicLink() {
+  async function sendSignupLink() {
     if (!supabase) return
     const email = authEmail.trim()
     if (!email) {
-      setCloudStatus({ tone: 'error', message: 'Enter an email address first.' })
+      setAuthStatus({ tone: 'error', message: 'Enter your email address first.' })
       return
     }
 
@@ -690,14 +889,17 @@ function App() {
         email,
         options: {
           emailRedirectTo: window.location.origin,
+          shouldCreateUser: true,
         },
       })
       if (error) throw error
-      setCloudStatus({ tone: 'success', message: 'Magic link sent. Password sign-in works better for the iPhone Home Screen app.' })
+      setAuthEmailPurpose('signup')
+      setAuthFlowMode('checkEmail')
+      setAuthStatus({ tone: 'success', message: 'Signup email sent. Check your inbox, Spam, or Junk.' })
     } catch (error) {
-      setCloudStatus({
+      setAuthStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not send the magic link.',
+        message: error instanceof Error ? error.message : 'Could not send the signup email.',
       })
     } finally {
       setCloudBusy(false)
@@ -708,7 +910,7 @@ function App() {
     if (!supabase) return
     const email = authEmail.trim()
     if (!email) {
-      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
+      setAuthStatus({ tone: 'error', message: 'Enter your email address first.' })
       return
     }
 
@@ -718,10 +920,12 @@ function App() {
         redirectTo: window.location.origin,
       })
       if (error) throw error
-      setCloudStatus({ tone: 'success', message: 'Password reset email sent. Open the link, then set a new password here.' })
+      setAuthEmailPurpose('reset')
+      setAuthFlowMode('checkEmail')
+      setAuthStatus({ tone: 'success', message: 'Password reset email sent. Check your inbox, Spam, or Junk.' })
       showAppNotice('Password reset email sent.')
     } catch (error) {
-      setCloudStatus({
+      setAuthStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not send the password reset email.',
       })
@@ -733,14 +937,14 @@ function App() {
   async function signInWithPassword() {
     if (!supabase) return
     const email = authEmail.trim()
-    const password = authPassword.trim()
+    const password = authPassword
     if (!email) {
-      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
+      setAuthStatus({ tone: 'error', message: 'Enter your email address first.' })
       return
     }
 
     if (!password) {
-      setCloudStatus({ tone: 'error', message: 'Enter your password.' })
+      setAuthStatus({ tone: 'error', message: 'Enter your password.' })
       return
     }
 
@@ -752,54 +956,19 @@ function App() {
       })
       if (error) throw error
       setUser(data.user ?? data.session?.user ?? null)
+      setAuthPassword('')
+      setAuthFlowMode('account')
+      setAuthFlowOpen(false)
+      setAuthStatus({ tone: 'success', message: 'Signed in.' })
       setCloudStatus({ tone: 'success', message: 'Signed in. Push local data or pull cloud data.' })
+      showAppNotice('Signed in. Welcome back.')
     } catch (error) {
-      setCloudStatus({
+      const message = error instanceof Error ? error.message : 'Could not sign in with that email and password.'
+      setAuthStatus({
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not sign in with that email and password.',
-      })
-    } finally {
-      setCloudBusy(false)
-    }
-  }
-
-  async function createPasswordAccount() {
-    if (!supabase) return
-    const email = authEmail.trim()
-    const password = authPassword.trim()
-    if (!email) {
-      setCloudStatus({ tone: 'error', message: 'Enter your email address first.' })
-      return
-    }
-
-    if (password.length < 6) {
-      setCloudStatus({ tone: 'error', message: 'Use a password with at least 6 characters.' })
-      return
-    }
-
-    setCloudBusy(true)
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
-      })
-      if (error) throw error
-
-      if (data.session?.user) {
-        setUser(data.session.user)
-        setCloudStatus({ tone: 'success', message: 'Account created and signed in.' })
-        showAppNotice('Password set. Your account is ready.')
-      } else {
-        setCloudStatus({ tone: 'success', message: 'Account created. If Supabase asks for email confirmation, confirm it once, then sign in here with your password.' })
-        showAppNotice('Password saved. Confirm your email if Supabase asks.')
-      }
-    } catch (error) {
-      setCloudStatus({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not create account.',
+        message: message.toLowerCase().includes('invalid login credentials')
+          ? 'Email or password not recognized. New here? Create your account first.'
+          : message,
       })
     } finally {
       setCloudBusy(false)
@@ -808,21 +977,26 @@ function App() {
 
   async function setAccountPassword() {
     if (!supabase || !user) return
-    const password = authPassword.trim()
-    if (password.length < 6) {
-      setCloudStatus({ tone: 'error', message: 'Use a password with at least 6 characters.' })
+    const passwordError = passwordPairError(authPassword, authPasswordConfirmation)
+    if (passwordError) {
+      setAuthStatus({ tone: 'error', message: passwordError })
       return
     }
 
     setCloudBusy(true)
     try {
-      const { error } = await supabase.auth.updateUser({ password })
+      const { error } = await supabase.auth.updateUser({ password: authPassword })
       if (error) throw error
       setAuthPassword('')
+      setAuthPasswordConfirmation('')
+      setPasswordSetupRequired(false)
+      window.localStorage.removeItem(PASSWORD_SETUP_STORAGE_KEY)
+      setAuthFlowMode('account')
+      setAuthStatus({ tone: 'success', message: 'Password created. Your account is ready.' })
       setCloudStatus({ tone: 'success', message: 'Password set. Next time, sign in with email and password.' })
-      showAppNotice('Password set. You can use email/password next time.')
+      showAppNotice('Password created. Your account is ready.')
     } catch (error) {
-      setCloudStatus({
+      setAuthStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not set the password.',
       })
@@ -840,10 +1014,14 @@ function App() {
       if (error) throw error
       setUser(null)
       setAuthPassword('')
+      setAuthPasswordConfirmation('')
       setCloudUpdatedAt(null)
+      setAuthFlowMode('signIn')
+      setAuthStatus({ tone: 'neutral', message: 'Signed out. Your local data remains on this device.' })
+      setAuthFlowOpen(true)
       setCloudStatus({ tone: 'neutral', message: 'Signed out. Local data is still saved on this device.' })
     } catch (error) {
-      setCloudStatus({
+      setAuthStatus({
         tone: 'error',
         message: error instanceof Error ? error.message : 'Could not sign out.',
       })
@@ -1346,7 +1524,7 @@ function App() {
     const inviteeIds = Array.from(new Set(input.inviteeIds)).filter((inviteeId) => acceptedFriendIds.has(inviteeId))
     const availableRuleKeys = new Set(settings.rules.filter((rule) => !rule.deleted).map((rule) => rule.key))
     const challengeRuleKeys = Array.from(new Set(input.ruleKeys)).filter((ruleKey) => availableRuleKeys.has(ruleKey))
-    if (challengeRuleKeys.length === 0) {
+    if (input.scoringMode !== 'percentOnly' && challengeRuleKeys.length === 0) {
       setFriendsStatus({ tone: 'error', message: 'Choose at least one rule for the challenge.' })
       return
     }
@@ -1441,14 +1619,14 @@ function App() {
     setFriendsBusy(true)
     try {
       const challenge = friendChallenges.find((item) => item.id === challengeId)
-      const participantSettings = challenge && nextStatus === 'accepted'
+      const participantSettings = challenge && nextStatus === 'accepted' && challenge.scoringMode !== 'percentOnly'
         ? mergeChallengeRulesIntoSettings(settings, challenge.settings)
         : settings
       const summary = challenge && nextStatus === 'accepted'
         ? buildFriendChallengeSummary(user.id, entries, challenge, participantSettings, privacySettings)
         : null
       await respondToChallengeInvite(supabase, user.id, challengeId, nextStatus, summary)
-      if (challenge && nextStatus === 'accepted') updateSettings(participantSettings)
+      if (challenge && nextStatus === 'accepted' && challenge.scoringMode !== 'percentOnly') updateSettings(participantSettings)
 
       setFriendsStatus({
         tone: 'success',
@@ -1492,6 +1670,7 @@ function App() {
         reaction,
       }
       const snapshots = buildFriendChallengeSnapshots(user.id, entries, challenge, settings)
+      const latestSnapshot = snapshots[snapshots.length - 1] ?? null
       const historyPublished = await retryServiceOperation(() => (
         publishChallengeScore(client, userId, challengeId, summary, snapshots)
       ))
@@ -1502,6 +1681,10 @@ function App() {
           challengeName: challenge.name,
           note: cleanNote,
           reaction,
+          scoreDate: latestSnapshot?.date,
+          completionPercent: latestSnapshot?.completionPercent,
+          completedRules: latestSnapshot?.completedRules,
+          totalRules: latestSnapshot?.totalRules,
         },
       })
       setFriendsStatus({
@@ -1671,6 +1854,11 @@ function App() {
           <button className="install-button" type="button" onClick={openTutorial}>
             Guide
           </button>
+          {isSupabaseConfigured && (
+            <button className="install-button account-button" type="button" onClick={() => openAuthFlow()}>
+              {user ? 'Account' : 'Sign In'}
+            </button>
+          )}
         </div>
       </header>
       {appNotice && <AppNoticeToast notice={appNotice} onDismiss={() => setAppNotice(null)} />}
@@ -1734,6 +1922,7 @@ function App() {
             onOpenCheckIn={() => setView('check-in')}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
+            onShareDay={shareSelectedDay}
           />
         )}
 
@@ -1752,6 +1941,7 @@ function App() {
               onUpdate={updateEntryIfUnlocked}
               onFinalizeDay={finalizeSelectedDay}
               onUnlockDay={unlockSelectedDay}
+              onShareDay={shareSelectedDay}
             />
           </Suspense>
         )}
@@ -1845,20 +2035,11 @@ function App() {
               cloudUpdatedAt={cloudUpdatedAt}
               syncConflict={syncConflict}
               user={user}
-              authEmail={authEmail}
-              authPassword={authPassword}
               onSettingsChange={updateSettings}
               onDataImport={replaceData}
               onReminderChange={updateReminder}
               onRequestReminderPermission={requestReminderPermission}
-              onAuthEmailChange={setAuthEmail}
-              onAuthPasswordChange={setAuthPassword}
-              onSignInWithPassword={signInWithPassword}
-              onCreatePasswordAccount={createPasswordAccount}
-              onSetAccountPassword={setAccountPassword}
-              onSendMagicLink={sendMagicLink}
-              onSendPasswordReset={sendPasswordReset}
-              onSignOut={signOut}
+              onOpenAccount={() => openAuthFlow()}
               onPushCloud={pushCloudData}
               onPullCloud={pullCloudData}
               onRetryCloud={retryCloudConnection}
@@ -1880,14 +2061,51 @@ function App() {
         <NavButton label="Social" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} badgeCount={friendsBadgeCount} />
         <NavButton label="Settings" icon="settings" active={view === 'settings'} onClick={() => setView('settings')} />
       </nav>
-      {showTutorial && (
+      {isSupabaseConfigured && !authReady && (
+        <div className="auth-gateway" role="status" aria-live="polite">
+          <section className="auth-gateway-panel auth-loading-panel">
+            <span className="auth-brand-mark" aria-hidden="true">GM</span>
+            <h2>Checking your account...</h2>
+          </section>
+        </div>
+      )}
+      {authReady && authFlowOpen && (
+        <AuthFlow
+          mode={authFlowMode}
+          emailPurpose={authEmailPurpose}
+          user={user}
+          email={authEmail}
+          password={authPassword}
+          passwordConfirmation={authPasswordConfirmation}
+          status={authStatus}
+          busy={cloudBusy}
+          online={isOnline}
+          passwordSetupRequired={passwordSetupRequired}
+          onModeChange={changeAuthFlowMode}
+          onEmailChange={setAuthEmail}
+          onPasswordChange={setAuthPassword}
+          onPasswordConfirmationChange={setAuthPasswordConfirmation}
+          onSignIn={signInWithPassword}
+          onSendSignupLink={sendSignupLink}
+          onSendPasswordReset={sendPasswordReset}
+          onSetPassword={setAccountPassword}
+          onSignOut={signOut}
+          onContinueLocal={closeAuthFlow}
+          onClose={closeAuthFlow}
+        />
+      )}
+      {showTutorial && authReady && !authFlowOpen && (
         <TutorialOverlay
           step={tutorialStep}
           onStepChange={setTutorialStep}
           onClose={() => closeTutorial(true)}
-          onNavigate={(nextView) => {
-            setView(nextView)
+          onNavigate={(target) => {
             closeTutorial(true)
+            if (target === 'account') {
+              openAuthFlow(user ? 'account' : 'register')
+              return
+            }
+            setView(target)
           }}
         />
       )}
@@ -1904,12 +2122,12 @@ function TutorialOverlay({
   step: number
   onStepChange: (step: number) => void
   onClose: () => void
-  onNavigate: (view: View) => void
+  onNavigate: (target: TutorialTarget) => void
 }) {
   const currentStep = TUTORIAL_STEPS[step] ?? TUTORIAL_STEPS[0]
   const isFirst = step === 0
   const isLast = step === TUTORIAL_STEPS.length - 1
-  const targetView = currentStep.view
+  const target = currentStep.target
 
   return (
     <div className="tutorial-backdrop" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
@@ -1924,7 +2142,40 @@ function TutorialOverlay({
           </button>
         </div>
         <p>{currentStep.body}</p>
-        <div className="tutorial-progress" aria-label="Tutorial progress">
+        <div className="tutorial-step-tabs" aria-label="Guide sections">
+          {TUTORIAL_STEPS.map((tutorialStep, index) => (
+            <button
+              className={index === step ? 'active' : ''}
+              type="button"
+              aria-current={index === step ? 'step' : undefined}
+              key={tutorialStep.navLabel}
+              onClick={() => onStepChange(index)}
+            >
+              <span>{index + 1}</span>
+              {tutorialStep.navLabel}
+            </button>
+          ))}
+        </div>
+        <div className="tutorial-visual" aria-label={currentStep.visualTitle}>
+          <p>{currentStep.visualTitle}</p>
+          <div className="tutorial-visual-grid">
+            {currentStep.visualItems.map((item, index) => (
+              <article key={item.label}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+        <ul className="tutorial-checklist">
+          {currentStep.checklist.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+        <div className="tutorial-progress" aria-label="Tutorial progress" style={{ gridTemplateColumns: `repeat(${TUTORIAL_STEPS.length}, minmax(0, 1fr))` }}>
           {TUTORIAL_STEPS.map((tutorialStep, index) => (
             <span className={index === step ? 'active' : ''} key={tutorialStep.title} />
           ))}
@@ -1933,7 +2184,7 @@ function TutorialOverlay({
           <button className="ghost-button" type="button" onClick={() => onStepChange(Math.max(0, step - 1))} disabled={isFirst}>
             Back
           </button>
-          <button className="secondary-button" type="button" onClick={() => onNavigate(targetView)}>
+          <button className="secondary-button" type="button" onClick={() => onNavigate(target)}>
             {currentStep.actionLabel}
           </button>
           {isLast ? (
@@ -1966,6 +2217,7 @@ function Dashboard({
   onOpenCheckIn,
   onFinalizeDay,
   onUnlockDay,
+  onShareDay,
 }: {
   entry: DailyEntry
   entries: EntryMap
@@ -1981,6 +2233,7 @@ function Dashboard({
   onOpenCheckIn: () => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
+  onShareDay: () => void
 }) {
   const activeRules = getEnabledRules(settings, selectedDate)
   const exerciseRules = getEnabledRules(settings).filter((rule) => rule.category === 'exercise' && rule.exercise)
@@ -2093,18 +2346,25 @@ function Dashboard({
           })}
         </div>
 
-        <button className="primary-button" type="button" onClick={onOpenCheckIn}>
-          Open full check-in
-        </button>
-        {isFinalized ? (
-          <button className="secondary-button" type="button" onClick={onUnlockDay}>
-            Unlock Day
+        <div className={`day-action-row ${isFinalized ? 'is-finalized' : ''}`}>
+          <button className="primary-button" type="button" onClick={onOpenCheckIn}>
+            Open full check-in
           </button>
-        ) : (
-          <button className="secondary-button" type="button" onClick={onFinalizeDay}>
-            Finalize Day
-          </button>
-        )}
+          {isFinalized ? (
+            <>
+              <button className="secondary-button" type="button" onClick={onShareDay}>
+                Share Day
+              </button>
+              <button className="secondary-button" type="button" onClick={onUnlockDay}>
+                Unlock Day
+              </button>
+            </>
+          ) : (
+            <button className="secondary-button" type="button" onClick={onFinalizeDay}>
+              Finalize Day
+            </button>
+          )}
+        </div>
       </section>
     </div>
   )

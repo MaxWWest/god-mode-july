@@ -74,20 +74,11 @@ export default function SettingsView({
   cloudUpdatedAt,
   syncConflict,
   user,
-  authEmail,
-  authPassword,
   onSettingsChange,
   onDataImport,
   onReminderChange,
   onRequestReminderPermission,
-  onAuthEmailChange,
-  onAuthPasswordChange,
-  onSignInWithPassword,
-  onCreatePasswordAccount,
-  onSetAccountPassword,
-  onSendMagicLink,
-  onSendPasswordReset,
-  onSignOut,
+  onOpenAccount,
   onPushCloud,
   onPullCloud,
   onRetryCloud,
@@ -109,20 +100,11 @@ export default function SettingsView({
   cloudUpdatedAt: string | null
   syncConflict: SyncConflict | null
   user: User | null
-  authEmail: string
-  authPassword: string
   onSettingsChange: (settings: ChallengeSettings) => void
   onDataImport: (settings: ChallengeSettings, entries: EntryMap) => void
   onReminderChange: (settings: ReminderSettings) => void
   onRequestReminderPermission: () => void
-  onAuthEmailChange: (email: string) => void
-  onAuthPasswordChange: (password: string) => void
-  onSignInWithPassword: () => void
-  onCreatePasswordAccount: () => void
-  onSetAccountPassword: () => void
-  onSendMagicLink: () => void
-  onSendPasswordReset: () => void
-  onSignOut: () => void
+  onOpenAccount: () => void
   onPushCloud: () => void
   onPullCloud: () => void
   onRetryCloud: () => void
@@ -140,10 +122,7 @@ export default function SettingsView({
     message: `${entryCount} saved ${entryCount === 1 ? 'entry' : 'entries'}`,
   })
   const [settingsTab, setSettingsTab] = useState<'rules' | 'app'>('rules')
-  const [titleDraft, setTitleDraft] = useState(settings.title)
   const categories = DEFAULT_RULE_CATEGORIES
-
-  useEffect(() => setTitleDraft(settings.title), [settings.title])
 
   function update(patch: Partial<ChallengeSettings>) {
     onSettingsChange(normalizeSettings({ ...settings, ...patch }))
@@ -211,21 +190,6 @@ export default function SettingsView({
     })
   }
 
-  function updateTitleDraft(title: string) {
-    setTitleDraft(title)
-    const nextTitle = title.trim()
-    if (nextTitle) update({ title: nextTitle })
-  }
-
-  function saveTitleDraft() {
-    const title = titleDraft.trim()
-    if (!title) {
-      setTitleDraft(settings.title)
-      return
-    }
-    update({ title })
-  }
-
   function exportJsonBackup() {
     const payload = makeBackupPayload(settings, entries)
     const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-backup.json`
@@ -283,7 +247,7 @@ export default function SettingsView({
       <section className="page-intro">
         <p className="eyebrow">Control center</p>
         <h2>Settings</h2>
-        <p>{activeRuleCount} active rules · app, account, and scoring controls</p>
+        <p>{activeRuleCount} active rules · app, data, and scoring controls</p>
       </section>
 
       <div className="settings-tabs" role="tablist" aria-label="Settings sections">
@@ -314,7 +278,7 @@ export default function SettingsView({
           </section>
           <section className="panel form-panel">
             <SectionTitle number="2" title="Tracker" />
-            <TextField label="Title" value={titleDraft} onChange={updateTitleDraft} onBlur={saveTitleDraft} />
+            <TextField label="Title" value={settings.title} commitOnBlur onChange={(title) => update({ title })} />
             <TextField label="Tracking since" type="date" value={settings.startDate} onChange={updateStartDate} />
           </section>
           <section className="panel form-panel">
@@ -330,11 +294,7 @@ export default function SettingsView({
             <SectionTitle number="4" title="Cloud Sync" />
             <CloudSyncPanel
               configured={cloudConfigured} user={user} status={cloudStatus} busy={cloudBusy} online={online}
-              updatedAt={cloudUpdatedAt} conflict={syncConflict} authEmail={authEmail} authPassword={authPassword}
-              onAuthEmailChange={onAuthEmailChange} onAuthPasswordChange={onAuthPasswordChange}
-              onSignInWithPassword={onSignInWithPassword} onCreatePasswordAccount={onCreatePasswordAccount}
-              onSetAccountPassword={onSetAccountPassword} onSendMagicLink={onSendMagicLink}
-              onSendPasswordReset={onSendPasswordReset} onSignOut={onSignOut} onPushCloud={onPushCloud}
+              updatedAt={cloudUpdatedAt} conflict={syncConflict} onOpenAccount={onOpenAccount} onPushCloud={onPushCloud}
               onPullCloud={onPullCloud} onRetryCloud={onRetryCloud} onExportAccountData={onExportAccountData}
               onDeleteCloudAccountData={onDeleteCloudAccountData} onUseCloudVersion={onUseCloudVersion}
               onKeepLocalVersion={onKeepLocalVersion} onMergeCloudEntries={onMergeCloudEntries}
@@ -356,7 +316,7 @@ export default function SettingsView({
               <span><strong>Supporting</strong> counts once.</span>
               <span><strong>Active</strong> counts now; inactive stays saved.</span>
             </div>
-            <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
+            <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} commitOnBlur onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
           </section>
 
           {categories.map((category, categoryIndex) => {
@@ -384,8 +344,8 @@ export default function SettingsView({
                         <span className={`rule-card-state ${rule.enabled ? 'active' : ''}`}>{rule.enabled ? 'Active' : 'Inactive'}</span>
                       </header>
                       <div className="rule-editor-main">
-                        <label className="symbol-field"><span>Icon</span><input value={rule.icon} maxLength={2} onChange={(event) => updateRule(rule.key, { icon: event.target.value })} aria-label={`${rule.label} icon`} /></label>
-                        <TextField label="Rule" value={rule.label} onChange={(label) => updateRule(rule.key, { label })} />
+                        <DraftSymbolField label={`${rule.label} icon`} value={rule.icon} onCommit={(icon) => updateRule(rule.key, { icon })} />
+                        <TextField label="Rule" value={rule.label} commitOnBlur onChange={(label) => updateRule(rule.key, { label })} />
                       </div>
                       <div className="settings-rule-controls">
                         <label className="mini-check-field"><input type="checkbox" checked={rule.enabled} onChange={(event) => updateRule(rule.key, { enabled: event.target.checked })} /><span>Active</span></label>
@@ -397,7 +357,7 @@ export default function SettingsView({
                         <div className="rule-specific-controls">
                           <label className="weight-field"><span>Pattern</span><select value={rule.exercise.cycleDays} onChange={(event) => updateExerciseCycle(rule, Number(event.target.value) as ExerciseCycleDays)}><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
                           <label className="weight-field"><span>Exercise type</span><select value={rule.exercise.workoutType} onChange={(event) => updateExerciseRule(rule, { workoutType: event.target.value })}>{['Any exercise', ...WORKOUT_TYPES].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
-                          <NumberField label="Target" value={rule.exercise.targetMinutes} min={1} max={300} step={5} onChange={(value) => value !== null && updateExerciseRule(rule, { targetMinutes: value })} suffix="min" />
+                          <NumberField label="Target" value={rule.exercise.targetMinutes} min={1} max={300} step={5} commitOnBlur onChange={(value) => value !== null && updateExerciseRule(rule, { targetMinutes: value })} suffix="min" />
                           <div className="pattern-day-field">
                             <span>Training days</span>
                             <div className={`pattern-day-grid cycle-${rule.exercise.cycleDays}`}>
@@ -415,8 +375,8 @@ export default function SettingsView({
                           <label className="weight-field"><span>Goal</span><select value={rule.diet.goalType} onChange={(event) => updateDietRule(rule, { goalType: event.target.value as DietGoalType })}><option value="minimum">At least</option><option value="maximum">At most</option><option value="avoid">Avoid</option></select></label>
                           <label className="weight-field"><span>Meal tracking</span><select value={getDietTrackingSource(rule)} onChange={(event) => updateDietRule(rule, { trackingSource: event.target.value as DietTrackingSource })}><option value="manual">Manual value</option><option value="calories">Meal calories</option><option value="protein">Meal protein</option><option value="carbs">Meal carbs</option><option value="fat">Meal fat</option><option value="sodium">Meal sodium</option><option value="foodCategory">Food category</option></select></label>
                           {getDietTrackingSource(rule) === 'foodCategory' && <label className="weight-field"><span>Category</span><select value={rule.diet.foodCategory ?? 'other'} onChange={(event) => updateDietRule(rule, { foodCategory: event.target.value as FoodCategory, trackingSource: 'foodCategory' })}>{FOOD_CATEGORIES.map((category) => <option key={category} value={category}>{category.charAt(0).toUpperCase() + category.slice(1)}</option>)}</select></label>}
-                          {rule.diet.goalType !== 'avoid' && <NumberField label="Amount" value={rule.diet.goal} min={0} max={100000} step={rule.diet.unit.toLowerCase() === 'l' ? 0.1 : 1} onChange={(value) => value !== null && updateDietRule(rule, { goal: value })} suffix={rule.diet.unit} />}
-                          <TextField label="Unit" value={rule.diet.unit} onChange={(unit) => updateDietRule(rule, { unit })} />
+                          {rule.diet.goalType !== 'avoid' && <NumberField label="Amount" value={rule.diet.goal} min={0} max={100000} step={rule.diet.unit.toLowerCase() === 'l' ? 0.1 : 1} commitOnBlur onChange={(value) => value !== null && updateDietRule(rule, { goal: value })} suffix={rule.diet.unit} />}
+                          <TextField label="Unit" value={rule.diet.unit} commitOnBlur onChange={(unit) => updateDietRule(rule, { unit })} />
                         </div>
                       )}
                     </article>
@@ -431,6 +391,37 @@ export default function SettingsView({
   )
 }
 
+function DraftSymbolField({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string
+  value: string
+  onCommit: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => setDraft(value), [value])
+
+  function commit() {
+    const nextValue = draft.trim().slice(0, 2)
+    if (!nextValue) {
+      setDraft(value)
+      return
+    }
+    setDraft(nextValue)
+    onCommit(nextValue)
+  }
+
+  return (
+    <label className="symbol-field">
+      <span>Icon</span>
+      <input value={draft} maxLength={2} onChange={(event) => setDraft(event.target.value)} onBlur={commit} aria-label={label} />
+    </label>
+  )
+}
+
 function CloudSyncPanel({
   configured,
   user,
@@ -439,16 +430,7 @@ function CloudSyncPanel({
   online,
   updatedAt,
   conflict,
-  authEmail,
-  authPassword,
-  onAuthEmailChange,
-  onAuthPasswordChange,
-  onSignInWithPassword,
-  onCreatePasswordAccount,
-  onSetAccountPassword,
-  onSendMagicLink,
-  onSendPasswordReset,
-  onSignOut,
+  onOpenAccount,
   onPushCloud,
   onPullCloud,
   onRetryCloud,
@@ -466,16 +448,7 @@ function CloudSyncPanel({
   online: boolean
   updatedAt: string | null
   conflict: SyncConflict | null
-  authEmail: string
-  authPassword: string
-  onAuthEmailChange: (email: string) => void
-  onAuthPasswordChange: (password: string) => void
-  onSignInWithPassword: () => void
-  onCreatePasswordAccount: () => void
-  onSetAccountPassword: () => void
-  onSendMagicLink: () => void
-  onSendPasswordReset: () => void
-  onSignOut: () => void
+  onOpenAccount: () => void
   onPushCloud: () => void
   onPullCloud: () => void
   onRetryCloud: () => void
@@ -529,8 +502,8 @@ function CloudSyncPanel({
               <small>Signed in</small>
               <strong>{user.email}</strong>
             </div>
-            <button className="ghost-button" type="button" onClick={onSignOut} disabled={busy}>
-              Sign out
+            <button className="ghost-button" type="button" onClick={onOpenAccount} disabled={busy}>
+              Manage Account
             </button>
           </div>
           <div className="data-actions">
@@ -542,18 +515,6 @@ function CloudSyncPanel({
             </button>
           </div>
           <p className="cloud-updated">Cloud snapshot: {updatedLabel}</p>
-          <div className="account-data-panel">
-            <div>
-              <small>Password sign-in</small>
-              <p>Set or update the password for this account so you can sign in without magic links.</p>
-            </div>
-            <div className="password-update-actions">
-              <TextField label="New Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
-              <button className="secondary-button" type="button" onClick={onSetAccountPassword} disabled={busy || !online}>
-                Set Password
-              </button>
-            </div>
-          </div>
           <div className="account-data-panel">
             <div>
               <small>Account data</small>
@@ -596,27 +557,14 @@ function CloudSyncPanel({
           )}
         </>
       ) : (
-        <div className="auth-stack">
-          <div className="field-grid">
-            <TextField label="Email" type="email" value={authEmail} onChange={onAuthEmailChange} />
-            <TextField label="Password" type="password" value={authPassword} onChange={onAuthPasswordChange} />
+        <div className="account-data-panel">
+          <div>
+            <small>No account connected</small>
+            <p>Account creation and sign-in now live in the dedicated Account window.</p>
           </div>
-          <div className="auth-actions">
-            <button className="secondary-button" type="button" onClick={onSignInWithPassword} disabled={busy || !online}>
-              Sign In
-            </button>
-            <button className="secondary-button" type="button" onClick={onCreatePasswordAccount} disabled={busy || !online}>
-              Create Account
-            </button>
-          </div>
-          <div className="auth-form">
-            <button className="secondary-button" type="button" onClick={onSendMagicLink} disabled={busy || !online}>
-              Send Magic Link Backup
-            </button>
-            <button className="ghost-button" type="button" onClick={onSendPasswordReset} disabled={busy || !online}>
-              Reset Password
-            </button>
-          </div>
+          <button className="secondary-button" type="button" onClick={onOpenAccount} disabled={busy || !online}>
+            Open Account
+          </button>
         </div>
       )}
       <div className="status-with-action">
@@ -654,7 +602,7 @@ function ReminderPanel({
       </label>
       <div className="field-grid">
         <TextField label="Time" type="time" value={settings.time} onChange={(time) => onChange({ ...settings, time })} />
-        <TextField label="Message" value={settings.message} onChange={(message) => onChange({ ...settings, message })} />
+        <TextField label="Message" value={settings.message} commitOnBlur onChange={(message) => onChange({ ...settings, message })} />
       </div>
       <button className="secondary-button" type="button" onClick={onRequestPermission}>
         Allow Local Notifications

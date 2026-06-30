@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { AppNotice } from './types'
 
 export type IconName = 'home' | 'check' | 'progress' | 'friends' | 'settings'
@@ -46,6 +47,7 @@ export function NumberField({
   step = 1,
   suffix,
   disabled = false,
+  commitOnBlur = false,
   onChange,
 }: {
   label: string
@@ -55,8 +57,40 @@ export function NumberField({
   step?: number
   suffix: string
   disabled?: boolean
+  commitOnBlur?: boolean
   onChange: (value: number | null) => void
 }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value))
+
+  useEffect(() => {
+    if (!commitOnBlur) return
+    setDraft(value === null ? '' : String(value))
+  }, [commitOnBlur, value])
+
+  function updateValue(nextValue: string) {
+    if (commitOnBlur) {
+      setDraft(nextValue)
+      return
+    }
+    onChange(nextValue === '' ? null : Number(nextValue))
+  }
+
+  function commitValue() {
+    if (!commitOnBlur) return
+    if (draft === '') {
+      setDraft(value === null ? '' : String(value))
+      return
+    }
+    const parsed = Number(draft)
+    if (!Number.isFinite(parsed)) {
+      setDraft(value === null ? '' : String(value))
+      return
+    }
+    const nextValue = Math.min(max, Math.max(min, parsed))
+    setDraft(String(nextValue))
+    onChange(nextValue)
+  }
+
   return (
     <label className="number-field">
       <span>{label}</span>
@@ -67,9 +101,10 @@ export function NumberField({
           min={min}
           max={max}
           step={step}
-          value={value ?? ''}
+          value={commitOnBlur ? draft : value ?? ''}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
+          onChange={(event) => updateValue(event.target.value)}
+          onBlur={commitValue}
         />
         <small>{suffix}</small>
       </div>
@@ -82,6 +117,7 @@ export function TextField({
   value,
   type = 'text',
   disabled = false,
+  commitOnBlur = false,
   onChange,
   onBlur,
 }: {
@@ -89,13 +125,39 @@ export function TextField({
   value: string
   type?: 'text' | 'date' | 'email' | 'password' | 'time'
   disabled?: boolean
+  commitOnBlur?: boolean
   onChange: (value: string) => void
   onBlur?: () => void
 }) {
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => setDraft(value), [value])
+
+  function updateValue(nextValue: string) {
+    if (commitOnBlur) {
+      setDraft(nextValue)
+      return
+    }
+    onChange(nextValue)
+  }
+
+  function commitValue() {
+    if (commitOnBlur) {
+      const nextValue = draft.trim()
+      if (nextValue) {
+        setDraft(nextValue)
+        onChange(nextValue)
+      } else {
+        setDraft(value)
+      }
+    }
+    onBlur?.()
+  }
+
   return (
     <label className="text-field">
       <span>{label}</span>
-      <input type={type} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} />
+      <input type={type} value={commitOnBlur ? draft : value} disabled={disabled} onChange={(event) => updateValue(event.target.value)} onBlur={commitValue} />
     </label>
   )
 }

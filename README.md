@@ -19,6 +19,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Breakfast, lunch, dinner, and snack logging with user-created food entries, macros, and categories
 - Automatic diet scoring from meal macros and food categories such as alcohol or dessert
 - Home quick logging for meals and workouts, with full review and editing in Check-In
+- Finalized-day share cards for group-chat accountability
 - Editable rules, goals, categories, and rule weights
 - Monthly calendar heatmap inside Progress
 - Rule completion analytics
@@ -36,7 +37,9 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Friend privacy controls for published stats
 - Better invite sharing with copy/share text
 - Invite-only custom friend challenges
+- Shared, matched-metric, soft-shared, and percent-only challenge scoring modes
 - Published per-day friend challenge score history
+- Per-challenge daily feed posts with comments, reactions, and score notes
 - Challenge templates for common competition formats
 - Private challenge squads
 - Squad-specific leaderboards
@@ -49,7 +52,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Five-tab navigation: Home, Check-In, Progress, Social, and Settings
 - Separate Rules + Goals and App + Account settings views
 - Category-colored, numbered rule editors for easier scanning in larger goal sets
-- Six-step onboarding for daily tracking, exercise patterns, diet goals, progress, and Social
+- Seven-section visual guide for account setup, Home, goals, Check-In, Progress, Friends, squads, and challenges
 
 ## Requirements
 
@@ -59,7 +62,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 ## Project status
 
 - Production beta: [god-mode-july.vercel.app](https://god-mode-july.vercel.app/)
-- Current automated coverage: 24 tracker/service tests plus 6 passing desktop/mobile browser scenarios
+- Current automated coverage: Vitest unit/service coverage plus desktop/mobile Playwright smoke tests
 - Production build uses feature-level code splitting and remains below Vite's chunk warning threshold
 - Core daily tracking works offline; authentication, cross-device sync, and Social require Supabase
 - The main remaining beta risk is end-to-end validation across real accounts, browsers, and installed iPhone PWAs
@@ -96,7 +99,7 @@ Run the desktop and mobile Chromium smoke suite:
 npm run test:e2e
 ```
 
-The smoke suite covers daily meal/workout logging, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
+The smoke suite covers the signup/login split, visual guide sections, account guidance, daily meal/workout logging, automatic rule scoring, finalization, reload persistence, appearance persistence, responsive overflow, and goal-editor structure. Playwright starts a production preview automatically and blocks service workers so each run tests the current build.
 
 An optional existing-account Supabase check runs when credentials are provided explicitly:
 
@@ -120,7 +123,7 @@ Tracker settings are stored under this browser key:
 god-mode-july-settings-v1
 ```
 
-The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Settings exposes email/password sign-in with magic-link backup, Push Local and Pull Cloud sync controls, account data export, and cloud data deletion. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
+The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Account provides a dedicated setup flow: new users verify one emailed signup link and then create and confirm a password; returning users sign in with email and password. Settings keeps the Push Local and Pull Cloud controls, account data export, and cloud data deletion. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
 
 Cloud sync uses the Supabase table in `supabase-schema.sql` when these Vite env vars are configured:
 
@@ -131,7 +134,7 @@ VITE_SUPABASE_ANON_KEY
 
 See `DEPLOYMENT.md` for Supabase and hosting setup.
 
-Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared.
+Friends, leaderboards, private squads, invite-only friend challenges, daily challenge score history, and the social activity feed use separate Supabase tables. Feed comments and reactions inherit the visibility of their parent event. Friends can compare completion, streak, logged-day stats, and explicitly published per-day challenge percentages, but raw entries, reflections, weight, and calories are not shared. Run the latest `supabase-schema.sql` after deploying social changes; the challenge table now accepts `shared`, `personal`, `softShared`, and `percentOnly` scoring modes.
 
 Exercise rules use repeating cycles anchored to the tracker start date. A rule can run daily or on selected days within a 7-day or 30-day pattern. Seven-day patterns display weekdays, Home and Check-In identify recovery days, and Progress summarizes the current cycle. Diet rules can require at least a target, stay at or below a target, or avoid an item entirely. Meals carry macro values and optional food categories, allowing rules such as protein, calories, no alcohol, or no dessert to update automatically. Existing alcohol, calorie, protein, water, and workout data is normalized into the new model when local backups or cloud snapshots load.
 
@@ -144,6 +147,7 @@ Exercise rules use repeating cycles anchored to the tracker start date. A rule c
 - `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
 - `src/services/socialApi.ts` owns profile, friendship, squad, challenge, leaderboard, and activity-feed database operations.
 - `src/services/cloudApi.ts` owns cloud snapshots, account export, and cloud account deletion operations.
+- `src/auth.ts` owns shared account password validation, while `src/components/AuthFlow.tsx` owns signup, login, and password setup UI.
 - `src/services/reliability.ts` classifies transient failures and retries safe cloud/social operations.
 - Tracker, social-data, reliability, and mocked social-service tests cover the highest-risk scoring, privacy, history, normalization, retry, and mutation behavior.
 - `src/features/CheckInView.tsx`, `src/features/SettingsView.tsx`, `src/features/FriendsView.tsx`, and `src/features/ProgressView.tsx` are lazy-loaded feature chunks so the initial PWA bundle stays below Vite's warning threshold.
@@ -156,9 +160,10 @@ Current social beta coverage:
 - Editable squads with roster changes after creation.
 - Challenge invite management for adding accepted friends after a challenge starts.
 - In-app badges for pending friend requests and challenge invites.
-- Stored social events with comments, reactions, and device sharing for a richer friend/squad activity feed.
+- Stored social events with comments, reactions, and device sharing for richer friend, squad, and challenge feeds.
 - Challenge templates with preset target and scored-rule overrides.
-- Explicit challenge rule selection, including custom tracker rules; accepted challenges add missing controls to the participant's tracker.
+- Challenge scoring modes for exact shared rules, matched metrics with personal targets, soft shared mandatory metrics plus personal goals, and percent-only comparison.
+- Explicit challenge rule selection, including custom tracker rules; accepted metric-based challenges add missing controls to the participant's tracker.
 - Friend profile panels with recent scores, shared squads, shared challenges, and head-to-head stats.
 - Per-participant daily score timelines stored when challenge scores are published.
 

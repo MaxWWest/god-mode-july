@@ -298,7 +298,7 @@ export type FriendRequest = FriendProfile & {
   createdAt: string
 }
 
-export type FriendChallengeScoringMode = 'personal' | 'shared'
+export type FriendChallengeScoringMode = 'personal' | 'shared' | 'softShared' | 'percentOnly'
 export type FriendChallengeParticipantStatus = 'pending' | 'accepted' | 'declined'
 
 export type FriendChallenge = {
@@ -402,7 +402,7 @@ export type ChallengeTemplate = {
   ruleOverrides?: Partial<Record<BuiltInRuleKey, Partial<Pick<RuleConfig, 'enabled' | 'weight' | 'category'>>>>
 }
 
-export type FriendsTab = 'overview' | 'network' | 'squads' | 'challenges' | 'leaderboard'
+export type FriendsTab = 'overview' | 'friends' | 'squads' | 'challenges' | 'leaderboard'
 
 export type FriendEventType =
   | 'friend_request_sent'
@@ -464,6 +464,7 @@ export type FriendActivityReaction = {
 export type FriendActivityFeedItem = {
   id: string
   eventId: string | null
+  challengeId?: string | null
   title: string
   detail: string
   meta: string

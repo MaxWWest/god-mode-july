@@ -36,6 +36,7 @@ export default function CheckInView({
   onUpdate,
   onFinalizeDay,
   onUnlockDay,
+  onShareDay,
 }: {
   entry: DailyEntry
   settings: ChallengeSettings
@@ -43,6 +44,7 @@ export default function CheckInView({
   onUpdate: (patch: Partial<DailyEntry>) => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
+  onShareDay: () => void
 }) {
   const workoutLogs = Array.isArray(entry.workouts) ? entry.workouts : []
   const workoutTotal = getExerciseMinutes(entry)
@@ -244,7 +246,10 @@ export default function CheckInView({
       <section className="panel form-panel">
         <SectionTitle number="6" title="Finalize" />
         {isFinalized ? (
-          <button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock Day</button>
+          <div className="finalize-action-row">
+            <button className="primary-button" type="button" onClick={onShareDay}>Share Day</button>
+            <button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock Day</button>
+          </div>
         ) : (
           <button className="primary-button" type="button" onClick={onFinalizeDay}>Finalize Day</button>
         )}

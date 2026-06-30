@@ -126,12 +126,19 @@ function getChallengeElapsedDates(challenge: Pick<FriendChallenge, 'startDate' |
 
 function settingsForFriendChallenge(challenge: FriendChallenge, personalSettings: ChallengeSettings): ChallengeSettings {
   const selectedRuleKeys = new Set(challenge.settings.rules.filter((rule) => rule.enabled && !rule.deleted).map((rule) => rule.key))
-  const sourceSettings = challenge.scoringMode === 'shared'
-    ? challenge.settings
-    : {
+  let sourceSettings: ChallengeSettings
+  if (challenge.scoringMode === 'shared') {
+    sourceSettings = challenge.settings
+  } else if (challenge.scoringMode === 'softShared') {
+    sourceSettings = mergeChallengeRulesIntoSettings(personalSettings, challenge.settings)
+  } else if (challenge.scoringMode === 'percentOnly') {
+    sourceSettings = personalSettings
+  } else {
+    sourceSettings = {
       ...personalSettings,
       rules: personalSettings.rules.map((rule) => ({ ...rule, enabled: selectedRuleKeys.has(rule.key) })),
     }
+  }
   return normalizeSettings({
     ...sourceSettings,
     title: challenge.name,
@@ -322,7 +329,7 @@ function normalizeFriendChallengeParticipantStatus(value: unknown): FriendChalle
 }
 
 function normalizeFriendChallengeScoringMode(value: unknown): FriendChallengeScoringMode {
-  return value === 'shared' || value === 'personal' ? value : 'personal'
+  return value === 'shared' || value === 'personal' || value === 'softShared' || value === 'percentOnly' ? value : 'personal'
 }
 
 function normalizeFriendEventType(value: unknown): FriendEventType {

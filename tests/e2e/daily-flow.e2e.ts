@@ -2,6 +2,15 @@ import { expect, test } from '@playwright/test'
 import { openFreshApp } from './helpers'
 
 test('logs a complete day, finalizes it, and restores it after reload', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'share', { value: undefined, configurable: true })
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => window.localStorage.setItem('test-share-text', text),
+      },
+      configurable: true,
+    })
+  })
   await openFreshApp(page)
 
   await expect(page.getByText('0 / 90 min · daily', { exact: true })).toBeVisible()
@@ -24,6 +33,10 @@ test('logs a complete day, finalizes it, and restores it after reload', async ({
 
   await page.getByRole('button', { name: 'Finalize Day', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Day finalized.', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Share Day', exact: true }).click()
+  await expect(page.getByText('Daily check-in copied. Paste it into the group chat.', { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('test-share-text'))).toContain("I've completed the day at 100%")
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('test-share-text'))).toContain('Exercises:\n- Strength 90 min')
   await expect(page.getByRole('button', { name: 'Unlock Day', exact: true })).toBeVisible()
 
   await page.reload()

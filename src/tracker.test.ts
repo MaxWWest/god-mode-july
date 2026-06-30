@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SETTINGS,
+  buildDailyShareText,
   completionStats,
   formatExercisePatternDayLabel,
   formatExercisePatternSchedule,
@@ -173,6 +174,36 @@ describe('tracker scoring', () => {
     expect(ruleComplete(beerEntry, 'sober', settings)).toBe(false)
     expect(ruleComplete(cleanEntry, 'custom-no-dessert', settings)).toBe(true)
     expect(ruleComplete(cakeEntry, 'custom-no-dessert', settings)).toBe(false)
+  })
+
+  it('builds a daily share scorecard for group accountability', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      startDate: '2026-07-01',
+      endDate: '2026-07-31',
+    })
+    const entry = {
+      ...makeEmptyEntry('2026-07-01'),
+      finalizedAt: '2026-07-02T01:00:00.000Z',
+      exerciseMinutes: 90,
+      workouts: [{ id: 'lift', type: 'Strength', minutes: 90 }],
+      foods: [{ id: 'dinner', meal: 'dinner' as const, name: 'Chicken bowl', calories: 650, proteinGrams: 55, carbsGrams: 60, fatGrams: 18, sodiumMg: 900, categories: ['protein' as const] }],
+      sober: true,
+      foodLogged: true,
+      calories: 650,
+      proteinGrams: 55,
+      readTenPages: true,
+      journaled: true,
+      wentWell: 'Showed up early.',
+    }
+
+    const shareText = buildDailyShareText(entry, { [entry.date]: entry }, settings)
+
+    expect(shareText).toContain('07/01/2026')
+    expect(shareText).toContain("I've completed the day at")
+    expect(shareText).toContain('Meals:\n- Dinner: Chicken bowl')
+    expect(shareText).toContain('Exercises:\n- Strength 90 min')
+    expect(shareText).toContain('Time day completed:')
   })
 })
 

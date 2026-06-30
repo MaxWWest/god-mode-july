@@ -145,6 +145,63 @@ describe('social challenge data', () => {
     })
   })
 
+  it('scores soft shared metrics alongside each participant personal goals', () => {
+    const mandatoryRule = {
+      key: 'custom-league-yoga' as const,
+      label: 'League yoga',
+      icon: 'Y',
+      enabled: true,
+      weight: 'supporting' as const,
+      category: 'mental',
+    }
+    const challengeSettings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      rules: [...DEFAULT_SETTINGS.rules.map((rule) => ({ ...rule, enabled: false })), mandatoryRule],
+    })
+    const challenge: FriendChallenge = {
+      id: 'challenge-soft',
+      creatorId: 'user-1',
+      name: 'Soft league',
+      startDate: '2026-06-18',
+      endDate: '2026-06-24',
+      scoringMode: 'softShared',
+      settings: challengeSettings,
+      createdAt: '2026-06-18T00:00:00Z',
+      updatedAt: '2026-06-18T00:00:00Z',
+    }
+    const entry = makeEmptyEntry('2026-06-18')
+    const snapshots = buildFriendChallengeSnapshots('user-1', { [entry.date]: entry }, challenge, DEFAULT_SETTINGS)
+
+    expect(snapshots[0].totalRules).toBe(6)
+  })
+
+  it('compares percent-only challenges using each participant own active rules', () => {
+    const challengeSettings = buildChallengeSettingsForTemplate(
+      DEFAULT_SETTINGS,
+      'custom',
+      'Percent only',
+      '2026-06-18',
+      '2026-06-24',
+      ['exercise'],
+    )
+    const challenge: FriendChallenge = {
+      id: 'challenge-percent',
+      creatorId: 'user-1',
+      name: 'Percent only',
+      startDate: '2026-06-18',
+      endDate: '2026-06-24',
+      scoringMode: 'percentOnly',
+      settings: challengeSettings,
+      createdAt: '2026-06-18T00:00:00Z',
+      updatedAt: '2026-06-18T00:00:00Z',
+    }
+    const entry = makeEmptyEntry('2026-06-18')
+    const snapshots = buildFriendChallengeSnapshots('user-1', { [entry.date]: entry }, challenge, DEFAULT_SETTINGS)
+
+    expect(challengeSettings.rules.filter((rule) => rule.enabled).map((rule) => rule.key)).toEqual(['exercise'])
+    expect(snapshots[0].totalRules).toBe(5)
+  })
+
   it('normalizes stored participant summaries and rejects malformed rows', () => {
     const participant = normalizeFriendChallengeParticipantRow({
       challenge_id: 'challenge-1',

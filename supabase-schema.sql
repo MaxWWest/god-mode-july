@@ -349,7 +349,7 @@ create table if not exists public.god_mode_friend_challenges (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint god_mode_friend_challenges_date_order check (end_date >= start_date),
-  constraint god_mode_friend_challenges_scoring_mode_check check (scoring_mode in ('personal', 'shared'))
+  constraint god_mode_friend_challenges_scoring_mode_check check (scoring_mode in ('personal', 'shared', 'softShared', 'percentOnly'))
 );
 
 create table if not exists public.god_mode_friend_challenge_participants (
@@ -363,6 +363,13 @@ create table if not exists public.god_mode_friend_challenge_participants (
   primary key (challenge_id, user_id),
   constraint god_mode_friend_challenge_participants_status_check check (status in ('pending', 'accepted', 'declined'))
 );
+
+alter table public.god_mode_friend_challenges
+  drop constraint if exists god_mode_friend_challenges_scoring_mode_check;
+
+alter table public.god_mode_friend_challenges
+  add constraint god_mode_friend_challenges_scoring_mode_check
+  check (scoring_mode in ('personal', 'shared', 'softShared', 'percentOnly'));
 
 create table if not exists public.god_mode_challenge_score_history (
   challenge_id uuid not null references public.god_mode_friend_challenges(id) on delete cascade,

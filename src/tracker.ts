@@ -1013,6 +1013,55 @@ export function completionStats(entry: DailyEntry, settings: ChallengeSettings) 
   }
 }
 
+function formatMealShareLabel(meal: MealType): string {
+  return meal.charAt(0).toUpperCase() + meal.slice(1)
+}
+
+function formatShareDate(date: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+  }).format(new Date(`${date}T12:00:00`))
+}
+
+function formatShareCompletionTime(value: string | null): string {
+  if (!value) return 'Not finalized yet'
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatShareSection(items: string[]): string {
+  if (items.length === 0) return 'None logged'
+  return items.map((item) => `- ${item}`).join('\n')
+}
+
+export function buildDailyShareText(entry: DailyEntry, _entries: EntryMap, settings: ChallengeSettings): string {
+  const stats = completionStats(entry, settings)
+  const workouts = (entry.workouts ?? [])
+    .filter((workout) => workout.minutes > 0)
+    .map((workout) => `${workout.type} ${workout.minutes} min`)
+  const fallbackExercise = workouts.length === 0 && entry.exerciseMinutes > 0 ? [`Exercise ${entry.exerciseMinutes} min`] : []
+  const meals = (entry.foods ?? []).map((food) => `${formatMealShareLabel(food.meal)}: ${food.name}`)
+
+  const lines = [
+    formatShareDate(entry.date),
+    `I've completed the day at ${stats.percent}%`,
+    '',
+    'Meals:',
+    formatShareSection(meals),
+    '',
+    'Exercises:',
+    formatShareSection([...workouts, ...fallbackExercise]),
+    '',
+    'Time day completed:',
+    formatShareCompletionTime(entry.finalizedAt),
+  ]
+  return lines.join('\n')
+}
+
 export function getLoggedDates(entries: EntryMap, settings: ChallengeSettings): string[] {
   const endDate = selectableEndDate(settings)
   return Object.keys(entries)

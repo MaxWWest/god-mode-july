@@ -5,6 +5,8 @@ import {
   FRIEND_FEED_REACTIONS,
   FRIENDS_TABS,
   SCORE_REACTIONS,
+  challengeScoringModeDescription,
+  challengeScoringModeLabel,
   challengeTemplateById,
   describeTemplateOverrides,
   isChallengeCompleted,
@@ -102,6 +104,7 @@ function buildFriendActivityFeed({
     feed.push({
       id: `request-${request.userA}-${request.userB}`,
       eventId: null,
+      challengeId: null,
       title: request.direction === 'incoming' ? 'Friend request received' : 'Friend request sent',
       detail: request.direction === 'incoming'
         ? `${request.displayName} wants to connect.`
@@ -109,7 +112,7 @@ function buildFriendActivityFeed({
       meta: formatActivityDate(request.createdAt),
       tone: 'pending',
       sortAt: request.createdAt,
-      shareText: `${request.displayName} joined your God Mode network.`,
+      shareText: `${request.displayName} joined your God Mode friends list.`,
       comments: [],
       reactions: [],
     })
@@ -119,6 +122,7 @@ function buildFriendActivityFeed({
     feed.push({
       id: `squad-${squad.id}`,
       eventId: null,
+      challengeId: null,
       title: `${squad.name} squad`,
       detail: squad.members.length === 0
         ? 'No active members yet.'
@@ -138,6 +142,7 @@ function buildFriendActivityFeed({
     feed.push({
       id: `challenge-${challenge.id}`,
       eventId: null,
+      challengeId: challenge.id,
       title: challenge.currentUserStatus === 'pending' && !challenge.isCreator ? 'Challenge invite waiting' : challenge.name,
       detail: challenge.currentUserStatus === 'pending' && !challenge.isCreator
         ? `Accept or decline ${challenge.name}.`
@@ -156,6 +161,7 @@ function buildFriendActivityFeed({
     feed.push({
       id: `summary-${row.userId}-${row.summary.updatedAt}`,
       eventId: null,
+      challengeId: null,
       title: `${row.displayName} published a score`,
       detail: `${formatSummaryMetric(row.summary, 'showWeeklyCompletion', (summary) => `${summary.weeklyCompletion}%`)} last 7 days.`,
       meta: formatActivityDate(row.summary.updatedAt),
@@ -221,6 +227,8 @@ function buildStoredFriendActivityFeed({
     const inviteCount = metadataNumber(event.metadata, 'inviteCount')
     const note = metadataString(event.metadata, 'note')
     const reaction = reactionLabel(normalizeScoreReaction(event.metadata.reaction))
+    const scoreDate = metadataString(event.metadata, 'scoreDate')
+    const completionPercent = metadataNumber(event.metadata, 'completionPercent')
     let title = 'Friend activity'
     let detail = `${actor} updated something.`
     let tone: FriendActivityFeedItem['tone'] = 'neutral'
@@ -276,8 +284,8 @@ function buildStoredFriendActivityFeed({
         detail = `${actor} declined ${challengeName}.`
         break
       case 'challenge_score_published':
-        title = `${actor} published a challenge score`
-        detail = `${challengeName}${reaction ? ` · ${reaction}` : ''}${note ? ` · ${note}` : ''}`
+        title = `${actor} published ${completionPercent !== null ? `${completionPercent}%` : 'a score'}`
+        detail = `${challengeName}${scoreDate ? ` · ${formatShortDate(scoreDate)}` : ''}${reaction ? ` · ${reaction}` : ''}${note ? ` · ${note}` : ''}`
         tone = 'success'
         break
       case 'leaderboard_score_published':
@@ -301,6 +309,7 @@ function buildStoredFriendActivityFeed({
     return {
       id: `event-${event.id}`,
       eventId: event.id,
+      challengeId: event.challengeId,
       title,
       detail,
       meta: formatActivityDate(event.createdAt),
@@ -402,7 +411,7 @@ export default function FriendsView({
   const [challengeName, setChallengeName] = useState('No Zero Days')
   const [challengeStartDate, setChallengeStartDate] = useState(todayIso())
   const [challengeEndDate, setChallengeEndDate] = useState(addDays(todayIso(), 6))
-  const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>('personal')
+  const [challengeScoringMode, setChallengeScoringMode] = useState<FriendChallengeScoringMode>(CHALLENGE_TEMPLATES[1]?.scoringMode ?? 'softShared')
   const [challengeInviteIds, setChallengeInviteIds] = useState<string[]>([])
   const [challengeRuleKeys, setChallengeRuleKeys] = useState<RuleKey[]>(() => getEnabledRules(settings).map((rule) => rule.key))
   const [squadName, setSquadName] = useState('Training Squad')
@@ -427,12 +436,13 @@ export default function FriendsView({
       })
   ), [friendEvents, leaderboardRows, friendRequests, friendChallenges, friendSquads, currentUserId])
   const pendingCount = incomingRequests.length + friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
-  const networkBadgeCount = incomingRequests.length
+  const friendsBadgeCount = incomingRequests.length
   const challengeBadgeCount = friendChallenges.filter((challenge) => challenge.currentUserStatus === 'pending' && !challenge.isCreator).length
   const activeChallenges = friendChallenges.filter((challenge) => !isChallengeCompleted(challenge))
   const completedChallenges = friendChallenges.filter(isChallengeCompleted)
   const selectedChallenge = selectedChallengeId ? friendChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null : null
   const selectedFriend = selectedFriendId ? acceptedFriends.find((friend) => friend.userId === selectedFriendId) ?? null : null
+  const challengeRequiresRuleSelection = challengeScoringMode !== 'percentOnly'
   const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
   const availableChallengeRules = settings.rules.filter((rule) => !rule.deleted)
 
@@ -571,7 +581,7 @@ export default function FriendsView({
       <section className="friends-command-center" aria-label="Friends sections">
         <div className="friends-tabs" role="tablist" aria-label="Friends sections">
           {FRIENDS_TABS.map((tab) => {
-            const tabBadge = tab.key === 'network' ? networkBadgeCount : tab.key === 'challenges' ? challengeBadgeCount : 0
+            const tabBadge = tab.key === 'friends' ? friendsBadgeCount : tab.key === 'challenges' ? challengeBadgeCount : 0
             return (
               <button
                 className={activeFriendsTab === tab.key ? 'active' : ''}
@@ -690,8 +700,34 @@ export default function FriendsView({
         </>
       )}
 
-      {activeFriendsTab === 'network' && (
+      {activeFriendsTab === 'friends' && (
         <>
+      <section className="panel accepted-friends-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Friends</p>
+            <h2>Friends list</h2>
+          </div>
+          <span>{acceptedFriends.length}</span>
+        </div>
+        {acceptedFriends.length === 0 ? (
+          <p className="empty-leaderboard">No accepted friends yet. Send a code or accept a request to start the league.</p>
+        ) : (
+          <div className="accepted-friend-list">
+            {acceptedFriends.map((friend) => (
+              <article className="accepted-friend-card" key={friend.userId}>
+                <div>
+                  <strong>{friend.displayName}</strong>
+                  <span>{friend.summary ? `${friend.summary.weeklyCompletion}% last 7 days · ${friend.summary.currentStreak} day streak` : 'No score published yet'}</span>
+                </div>
+                <button className="secondary-button compact-button" type="button" onClick={() => setSelectedFriendId(friend.userId)}>
+                  Profile
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
       <section className="panel add-friend-panel">
         <div className="section-heading">
           <div>
@@ -829,8 +865,10 @@ export default function FriendsView({
             <label className="select-field">
               <span>Scoring</span>
               <select value={challengeScoringMode} onChange={(event) => setChallengeScoringMode(event.target.value as FriendChallengeScoringMode)}>
-                <option value="personal">Personal targets</option>
                 <option value="shared">Shared rules</option>
+                <option value="personal">Matched metrics</option>
+                <option value="softShared">Soft shared metrics</option>
+                <option value="percentOnly">Percent only</option>
               </select>
             </label>
             <TextField label="Start" type="date" value={challengeStartDate} onChange={updateChallengeStartDate} />
@@ -840,25 +878,29 @@ export default function FriendsView({
             <div className="challenge-rule-picker-heading">
               <div>
                 <small>Challenge rules</small>
-                <p>Choose what counts. Custom rules from your tracker are available here too.</p>
+                <p>{challengeScoringMode === 'percentOnly' ? 'No required overlap. Everyone publishes their own percent complete.' : challengeScoringModeDescription(challengeScoringMode)}</p>
               </div>
-              <strong>{challengeRuleKeys.length} selected</strong>
+              <strong>{challengeScoringMode === 'percentOnly' ? 'No overlap' : `${challengeRuleKeys.length} selected`}</strong>
             </div>
-            <div className="challenge-rule-options">
-              {availableChallengeRules.map((rule) => (
-                <label className="challenge-rule-option" key={rule.key}>
-                  <input
-                    type="checkbox"
-                    checked={challengeRuleKeys.includes(rule.key)}
-                    onChange={() => toggleChallengeRule(rule.key)}
-                  />
-                  <span>
-                    <strong>{rule.label}</strong>
-                    <small>{settings.categories.find((category) => category.key === rule.category)?.label ?? rule.category}{rule.key.startsWith('custom-') ? ' · Custom' : ''}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
+            {challengeScoringMode === 'percentOnly' ? (
+              <p className="empty-leaderboard">Rule selection is skipped for percent-only challenges.</p>
+            ) : (
+              <div className="challenge-rule-options">
+                {availableChallengeRules.map((rule) => (
+                  <label className="challenge-rule-option" key={rule.key}>
+                    <input
+                      type="checkbox"
+                      checked={challengeRuleKeys.includes(rule.key)}
+                      onChange={() => toggleChallengeRule(rule.key)}
+                    />
+                    <span>
+                      <strong>{rule.label}</strong>
+                      <small>{settings.categories.find((category) => category.key === rule.category)?.label ?? rule.category}{rule.key.startsWith('custom-') ? ' · Custom' : ''}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div className="challenge-invite-picker">
             <small>Invite friends</small>
@@ -888,7 +930,7 @@ export default function FriendsView({
               </div>
             )}
           </div>
-          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim() || challengeRuleKeys.length === 0}>
+          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim() || (challengeRequiresRuleSelection && challengeRuleKeys.length === 0)}>
             Create Challenge
           </button>
         </div>
@@ -898,11 +940,16 @@ export default function FriendsView({
             acceptedFriends={acceptedFriends}
             busy={busy}
             onClose={() => setSelectedChallengeId(null)}
+            feedItems={activityFeed.filter((item) => item.challengeId === selectedChallenge.id)}
             onInviteMore={(inviteeIds) => onInviteChallengeParticipants({
               challengeId: selectedChallenge.id,
               inviteeIds,
             })}
             onPublish={(note, reaction) => onPublishChallengeScore(selectedChallenge.id, note, reaction)}
+            onComment={onCommentEvent}
+            onDeleteComment={onDeleteEventComment}
+            onReact={onReactEvent}
+            onShare={onShareEvent}
           />
         )}
         {friendChallenges.length === 0 ? (
@@ -1043,6 +1090,7 @@ function FriendRequestCard({
 function FriendActivityFeed({
   items,
   busy,
+  emptyLabel = 'No squad or friend activity yet.',
   onComment,
   onDeleteComment,
   onReact,
@@ -1050,13 +1098,14 @@ function FriendActivityFeed({
 }: {
   items: FriendActivityFeedItem[]
   busy: boolean
+  emptyLabel?: string
   onComment: (eventId: string, body: string) => void
   onDeleteComment: (commentId: string) => void
   onReact: (eventId: string, reaction: FriendFeedReaction | null) => void
   onShare: (text: string) => void
 }) {
   if (items.length === 0) {
-    return <p className="empty-leaderboard">No squad or friend activity yet.</p>
+    return <p className="empty-leaderboard">{emptyLabel}</p>
   }
 
   return (
@@ -1312,7 +1361,7 @@ function FriendChallengeCard({
   onDecline: () => void
   onPublish: () => void
 }) {
-  const modeLabel = challenge.scoringMode === 'shared' ? 'Shared rules' : 'Personal targets'
+  const modeLabel = challengeScoringModeLabel(challenge.scoringMode)
   const acceptedParticipants = challenge.participants.filter((participant) => participant.status === 'accepted')
   const pendingParticipants = challenge.participants.filter((participant) => participant.status === 'pending')
   const rankedParticipants = [...acceptedParticipants].sort((a, b) => (
@@ -1349,7 +1398,7 @@ function FriendChallengeCard({
         )}
         {challenge.currentUserStatus === 'accepted' && (
           <button className="secondary-button compact-button" type="button" onClick={onPublish} disabled={busy}>
-            Publish Challenge Score
+            Publish Today
           </button>
         )}
       </div>
@@ -1392,15 +1441,25 @@ function FriendChallengeDetail({
   acceptedFriends,
   busy,
   onClose,
+  feedItems,
   onInviteMore,
   onPublish,
+  onComment,
+  onDeleteComment,
+  onReact,
+  onShare,
 }: {
   challenge: FriendChallengeView
   acceptedFriends: LeaderboardRow[]
   busy: boolean
   onClose: () => void
+  feedItems: FriendActivityFeedItem[]
   onInviteMore: (inviteeIds: string[]) => void
   onPublish: (note: string, reaction: ScoreReaction | null) => void
+  onComment: (eventId: string, body: string) => void
+  onDeleteComment: (commentId: string) => void
+  onReact: (eventId: string, reaction: FriendFeedReaction | null) => void
+  onShare: (text: string) => void
 }) {
   const participantIds = new Set(challenge.participants.map((participant) => participant.userId))
   const availableFriends = acceptedFriends.filter((friend) => !participantIds.has(friend.userId))
@@ -1416,6 +1475,7 @@ function FriendChallengeDetail({
   const myParticipant = challenge.participants.find((participant) => participant.isCurrentUser) ?? null
   const activeRules = getEnabledRules(challenge.settings)
   const completed = isChallengeCompleted(challenge)
+  const modeLabel = challengeScoringModeLabel(challenge.scoringMode)
   const [inviteIds, setInviteIds] = useState<string[]>([])
   const [scoreNote, setScoreNote] = useState(myParticipant?.summary?.note ?? '')
   const [scoreReaction, setScoreReaction] = useState<ScoreReaction | null>(myParticipant?.summary?.reaction ?? null)
@@ -1445,7 +1505,7 @@ function FriendChallengeDetail({
         <div>
           <small>{completed ? 'Completed archive' : 'Challenge detail'}</small>
           <h3>{challenge.name}</h3>
-          <p>{formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)} · {challenge.scoringMode === 'shared' ? 'Shared rules' : 'Personal targets'}</p>
+          <p>{formatShortDate(challenge.startDate)} - {formatShortDate(challenge.endDate)} · {modeLabel}</p>
         </div>
         <div className="challenge-detail-actions">
           <span className="request-badge">{challenge.isCreator ? 'Owner' : statusLabel(challenge.currentUserStatus)}</span>
@@ -1460,9 +1520,10 @@ function FriendChallengeDetail({
           <div className="section-heading compact-heading">
             <div>
               <p className="eyebrow">Publishing</p>
-              <h3>Your score</h3>
+              <h3>Your daily score</h3>
             </div>
           </div>
+          <p className="challenge-mode-copy">{challengeScoringModeDescription(challenge.scoringMode)} Everyone publishes their own score and comment.</p>
           <div className="publish-state">
             <span><small>Status</small><strong>{myParticipant ? statusLabel(myParticipant.status) : 'Not joined'}</strong></span>
             <span><small>Last publish</small><strong>{myParticipant?.summary ? formatShortDate(myParticipant.summary.updatedAt.slice(0, 10)) : 'None'}</strong></span>
@@ -1486,7 +1547,7 @@ function FriendChallengeDetail({
                 </select>
               </label>
               <button className="secondary-button compact-button" type="button" onClick={() => onPublish(scoreNote, scoreReaction)} disabled={busy}>
-                Publish Score & History
+                Publish Today to Feed
               </button>
             </div>
           ) : (
@@ -1523,7 +1584,26 @@ function FriendChallengeDetail({
       <section className="challenge-detail-section">
         <div className="section-heading compact-heading">
           <div>
-            <p className="eyebrow">Daily timeline</p>
+            <p className="eyebrow">Challenge feed</p>
+            <h3>Daily posts</h3>
+          </div>
+          <span>{feedItems.length}</span>
+        </div>
+        <FriendActivityFeed
+          items={feedItems}
+          busy={busy}
+          onComment={onComment}
+          onDeleteComment={onDeleteComment}
+          onReact={onReact}
+          onShare={onShare}
+          emptyLabel="No challenge posts yet. Publish today to start the feed."
+        />
+      </section>
+
+      <section className="challenge-detail-section">
+        <div className="section-heading compact-heading">
+          <div>
+            <p className="eyebrow">History</p>
             <h3>Published score history</h3>
           </div>
           <span>{acceptedParticipants.reduce((count, participant) => count + participant.history.length, 0)} days</span>
@@ -1596,20 +1676,26 @@ function FriendChallengeDetail({
         <div className="section-heading compact-heading">
           <div>
             <p className="eyebrow">Settings</p>
-            <h3>Rules and targets</h3>
+            <h3>{challenge.scoringMode === 'percentOnly' ? 'Comparison mode' : 'Rules and targets'}</h3>
           </div>
         </div>
-        <div className="challenge-settings-grid">
-          <span><small>Exercise</small><strong>{challenge.settings.targets.exerciseMinutes} min</strong></span>
-          <span><small>Protein</small><strong>{challenge.settings.targets.proteinGrams} g</strong></span>
-          <span><small>Water</small><strong>{challenge.settings.targets.waterLiters} L</strong></span>
-          <span><small>Sleep</small><strong>{challenge.settings.targets.sleepHours} hr</strong></span>
-        </div>
-        <div className="squad-member-list">
-          {activeRules.map((rule) => (
-            <span key={rule.key}>{rule.label} · {rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting'}</span>
-          ))}
-        </div>
+        {challenge.scoringMode === 'percentOnly' ? (
+          <p className="empty-leaderboard">No shared metric is required. Each accepted participant publishes their own tracker percent.</p>
+        ) : (
+          <>
+            <div className="challenge-settings-grid">
+              <span><small>Exercise</small><strong>{challenge.settings.targets.exerciseMinutes} min</strong></span>
+              <span><small>Protein</small><strong>{challenge.settings.targets.proteinGrams} g</strong></span>
+              <span><small>Water</small><strong>{challenge.settings.targets.waterLiters} L</strong></span>
+              <span><small>Sleep</small><strong>{challenge.settings.targets.sleepHours} hr</strong></span>
+            </div>
+            <div className="squad-member-list">
+              {activeRules.map((rule) => (
+                <span key={rule.key}>{rule.label} · {rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting'}</span>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="challenge-detail-section">
