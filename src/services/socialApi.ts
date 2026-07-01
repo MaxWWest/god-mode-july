@@ -371,6 +371,21 @@ export async function inviteChallengeParticipants(client: SupabaseClient, userId
   }
 }
 
+export async function deleteChallenge(
+  client: SupabaseClient,
+  userId: string,
+  challengeId: string,
+): Promise<void> {
+  const { error } = await client.from(SUPABASE_FRIEND_CHALLENGE_TABLE)
+    .delete()
+    .eq('id', challengeId)
+    .eq('creator_id', userId)
+  if (error) {
+    if (isFriendChallengeSchemaError(error)) throw new Error('Run the updated Supabase schema to enable friend challenge deletion.')
+    throw error
+  }
+}
+
 export async function removeChallengeParticipant(
   client: SupabaseClient,
   challengeId: string,

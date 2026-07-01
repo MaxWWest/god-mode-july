@@ -3446,6 +3446,17 @@ textarea:focus-visible {
   align-items: end;
 }
 
+.challenge-template-hint {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  background: var(--surface-faint);
+}
+
 .challenge-invite-picker {
   display: grid;
   gap: 8px;

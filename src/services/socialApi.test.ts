@@ -11,7 +11,7 @@ import {
 } from '../supabase'
 import { DEFAULT_PRIVACY_SETTINGS, DEFAULT_SETTINGS } from '../tracker'
 import type { ChallengeSummary } from '../types'
-import { addFriendEventComment, createChallenge, removeChallengeParticipant, respondToFriendRequest, setFriendEventReaction, updateSquad } from './socialApi'
+import { addFriendEventComment, createChallenge, deleteChallenge, removeChallengeParticipant, respondToFriendRequest, setFriendEventReaction, updateSquad } from './socialApi'
 
 function resultChain(data: unknown = null) {
   const chain: Record<string, unknown> = { data, error: null }
@@ -154,5 +154,21 @@ describe('social service mutations', () => {
     expect(query.delete).toHaveBeenCalledOnce()
     expect(query.eq).toHaveBeenCalledWith('challenge_id', 'challenge-1')
     expect(query.eq).toHaveBeenCalledWith('user_id', 'friend-1')
+  })
+
+  it('deletes an owned challenge by id and creator', async () => {
+    const query = resultChain()
+    const client = {
+      from: vi.fn((table: string) => {
+        expect(table).toBe(SUPABASE_FRIEND_CHALLENGE_TABLE)
+        return query
+      }),
+    } as unknown as SupabaseClient
+
+    await deleteChallenge(client, 'owner-1', 'challenge-1')
+
+    expect(query.delete).toHaveBeenCalledOnce()
+    expect(query.eq).toHaveBeenCalledWith('id', 'challenge-1')
+    expect(query.eq).toHaveBeenCalledWith('creator_id', 'owner-1')
   })
 })

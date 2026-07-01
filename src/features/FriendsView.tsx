@@ -358,6 +358,7 @@ export default function FriendsView({
   onAcceptChallenge,
   onDeclineChallenge,
   onRemoveChallengeParticipant,
+  onDeleteChallenge,
   onPublishChallengeScore,
   onCommentEvent,
   onDeleteEventComment,
@@ -403,6 +404,7 @@ export default function FriendsView({
   onAcceptChallenge: (challengeId: string) => void
   onDeclineChallenge: (challengeId: string) => void
   onRemoveChallengeParticipant: (challengeId: string, participantUserId: string) => void
+  onDeleteChallenge: (challengeId: string) => void
   onPublishChallengeScore: (challengeId: string, note?: string, reaction?: ScoreReaction | null) => void
   onCommentEvent: (eventId: string, body: string) => void
   onDeleteEventComment: (commentId: string) => void
@@ -456,6 +458,8 @@ export default function FriendsView({
   const challengeRequiresRuleSelection = challengeScoringMode !== 'percentOnly'
   const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
   const availableChallengeRules = settings.rules.filter((rule) => !rule.deleted)
+  const selectedTemplate = challengeTemplateById(challengeTemplateId)
+  const templateEndDate = isIsoDate(challengeStartDate) ? addDays(challengeStartDate, selectedTemplate.durationDays - 1) : challengeEndDate
 
   useEffect(() => {
     if (initialTab) setActiveFriendsTab(initialTab)
@@ -515,15 +519,16 @@ export default function FriendsView({
 
     setChallengeName(template.name)
     setChallengeScoringMode(template.scoringMode)
+    const nextEndDate = isIsoDate(challengeStartDate) ? addDays(challengeStartDate, template.durationDays - 1) : challengeEndDate
     const previewSettings = buildChallengeSettingsForTemplate(
       settings,
       template.id,
       template.name,
       challengeStartDate,
-      challengeEndDate,
+      nextEndDate,
     )
     setChallengeRuleKeys(getEnabledRules(previewSettings).map((rule) => rule.key))
-    if (isIsoDate(challengeStartDate)) setChallengeEndDate(addDays(challengeStartDate, template.durationDays - 1))
+    if (isIsoDate(challengeStartDate)) setChallengeEndDate(nextEndDate)
   }
 
   function updateChallengeStartDate(startDate: string) {
@@ -900,8 +905,13 @@ export default function FriendsView({
                 ))}
               </select>
             </label>
-            <p>{describeTemplateOverrides(challengeTemplateById(challengeTemplateId))}</p>
+            <p>{describeTemplateOverrides(selectedTemplate)}</p>
           </div>
+          {isIsoDate(challengeStartDate) && isIsoDate(templateEndDate) && (
+            <p className="challenge-template-hint">
+              {selectedTemplate.name} runs {selectedTemplate.durationDays} {selectedTemplate.durationDays === 1 ? 'day' : 'days'}: {formatShortDate(challengeStartDate)} - {formatShortDate(templateEndDate)}. Overlapping challenges are allowed.
+            </p>
+          )}
           <div className="field-grid">
             <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
             <label className="select-field">
@@ -991,6 +1001,7 @@ export default function FriendsView({
               if (currentUserId) onRemoveChallengeParticipant(selectedChallenge.id, currentUserId)
             }}
             onRemoveParticipant={(participantUserId) => onRemoveChallengeParticipant(selectedChallenge.id, participantUserId)}
+            onDelete={() => onDeleteChallenge(selectedChallenge.id)}
             onPublish={(note, reaction) => onPublishChallengeScore(selectedChallenge.id, note, reaction)}
             onComment={onCommentEvent}
             onDeleteComment={onDeleteEventComment}
@@ -1027,6 +1038,7 @@ export default function FriendsView({
                       }}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
                       onShareLink={() => onShareChallengeLink(challenge)}
+                      onDelete={() => onDeleteChallenge(challenge.id)}
                     />
                   ))}
                 </div>
@@ -1057,6 +1069,7 @@ export default function FriendsView({
                       }}
                       onPublish={() => onPublishChallengeScore(challenge.id)}
                       onShareLink={() => onShareChallengeLink(challenge)}
+                      onDelete={() => onDeleteChallenge(challenge.id)}
                     />
                   ))}
                 </div>
@@ -1409,6 +1422,7 @@ function FriendChallengeCard({
   onLeave,
   onPublish,
   onShareLink,
+  onDelete,
 }: {
   challenge: FriendChallengeView
   busy: boolean
@@ -1418,6 +1432,7 @@ function FriendChallengeCard({
   onLeave: () => void
   onPublish: () => void
   onShareLink: () => void
+  onDelete: () => void
 }) {
   const modeLabel = challengeScoringModeLabel(challenge.scoringMode)
   const acceptedParticipants = challenge.participants.filter((participant) => participant.status === 'accepted')
@@ -1467,6 +1482,11 @@ function FriendChallengeCard({
             Leave
           </button>
         )}
+        {challenge.isCreator && (
+          <button className="ghost-button compact-button" type="button" onClick={onDelete} disabled={busy}>
+            Delete
+          </button>
+        )}
       </div>
 
       {rankedParticipants.length === 0 ? (
@@ -1511,6 +1531,7 @@ function FriendChallengeDetail({
   onInviteMore,
   onLeave,
   onRemoveParticipant,
+  onDelete,
   onPublish,
   onComment,
   onDeleteComment,
@@ -1525,6 +1546,7 @@ function FriendChallengeDetail({
   onInviteMore: (inviteeIds: string[]) => void
   onLeave: () => void
   onRemoveParticipant: (participantUserId: string) => void
+  onDelete: () => void
   onPublish: (note: string, reaction: ScoreReaction | null) => void
   onComment: (eventId: string, body: string) => void
   onDeleteComment: (commentId: string) => void
@@ -1582,6 +1604,11 @@ function FriendChallengeDetail({
           {challenge.currentUserStatus === 'accepted' && !challenge.isCreator && (
             <button className="ghost-button" type="button" onClick={onLeave} disabled={busy}>
               Leave Challenge
+            </button>
+          )}
+          {challenge.isCreator && (
+            <button className="ghost-button" type="button" onClick={onDelete} disabled={busy}>
+              Delete Challenge
             </button>
           )}
           <button className="ghost-button" type="button" onClick={onClose}>

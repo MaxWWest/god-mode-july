@@ -16,6 +16,7 @@ import {
   addFriendEventComment,
   createChallenge as createChallengeRecord,
   createSquad as createSquadRecord,
+  deleteChallenge as deleteChallengeRecord,
   deleteFriendEventComment,
   deleteSquad as deleteSquadRecord,
   ensureFriendProfile as ensureFriendProfileApi,
@@ -1887,6 +1888,41 @@ function App() {
     }
   }
 
+  async function deleteFriendChallenge(challengeId: string) {
+    if (!supabase || !user) return
+
+    const challenge = friendChallenges.find((item) => item.id === challengeId)
+    if (!challenge) {
+      setFriendsStatus({ tone: 'error', message: 'Could not find that challenge.' })
+      return
+    }
+    if (!challenge.isCreator) {
+      setFriendsStatus({ tone: 'error', message: 'Only the challenge owner can delete the whole challenge.' })
+      return
+    }
+
+    const isComplete = challenge.endDate < todayIso()
+    const confirmed = window.confirm(isComplete
+      ? `Delete archived challenge ${challenge.name}? This removes its roster, published history, and feed posts for everyone.`
+      : `Delete active challenge ${challenge.name}? This ends it for everyone and removes its roster, published history, and feed posts.`)
+    if (!confirmed) {
+      setFriendsStatus({ tone: 'neutral', message: 'Challenge deletion canceled.' })
+      return
+    }
+
+    setFriendsBusy(true)
+    try {
+      await deleteChallengeRecord(supabase, user.id, challenge.id)
+      setFriendsStatus({ tone: 'success', message: `${challenge.name} deleted.` })
+      showAppNotice('Challenge deleted.')
+      await refreshFriendsData()
+    } catch (error) {
+      setFriendsStatus(serviceErrorStatus(error, 'Could not delete the challenge.'))
+    } finally {
+      setFriendsBusy(false)
+    }
+  }
+
   async function publishFriendChallengeScore(challengeId: string, note = '', reaction: ScoreReaction | null = null) {
     if (!supabase || !user) return
     const client = supabase
@@ -2357,6 +2393,7 @@ function App() {
               onAcceptChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'accepted')}
               onDeclineChallenge={(challengeId) => respondToFriendChallenge(challengeId, 'declined')}
               onRemoveChallengeParticipant={removeFriendChallengeParticipant}
+              onDeleteChallenge={deleteFriendChallenge}
               onPublishChallengeScore={publishFriendChallengeScore}
               onCommentEvent={commentOnFriendEvent}
               onDeleteEventComment={removeFriendEventComment}

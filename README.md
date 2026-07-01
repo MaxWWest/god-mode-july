@@ -43,7 +43,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Invite-only custom friend challenges
 - Direct challenge invite links for opening challenge requests in the PWA
 - Short challenge join codes for invited members
-- Challenge owner controls for canceling pending invites and removing participants
+- Challenge owner controls for canceling pending invites, removing participants, and deleting old challenges
 - Member leave controls for exiting accepted challenges
 - Shared, matched-metric, soft-shared, and percent-only challenge scoring modes
 - Published per-day friend challenge score history
@@ -172,7 +172,7 @@ Current social beta coverage:
 - Challenge detail panels with participants, pending invites, shared settings, publishing state, score notes, and reactions.
 - Active challenge lists plus a completed challenge archive for friend-versus-friend history.
 - Editable squads with roster changes after creation.
-- Challenge invite management for adding accepted friends after a challenge starts, canceling pending invites, removing participants, and leaving as a member.
+- Challenge invite management for adding accepted friends after a challenge starts, canceling pending invites, removing participants, deleting owner-created challenges, and leaving as a member.
 - In-app badges for pending friend requests and challenge invites.
 - Stored social events with comments, reactions, and device sharing for richer friend, squad, and challenge feeds.
 - Challenge templates with preset target and scored-rule overrides.
@@ -207,7 +207,7 @@ Product ideas pulled from public coaching-app patterns, including Built With Sci
 
 ### Priority 3: challenge lifecycle controls
 
-1. Let owners end or archive active challenges intentionally before the scheduled end date.
+1. Let owners end or archive active challenges intentionally before the scheduled end date without deleting history.
 2. Add explicit score-history notes when someone leaves or is removed from a challenge.
 3. Let members leave squads with clear behavior for existing squad-created challenges.
 4. Add unread badges for new comments, reactions, and challenge updates.
