@@ -496,6 +496,7 @@ async function consumeAuthRedirectSession(): Promise<{ user: User | null; redire
 
 function App() {
   const [launchDeepLink] = useState<LaunchDeepLink>(() => readLaunchDeepLink())
+  const launchedFromDeepLink = Boolean(launchDeepLink.friendCode || launchDeepLink.challengeId)
   const [settings, setSettings] = useState<ChallengeSettings>(() => normalizeSettings(loadFromStorage<unknown>(SETTINGS_STORAGE_KEY, null)))
   const [view, setView] = useState<View>('home')
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
@@ -567,6 +568,14 @@ function App() {
       id: Date.now(),
       tone,
       message,
+    })
+  }
+
+  function clearPendingChallengeLink(challengeId: string) {
+    setPendingChallengeId((current) => {
+      if (!current || !challengeReferenceMatches(challengeId, current)) return current
+      window.localStorage.removeItem(PENDING_CHALLENGE_LINK_STORAGE_KEY)
+      return ''
     })
   }
 
@@ -657,16 +666,16 @@ function App() {
     if (!pendingFriendCode && !pendingChallengeId) return
     if (pendingFriendCode) {
       setInviteCodeDraft(pendingFriendCode)
-      setFriendsInitialTab('friends')
+      if (launchDeepLink.friendCode) setFriendsInitialTab('friends')
     }
-    if (pendingChallengeId) setFriendsInitialTab('challenges')
-    setView('friends')
+    if (pendingChallengeId && launchDeepLink.challengeId) setFriendsInitialTab('challenges')
+    if (launchedFromDeepLink) setView('friends')
 
-    if (!user && isSupabaseConfigured && authReady && !authFlowOpen) {
+    if (launchedFromDeepLink && !user && isSupabaseConfigured && authReady && !authFlowOpen) {
       setAuthStatus({ tone: 'neutral', message: 'Invite link loaded. Create an account or sign in to continue.' })
       openAuthFlow('register')
     }
-  }, [pendingFriendCode, pendingChallengeId, user, authReady, authFlowOpen])
+  }, [pendingFriendCode, pendingChallengeId, launchDeepLink.friendCode, launchDeepLink.challengeId, launchedFromDeepLink, user, authReady, authFlowOpen])
 
   useEffect(() => {
     if (!pendingChallengeId || !user) return
@@ -1817,6 +1826,7 @@ function App() {
         tone: 'success',
         message: nextStatus === 'accepted' ? 'Challenge invite accepted.' : 'Challenge invite declined.',
       })
+      clearPendingChallengeLink(challengeId)
       await recordFriendEvent(nextStatus === 'accepted' ? 'challenge_invite_accepted' : 'challenge_invite_declined', {
         challengeId,
         metadata: {
@@ -1850,6 +1860,7 @@ function App() {
       await respondToFriendChallenge(challenge.id, 'accepted')
       return
     }
+    clearPendingChallengeLink(challenge.id)
 
     setFriendsStatus({
       tone: 'success',
