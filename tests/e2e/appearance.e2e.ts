@@ -79,3 +79,30 @@ test('custom text fields allow deletion and spaces before committing', async ({ 
   await openSettings(page)
   await expect(page.locator('.rule-config-card').filter({ hasText: 'Evening Walk' })).toHaveCount(1)
 })
+
+test('numeric fields allow deletion before entering replacement values', async ({ page }) => {
+  await openFreshApp(page)
+
+  const workoutDuration = page.getByRole('spinbutton', { name: 'Duration min', exact: true })
+  await expect(workoutDuration).toHaveValue('30')
+  await workoutDuration.fill('')
+  await expect(workoutDuration).toHaveValue('')
+  await workoutDuration.type('45')
+  await expect(workoutDuration).toHaveValue('45')
+
+  const calories = page.getByRole('spinbutton', { name: 'Calories kcal', exact: true }).first()
+  await expect(calories).toHaveValue('0')
+  await calories.fill('')
+  await expect(calories).toHaveValue('')
+  await calories.type('250')
+  await expect(calories).toHaveValue('250')
+
+  await openSettings(page)
+  const sleepTarget = page.getByRole('spinbutton', { name: 'Sleep target hr', exact: true })
+  await sleepTarget.fill('')
+  await expect(sleepTarget).toHaveValue('')
+  await sleepTarget.type('7.5')
+  await expect(sleepTarget).toHaveValue('7.5')
+  await sleepTarget.press('Tab')
+  await expect(sleepTarget).toHaveValue('7.5')
+})

@@ -61,28 +61,38 @@ export function NumberField({
   onChange: (value: number | null) => void
 }) {
   const [draft, setDraft] = useState(value === null ? '' : String(value))
+  const [isFocused, setIsFocused] = useState(false)
 
   useEffect(() => {
-    if (!commitOnBlur) return
+    if (isFocused) return
     setDraft(value === null ? '' : String(value))
-  }, [commitOnBlur, value])
+  }, [isFocused, value])
+
+  function parseDraft(nextDraft: string) {
+    const trimmedDraft = nextDraft.trim()
+    if (trimmedDraft === '') return null
+    const parsed = Number(trimmedDraft)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
 
   function updateValue(nextValue: string) {
-    if (commitOnBlur) {
-      setDraft(nextValue)
-      return
-    }
-    onChange(nextValue === '' ? null : Number(nextValue))
+    setDraft(nextValue)
+    if (commitOnBlur) return
+
+    const parsed = parseDraft(nextValue)
+    if (parsed === null || parsed === undefined) return
+    onChange(parsed)
   }
 
   function commitValue() {
-    if (!commitOnBlur) return
-    if (draft === '') {
-      setDraft(value === null ? '' : String(value))
+    setIsFocused(false)
+    const parsed = parseDraft(draft)
+    if (parsed === null) {
+      setDraft('')
+      onChange(null)
       return
     }
-    const parsed = Number(draft)
-    if (!Number.isFinite(parsed)) {
+    if (parsed === undefined) {
       setDraft(value === null ? '' : String(value))
       return
     }
@@ -101,8 +111,9 @@ export function NumberField({
           min={min}
           max={max}
           step={step}
-          value={commitOnBlur ? draft : value ?? ''}
+          value={draft}
           disabled={disabled}
+          onFocus={() => setIsFocused(true)}
           onChange={(event) => updateValue(event.target.value)}
           onBlur={commitValue}
         />
