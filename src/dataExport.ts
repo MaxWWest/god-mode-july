@@ -1,9 +1,9 @@
 import type { AccountDataExport, ChallengeSummary } from './types'
 import { completionStats, selectableEndDate } from './tracker'
 
-type DashboardCsvValue = string | number | boolean | null | undefined
+type StructuredCsvValue = string | number | boolean | null | undefined
 
-function csvCell(value: DashboardCsvValue): string {
+function csvCell(value: StructuredCsvValue): string {
   if (value === null || value === undefined) return ''
   const text = String(value)
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
@@ -13,26 +13,26 @@ function formatMealLabel(meal: string): string {
   return meal.charAt(0).toUpperCase() + meal.slice(1)
 }
 
-function dashboardMetadata(value: unknown): string {
+function metadataString(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
   return JSON.stringify(value)
 }
 
 function appendMetricRow(
-  rows: DashboardCsvValue[][],
-  base: DashboardCsvValue[],
+  rows: StructuredCsvValue[][],
+  base: StructuredCsvValue[],
   metric: string,
-  value: DashboardCsvValue,
+  value: StructuredCsvValue,
   unit = '',
-  details: DashboardCsvValue = '',
+  details: StructuredCsvValue = '',
 ) {
   rows.push([...base, metric, value, unit, details])
 }
 
 function appendSummaryRows(
-  rows: DashboardCsvValue[][],
-  base: DashboardCsvValue[],
+  rows: StructuredCsvValue[][],
+  base: StructuredCsvValue[],
   summary: ChallengeSummary | null | undefined,
 ) {
   if (!summary) return
@@ -43,7 +43,7 @@ function appendSummaryRows(
   appendMetricRow(rows, base, 'logged_days', summary.loggedDays, 'days', `${summary.loggedDays}/${summary.totalDays}`)
 }
 
-export function accountDataToDashboardCsv(payload: AccountDataExport): string {
+export function accountDataToStructuredCsv(payload: AccountDataExport): string {
   const headers = [
     'row_type',
     'date',
@@ -62,13 +62,13 @@ export function accountDataToDashboardCsv(payload: AccountDataExport): string {
     'unit',
     'details',
   ]
-  const rows: DashboardCsvValue[][] = []
+  const rows: StructuredCsvValue[][] = []
   const profileByUserId = new Map((payload.cloud.friendProfiles ?? []).map((profile) => [profile.userId, profile.displayName]))
   if (payload.cloud.profile) profileByUserId.set(payload.cloud.profile.userId, payload.cloud.profile.displayName)
   const displayName = (userId: string | null | undefined) => userId ? profileByUserId.get(userId) ?? userId : ''
   const challengeById = new Map(payload.cloud.friendChallenges.map((challenge) => [challenge.id, challenge]))
   const squadById = new Map(payload.cloud.friendSquads.map((squad) => [squad.id, squad]))
-  const currentUserBase = (rowType: string, date = '', createdAt = '', updatedAt = ''): DashboardCsvValue[] => [
+  const currentUserBase = (rowType: string, date = '', createdAt = '', updatedAt = ''): StructuredCsvValue[] => [
     rowType,
     date,
     payload.user.id,
@@ -160,7 +160,7 @@ export function accountDataToDashboardCsv(payload: AccountDataExport): string {
 
   for (const participant of payload.cloud.friendChallengeParticipants) {
     const challenge = challengeById.get(participant.challengeId)
-    const base: DashboardCsvValue[] = [
+    const base: StructuredCsvValue[] = [
       'challenge_participant_summary',
       participant.summary?.lastLoggedDate ?? '',
       participant.userId,
@@ -241,7 +241,7 @@ export function accountDataToDashboardCsv(payload: AccountDataExport): string {
       event.eventType,
       1,
       '',
-      dashboardMetadata(event.metadata),
+      metadataString(event.metadata),
     ])
   }
 

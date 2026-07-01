@@ -455,11 +455,19 @@ export default function FriendsView({
   const completedChallenges = friendChallenges.filter(isChallengeCompleted)
   const selectedChallenge = selectedChallengeId ? friendChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null : null
   const selectedFriend = selectedFriendId ? acceptedFriends.find((friend) => friend.userId === selectedFriendId) ?? null : null
-  const challengeRequiresRuleSelection = challengeScoringMode !== 'percentOnly'
+  const challengeRequiresRuleSelection = challengeScoringMode === 'shared' || challengeScoringMode === 'personal'
   const currentUserRow = leaderboardRows.find((row) => row.isCurrentUser) ?? null
   const availableChallengeRules = settings.rules.filter((rule) => !rule.deleted)
   const selectedTemplate = challengeTemplateById(challengeTemplateId)
   const templateEndDate = isIsoDate(challengeStartDate) ? addDays(challengeStartDate, selectedTemplate.durationDays - 1) : challengeEndDate
+  const challengeDateRangeValid = isIsoDate(challengeStartDate) && isIsoDate(challengeEndDate) && challengeEndDate >= challengeStartDate
+  const challengeCreateDisabledReason = !challengeName.trim()
+    ? 'Add a challenge name first.'
+    : !challengeDateRangeValid
+      ? 'Choose a valid start and end date.'
+      : challengeRequiresRuleSelection && challengeRuleKeys.length === 0
+        ? 'Shared and matched-metric challenges need at least one selected rule.'
+        : ''
 
   useEffect(() => {
     if (initialTab) setActiveFriendsTab(initialTab)
@@ -932,7 +940,7 @@ export default function FriendsView({
                 <small>Challenge rules</small>
                 <p>{challengeScoringMode === 'percentOnly' ? 'No required overlap. Everyone publishes their own percent complete.' : challengeScoringModeDescription(challengeScoringMode)}</p>
               </div>
-              <strong>{challengeScoringMode === 'percentOnly' ? 'No overlap' : `${challengeRuleKeys.length} selected`}</strong>
+              <strong>{challengeScoringMode === 'percentOnly' ? 'No overlap' : challengeScoringMode === 'softShared' && challengeRuleKeys.length === 0 ? 'Personal goals' : `${challengeRuleKeys.length} selected`}</strong>
             </div>
             {challengeScoringMode === 'percentOnly' ? (
               <p className="empty-leaderboard">Rule selection is skipped for percent-only challenges.</p>
@@ -982,7 +990,8 @@ export default function FriendsView({
               </div>
             )}
           </div>
-          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || !challengeName.trim() || (challengeRequiresRuleSelection && challengeRuleKeys.length === 0)}>
+          {challengeCreateDisabledReason && <p className="data-status neutral">{challengeCreateDisabledReason}</p>}
+          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || Boolean(challengeCreateDisabledReason)}>
             Create Challenge
           </button>
         </div>

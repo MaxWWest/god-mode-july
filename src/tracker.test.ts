@@ -20,7 +20,7 @@ import {
   normalizeSettings,
   ruleComplete,
 } from './tracker'
-import { accountDataToDashboardCsv } from './dashboardExport'
+import { accountDataToStructuredCsv } from './dataExport'
 import type { AccountDataExport } from './types'
 
 describe('tracker scoring', () => {
@@ -250,7 +250,7 @@ describe('tracker scoring', () => {
     expect(shareText).toContain('Time day completed:')
   })
 
-  it('exports dashboard-friendly CSV rows across local and social data', () => {
+  it('exports structured CSV rows across local and social data', () => {
     const settings = normalizeSettings({ ...DEFAULT_SETTINGS, startDate: '2026-07-01', endDate: '2026-07-31' })
     const entry = {
       ...makeEmptyEntry('2026-07-01'),
@@ -284,7 +284,7 @@ describe('tracker scoring', () => {
       },
     }
 
-    const csv = accountDataToDashboardCsv(payload)
+    const csv = accountDataToStructuredCsv(payload)
 
     expect(csv).toContain('daily_completion,2026-07-01,user-1,max@example.com,Max')
     expect(csv).toContain('daily_workout,2026-07-01,user-1,max@example.com,Max')

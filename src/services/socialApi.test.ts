@@ -122,7 +122,7 @@ describe('social service mutations', () => {
       privacy: DEFAULT_PRIVACY_SETTINGS,
     }))
 
-    await createChallenge(client, 'owner-1', {
+    const result = await createChallenge(client, 'owner-1', {
       name: 'Seven Strong',
       startDate: '2026-06-18',
       endDate: '2026-06-24',
@@ -132,6 +132,7 @@ describe('social service mutations', () => {
       ownerSummary,
     })
 
+    expect(result.usedLegacyScoringMode).toBe(false)
     expect(ownerSummary).toHaveBeenCalledOnce()
     expect(participantInsert).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ user_id: 'owner-1', status: 'accepted' }),
@@ -170,5 +171,60 @@ describe('social service mutations', () => {
     expect(query.delete).toHaveBeenCalledOnce()
     expect(query.eq).toHaveBeenCalledWith('id', 'challenge-1')
     expect(query.eq).toHaveBeenCalledWith('creator_id', 'owner-1')
+  })
+
+  it('retries challenge creation with personal scoring for older Supabase constraints', async () => {
+    const challengeRow = {
+      id: 'challenge-1',
+      creator_id: 'owner-1',
+      name: 'Thirty Strong',
+      start_date: '2026-07-01',
+      end_date: '2026-07-30',
+      scoring_mode: 'personal',
+      settings: DEFAULT_SETTINGS,
+      created_at: '2026-07-01T08:00:00.000Z',
+      updated_at: '2026-07-01T08:00:00.000Z',
+    }
+    const single = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'violates check constraint "god_mode_friend_challenges_scoring_mode_check" for scoring_mode' } })
+      .mockResolvedValueOnce({ data: challengeRow, error: null })
+    const challengeInsert = vi.fn(() => ({
+      select: vi.fn(() => ({ single })),
+    }))
+    const participantInsert = vi.fn(async () => ({ error: null }))
+    const client = {
+      from: vi.fn((table: string) => table === SUPABASE_FRIEND_CHALLENGE_TABLE
+        ? { insert: challengeInsert }
+        : { insert: participantInsert }),
+    } as unknown as SupabaseClient
+
+    const result = await createChallenge(client, 'owner-1', {
+      name: 'Thirty Strong',
+      startDate: '2026-07-01',
+      endDate: '2026-07-30',
+      scoringMode: 'softShared',
+      settings: DEFAULT_SETTINGS,
+      inviteeIds: [],
+      ownerSummary: vi.fn((): ChallengeSummary => ({
+        userId: 'owner-1',
+        challengeTitle: 'Thirty Strong',
+        startDate: '2026-07-01',
+        endDate: '2026-07-30',
+        loggedDays: 0,
+        totalDays: 30,
+        averageCompletion: 0,
+        weeklyCompletion: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        lastLoggedDate: null,
+        updatedAt: '2026-07-01T08:00:00.000Z',
+        privacy: DEFAULT_PRIVACY_SETTINGS,
+      })),
+    })
+
+    expect(result.usedLegacyScoringMode).toBe(true)
+    expect(challengeInsert).toHaveBeenCalledWith(expect.objectContaining({ scoring_mode: 'softShared' }))
+    expect(challengeInsert).toHaveBeenCalledWith(expect.objectContaining({ scoring_mode: 'personal' }))
+    expect(participantInsert).toHaveBeenCalledOnce()
   })
 })

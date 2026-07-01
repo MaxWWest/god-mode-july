@@ -321,16 +321,13 @@ export async function createChallenge(
     inviteeIds: string[]
     ownerSummary: (challenge: FriendChallenge) => ChallengeSummary
   },
-): Promise<FriendChallenge> {
-  const { data, error } = await client.from(SUPABASE_FRIEND_CHALLENGE_TABLE).insert({
-    creator_id: userId,
-    name: input.name,
-    start_date: input.startDate,
-    end_date: input.endDate,
-    scoring_mode: input.scoringMode,
-    settings: input.settings,
-    updated_at: new Date().toISOString(),
-  }).select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at').single()
+): Promise<{ challenge: FriendChallenge; usedLegacyScoringMode: boolean }> {
+  let usedLegacyScoringMode = false
+  let { data, error } = await insertChallengeRow(client, userId, input, input.scoringMode)
+  if (error && shouldRetryChallengeWithLegacyScoringMode(error, input.scoringMode)) {
+    usedLegacyScoringMode = true
+    ;({ data, error } = await insertChallengeRow(client, userId, input, 'personal'))
+  }
   if (error) {
     if (isFriendChallengeSchemaError(error)) throw new Error('Run the updated Supabase schema to enable friend challenges.')
     throw error
@@ -350,10 +347,41 @@ export async function createChallenge(
     })),
   ])
   if (participantResult.error) {
+    await client.from(SUPABASE_FRIEND_CHALLENGE_TABLE).delete().eq('id', challenge.id).eq('creator_id', userId)
     if (isFriendChallengeSchemaError(participantResult.error)) throw new Error('Run the updated Supabase schema to enable friend challenges.')
     throw participantResult.error
   }
-  return challenge
+  return { challenge, usedLegacyScoringMode }
+}
+
+async function insertChallengeRow(
+  client: SupabaseClient,
+  userId: string,
+  input: {
+    name: string
+    startDate: string
+    endDate: string
+    scoringMode: FriendChallengeScoringMode
+    settings: ChallengeSettings
+  },
+  scoringMode: FriendChallengeScoringMode,
+) {
+  return client.from(SUPABASE_FRIEND_CHALLENGE_TABLE).insert({
+    creator_id: userId,
+    name: input.name,
+    start_date: input.startDate,
+    end_date: input.endDate,
+    scoring_mode: scoringMode,
+    settings: input.settings,
+    updated_at: new Date().toISOString(),
+  }).select('id, creator_id, name, start_date, end_date, scoring_mode, settings, created_at, updated_at').single()
+}
+
+function shouldRetryChallengeWithLegacyScoringMode(error: unknown, scoringMode: FriendChallengeScoringMode): boolean {
+  if (scoringMode === 'personal' || scoringMode === 'shared') return false
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  return message.includes('scoring_mode') || message.includes('god_mode_friend_challenges_scoring_mode_check')
 }
 
 export async function inviteChallengeParticipants(client: SupabaseClient, userId: string, challengeId: string, inviteeIds: string[]): Promise<void> {

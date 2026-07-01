@@ -1264,18 +1264,18 @@ function App() {
     }
   }
 
-  async function exportDashboardCsv() {
+  async function exportDataCsv() {
     if (!supabase || !user) return
 
     setCloudBusy(true)
     try {
       const payload = await buildAccountDataExport()
-      const { accountDataToDashboardCsv } = await import('./dashboardExport')
-      const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-dashboard.csv`
-      downloadTextFile(filename, 'text/csv;charset=utf-8', accountDataToDashboardCsv(payload))
-      setCloudStatus({ tone: 'success', message: 'Dashboard CSV export downloaded.' })
+      const { accountDataToStructuredCsv } = await import('./dataExport')
+      const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-data.csv`
+      downloadTextFile(filename, 'text/csv;charset=utf-8', accountDataToStructuredCsv(payload))
+      setCloudStatus({ tone: 'success', message: 'Data CSV export downloaded.' })
     } catch (error) {
-      setCloudStatus(serviceErrorStatus(error, 'Could not export dashboard CSV.'))
+      setCloudStatus(serviceErrorStatus(error, 'Could not export data CSV.'))
     } finally {
       setCloudBusy(false)
     }
@@ -1706,7 +1706,8 @@ function App() {
     const inviteeIds = Array.from(new Set(input.inviteeIds)).filter((inviteeId) => acceptedFriendIds.has(inviteeId))
     const availableRuleKeys = new Set(settings.rules.filter((rule) => !rule.deleted).map((rule) => rule.key))
     const challengeRuleKeys = Array.from(new Set(input.ruleKeys)).filter((ruleKey) => availableRuleKeys.has(ruleKey))
-    if (input.scoringMode !== 'percentOnly' && challengeRuleKeys.length === 0) {
+    const scoringModeRequiresRuleSelection = input.scoringMode === 'shared' || input.scoringMode === 'personal'
+    if (scoringModeRequiresRuleSelection && challengeRuleKeys.length === 0) {
       setFriendsStatus({ tone: 'error', message: 'Choose at least one rule for the challenge.' })
       return
     }
@@ -1722,7 +1723,7 @@ function App() {
         input.endDate,
         challengeRuleKeys,
       )
-      const challenge = await createChallengeRecord(supabase, user.id, {
+      const { challenge, usedLegacyScoringMode } = await createChallengeRecord(supabase, user.id, {
         name,
         startDate: input.startDate,
         endDate: input.endDate,
@@ -1737,7 +1738,9 @@ function App() {
       })
       setFriendsStatus({
         tone: 'success',
-        message: inviteeIds.length === 0
+        message: usedLegacyScoringMode
+          ? `${challenge.name} created. Update the Supabase schema when you can to enable soft-shared and percent-only challenge modes.`
+          : inviteeIds.length === 0
           ? 'Challenge created. Invite friends whenever you are ready.'
           : `Challenge created and ${inviteeIds.length} ${inviteeIds.length === 1 ? 'friend was' : 'friends were'} invited.`,
       })
@@ -2452,7 +2455,7 @@ function App() {
               onPullCloud={pullCloudData}
               onRetryCloud={retryCloudConnection}
               onExportAccountData={exportAccountData}
-              onExportDashboardCsv={exportDashboardCsv}
+              onExportDataCsv={exportDataCsv}
               onDeleteCloudAccountData={deleteCloudAccountData}
               onUseCloudVersion={useCloudConflictVersion}
               onKeepLocalVersion={keepLocalConflictVersion}
