@@ -429,6 +429,8 @@ export default function FriendsView({
   const [challengeJoinCode, setChallengeJoinCode] = useState('')
   const [squadName, setSquadName] = useState('Training Squad')
   const [squadMemberIds, setSquadMemberIds] = useState<string[]>([])
+  const [squadComposerOpen, setSquadComposerOpen] = useState(false)
+  const [challengeComposerOpen, setChallengeComposerOpen] = useState(false)
   const [selectedChallengeId, setSelectedChallengeId] = useState<string | null>(null)
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null)
   const currentUserId = user?.id ?? null
@@ -830,34 +832,12 @@ export default function FriendsView({
             <p className="eyebrow">Challenge squads</p>
             <h2>Small private groups</h2>
           </div>
-          <span>{friendSquads.length}</span>
-        </div>
-        <div className="challenge-create-panel">
-          <div className="field-grid">
-            <TextField label="Squad name" value={squadName} onChange={setSquadName} />
+          <div className="section-actions">
+            <span>{friendSquads.length}</span>
+            <button className="secondary-button compact-button" type="button" onClick={() => setSquadComposerOpen((open) => !open)} disabled={busy}>
+              {squadComposerOpen ? 'Hide' : 'New Squad'}
+            </button>
           </div>
-          <div className="challenge-invite-picker">
-            <small>Squad members</small>
-            {acceptedFriends.length === 0 ? (
-              <p>No accepted friends yet.</p>
-            ) : (
-              <div>
-                {acceptedFriends.map((friend) => (
-                  <label className="challenge-invite-option" key={friend.userId}>
-                    <input
-                      type="checkbox"
-                      checked={squadMemberIds.includes(friend.userId)}
-                      onChange={() => toggleSquadMember(friend.userId)}
-                    />
-                    <span>{friend.displayName}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          <button className="secondary-button" type="button" onClick={submitSquad} disabled={busy || !squadName.trim() || squadMemberIds.length === 0}>
-            Create Squad
-          </button>
         </div>
         {friendSquads.length === 0 ? (
           <p className="empty-leaderboard">No squads yet. Save a group once, then use it when creating challenges.</p>
@@ -877,6 +857,47 @@ export default function FriendsView({
             ))}
           </div>
         )}
+        <div className="social-create-dock">
+          {!squadComposerOpen && (
+            <button className="secondary-button" type="button" onClick={() => setSquadComposerOpen(true)} disabled={busy}>
+              Create Squad
+            </button>
+          )}
+          {squadComposerOpen && (
+            <div className="challenge-create-panel">
+              <div className="field-grid">
+                <TextField label="Squad name" value={squadName} onChange={setSquadName} />
+              </div>
+              <div className="challenge-invite-picker">
+                <small>Squad members</small>
+                {acceptedFriends.length === 0 ? (
+                  <p>No accepted friends yet.</p>
+                ) : (
+                  <div>
+                    {acceptedFriends.map((friend) => (
+                      <label className="challenge-invite-option" key={friend.userId}>
+                        <input
+                          type="checkbox"
+                          checked={squadMemberIds.includes(friend.userId)}
+                          onChange={() => toggleSquadMember(friend.userId)}
+                        />
+                        <span>{friend.displayName}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="social-create-actions">
+                <button className="secondary-button" type="button" onClick={submitSquad} disabled={busy || !squadName.trim() || squadMemberIds.length === 0}>
+                  Create Squad
+                </button>
+                <button className="ghost-button" type="button" onClick={() => setSquadComposerOpen(false)} disabled={busy}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
         </>
       )}
@@ -889,111 +910,12 @@ export default function FriendsView({
             <p className="eyebrow">Friend challenges</p>
             <h2>Custom competitions</h2>
           </div>
-          <span>{friendChallenges.length}</span>
-        </div>
-        <div className="challenge-join-panel">
-          <div>
-            <small>Join by code</small>
-            <p>Paste a challenge code from the group chat. You still need an invite from the owner.</p>
-          </div>
-          <div>
-            <TextField label="Challenge code" value={challengeJoinCode} onChange={(value) => setChallengeJoinCode(value.toUpperCase())} />
-            <button className="secondary-button compact-button" type="button" onClick={submitChallengeJoinCode} disabled={busy || !challengeJoinCode.trim()}>
-              Join Challenge
+          <div className="section-actions">
+            <span>{friendChallenges.length}</span>
+            <button className="secondary-button compact-button" type="button" onClick={() => setChallengeComposerOpen((open) => !open)} disabled={busy}>
+              {challengeComposerOpen ? 'Hide' : 'New Challenge'}
             </button>
           </div>
-        </div>
-        <div className="challenge-create-panel">
-          <div className="template-picker">
-            <label className="select-field">
-              <span>Template</span>
-              <select value={challengeTemplateId} onChange={(event) => applyChallengeTemplate(event.target.value)}>
-                {CHALLENGE_TEMPLATES.map((template) => (
-                  <option key={template.id} value={template.id}>{template.name}</option>
-                ))}
-              </select>
-            </label>
-            <p>{describeTemplateOverrides(selectedTemplate)}</p>
-          </div>
-          {isIsoDate(challengeStartDate) && isIsoDate(templateEndDate) && (
-            <p className="challenge-template-hint">
-              {selectedTemplate.name} runs {selectedTemplate.durationDays} {selectedTemplate.durationDays === 1 ? 'day' : 'days'}: {formatShortDate(challengeStartDate)} - {formatShortDate(templateEndDate)}. Overlapping challenges are allowed.
-            </p>
-          )}
-          <div className="field-grid">
-            <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
-            <label className="select-field">
-              <span>Scoring</span>
-              <select value={challengeScoringMode} onChange={(event) => setChallengeScoringMode(event.target.value as FriendChallengeScoringMode)}>
-                <option value="shared">Shared rules</option>
-                <option value="personal">Matched metrics</option>
-                <option value="softShared">Soft shared metrics</option>
-                <option value="percentOnly">Percent only</option>
-              </select>
-            </label>
-            <TextField label="Start" type="date" value={challengeStartDate} onChange={updateChallengeStartDate} />
-            <TextField label="End" type="date" value={challengeEndDate} onChange={setChallengeEndDate} />
-          </div>
-          <div className="challenge-rule-picker">
-            <div className="challenge-rule-picker-heading">
-              <div>
-                <small>Challenge rules</small>
-                <p>{challengeScoringMode === 'percentOnly' ? 'No required overlap. Everyone publishes their own percent complete.' : challengeScoringModeDescription(challengeScoringMode)}</p>
-              </div>
-              <strong>{challengeScoringMode === 'percentOnly' ? 'No overlap' : challengeScoringMode === 'softShared' && challengeRuleKeys.length === 0 ? 'Personal goals' : `${challengeRuleKeys.length} selected`}</strong>
-            </div>
-            {challengeScoringMode === 'percentOnly' ? (
-              <p className="empty-leaderboard">Rule selection is skipped for percent-only challenges.</p>
-            ) : (
-              <div className="challenge-rule-options">
-                {availableChallengeRules.map((rule) => (
-                  <label className="challenge-rule-option" key={rule.key}>
-                    <input
-                      type="checkbox"
-                      checked={challengeRuleKeys.includes(rule.key)}
-                      onChange={() => toggleChallengeRule(rule.key)}
-                    />
-                    <span>
-                      <strong>{rule.label}</strong>
-                      <small>{settings.categories.find((category) => category.key === rule.category)?.label ?? rule.category}{rule.key.startsWith('custom-') ? ' · Custom' : ''}</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="challenge-invite-picker">
-            <small>Invite friends</small>
-            {friendSquads.length > 0 && (
-              <div className="squad-shortcuts">
-                {friendSquads.map((squad) => (
-                  <button className="ghost-button" type="button" key={squad.id} onClick={() => applySquadToChallenge(squad)} disabled={busy || squad.members.length === 0}>
-                    Use {squad.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {acceptedFriends.length === 0 ? (
-              <p>No accepted friends yet.</p>
-            ) : (
-              <div>
-                {acceptedFriends.map((friend) => (
-                  <label className="challenge-invite-option" key={friend.userId}>
-                    <input
-                      type="checkbox"
-                      checked={challengeInviteIds.includes(friend.userId)}
-                      onChange={() => toggleChallengeInvite(friend.userId)}
-                    />
-                    <span>{friend.displayName}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          {challengeCreateDisabledReason && <p className="data-status neutral">{challengeCreateDisabledReason}</p>}
-          <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || Boolean(challengeCreateDisabledReason)}>
-            Create Challenge
-          </button>
         </div>
         {selectedChallenge && (
           <FriendChallengeDetail
@@ -1086,6 +1008,124 @@ export default function FriendsView({
             </div>
           </>
         )}
+        <div className="social-create-dock">
+          <div className="challenge-join-panel">
+            <div>
+              <small>Join by code</small>
+              <p>Paste a challenge code from the group chat. You still need an invite from the owner.</p>
+            </div>
+            <div>
+              <TextField label="Challenge code" value={challengeJoinCode} onChange={(value) => setChallengeJoinCode(value.toUpperCase())} />
+              <button className="secondary-button compact-button" type="button" onClick={submitChallengeJoinCode} disabled={busy || !challengeJoinCode.trim()}>
+                Join Challenge
+              </button>
+            </div>
+          </div>
+          {!challengeComposerOpen && (
+            <button className="secondary-button" type="button" onClick={() => setChallengeComposerOpen(true)} disabled={busy}>
+              Create Challenge
+            </button>
+          )}
+          {challengeComposerOpen && (
+            <div className="challenge-create-panel">
+              <div className="template-picker">
+                <label className="select-field">
+                  <span>Template</span>
+                  <select value={challengeTemplateId} onChange={(event) => applyChallengeTemplate(event.target.value)}>
+                    {CHALLENGE_TEMPLATES.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <p>{describeTemplateOverrides(selectedTemplate)}</p>
+              </div>
+              {isIsoDate(challengeStartDate) && isIsoDate(templateEndDate) && (
+                <p className="challenge-template-hint">
+                  {selectedTemplate.name} runs {selectedTemplate.durationDays} {selectedTemplate.durationDays === 1 ? 'day' : 'days'}: {formatShortDate(challengeStartDate)} - {formatShortDate(templateEndDate)}. Overlapping challenges are allowed.
+                </p>
+              )}
+              <div className="field-grid">
+                <TextField label="Challenge name" value={challengeName} onChange={setChallengeName} />
+                <label className="select-field">
+                  <span>Scoring</span>
+                  <select value={challengeScoringMode} onChange={(event) => setChallengeScoringMode(event.target.value as FriendChallengeScoringMode)}>
+                    <option value="shared">Shared rules</option>
+                    <option value="personal">Matched metrics</option>
+                    <option value="softShared">Soft shared metrics</option>
+                    <option value="percentOnly">Percent only</option>
+                  </select>
+                </label>
+                <TextField label="Start" type="date" value={challengeStartDate} onChange={updateChallengeStartDate} />
+                <TextField label="End" type="date" value={challengeEndDate} onChange={setChallengeEndDate} />
+              </div>
+              <div className="challenge-rule-picker">
+                <div className="challenge-rule-picker-heading">
+                  <div>
+                    <small>Challenge rules</small>
+                    <p>{challengeScoringMode === 'percentOnly' ? 'No required overlap. Everyone publishes their own percent complete.' : challengeScoringModeDescription(challengeScoringMode)}</p>
+                  </div>
+                  <strong>{challengeScoringMode === 'percentOnly' ? 'No overlap' : challengeScoringMode === 'softShared' && challengeRuleKeys.length === 0 ? 'Personal goals' : `${challengeRuleKeys.length} selected`}</strong>
+                </div>
+                {challengeScoringMode === 'percentOnly' ? (
+                  <p className="empty-leaderboard">Rule selection is skipped for percent-only challenges.</p>
+                ) : (
+                  <div className="challenge-rule-options">
+                    {availableChallengeRules.map((rule) => (
+                      <label className="challenge-rule-option" key={rule.key}>
+                        <input
+                          type="checkbox"
+                          checked={challengeRuleKeys.includes(rule.key)}
+                          onChange={() => toggleChallengeRule(rule.key)}
+                        />
+                        <span>
+                          <strong>{rule.label}</strong>
+                          <small>{settings.categories.find((category) => category.key === rule.category)?.label ?? rule.category}{rule.key.startsWith('custom-') ? ' · Custom' : ''}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="challenge-invite-picker">
+                <small>Invite friends</small>
+                {friendSquads.length > 0 && (
+                  <div className="squad-shortcuts">
+                    {friendSquads.map((squad) => (
+                      <button className="ghost-button" type="button" key={squad.id} onClick={() => applySquadToChallenge(squad)} disabled={busy || squad.members.length === 0}>
+                        Use {squad.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {acceptedFriends.length === 0 ? (
+                  <p>No accepted friends yet.</p>
+                ) : (
+                  <div>
+                    {acceptedFriends.map((friend) => (
+                      <label className="challenge-invite-option" key={friend.userId}>
+                        <input
+                          type="checkbox"
+                          checked={challengeInviteIds.includes(friend.userId)}
+                          onChange={() => toggleChallengeInvite(friend.userId)}
+                        />
+                        <span>{friend.displayName}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {challengeCreateDisabledReason && <p className="data-status neutral">{challengeCreateDisabledReason}</p>}
+              <div className="social-create-actions">
+                <button className="secondary-button" type="button" onClick={submitChallenge} disabled={busy || Boolean(challengeCreateDisabledReason)}>
+                  Create Challenge
+                </button>
+                <button className="ghost-button" type="button" onClick={() => setChallengeComposerOpen(false)} disabled={busy}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
         </>
       )}
@@ -1492,8 +1532,8 @@ function FriendChallengeCard({
           </button>
         )}
         {challenge.isCreator && (
-          <button className="ghost-button compact-button" type="button" onClick={onDelete} disabled={busy}>
-            Delete
+          <button className="danger-button compact-button" type="button" onClick={onDelete} disabled={busy}>
+            Delete Challenge
           </button>
         )}
       </div>

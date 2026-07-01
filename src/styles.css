@@ -1026,6 +1026,19 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-actions > span {
+  color: var(--accent-text);
+  font-weight: 800;
+}
+
 .rule-list {
   display: grid;
   gap: 8px;
@@ -3401,6 +3414,19 @@ textarea:focus-visible {
 .challenge-create-panel {
   border-color: var(--accent-border);
   background: var(--accent-faint);
+}
+
+.social-create-dock {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.social-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 .challenge-join-panel {
