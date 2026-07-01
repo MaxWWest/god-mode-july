@@ -30,6 +30,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Weight, sleep, calorie, and mood trend charts
 - JSON backup and restore
 - CSV entry export
+- Dashboard CSV export for daily, meal, workout, friend, squad, challenge, and feed rows
 - Supabase email/password auth and cloud sync
 - Multi-device conflict detection and resolution
 - Offline status with retryable cloud and social errors
@@ -137,7 +138,7 @@ Saved foods are stored under this browser key:
 god-mode-july-food-library-v1
 ```
 
-The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Account provides a dedicated setup flow: new users verify one emailed signup link and then create and confirm a password; returning users sign in with email and password. Settings keeps the Push Local and Pull Cloud controls, account data export, and cloud data deletion. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
+The app still works locally when cloud sync is not configured. Once Supabase env vars are present, Account provides a dedicated setup flow: new users verify one emailed signup link and then create and confirm a password; returning users sign in with email and password. Settings keeps the Push Local and Pull Cloud controls, account data export, dashboard CSV export, and cloud data deletion. If this device and the cloud both changed, the app offers options to use cloud, keep local, or merge cloud-only daily entries.
 
 Cloud sync uses the Supabase table in `supabase-schema.sql` when these Vite env vars are configured:
 

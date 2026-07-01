@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { MealLogger, QuickWorkoutLogger } from './components/DailyLoggers'
-import AuthFlow from './components/AuthFlow'
 import type { AuthEmailPurpose, AuthFlowMode } from './components/AuthFlow'
 import { passwordPairError } from './auth'
 import { loadFromStorage, saveToStorage } from './storage'
@@ -134,6 +133,7 @@ const CheckInView = lazy(() => import('./features/CheckInView'))
 const FriendsView = lazy(() => import('./features/FriendsView'))
 const ProgressView = lazy(() => import('./features/ProgressView'))
 const SettingsView = lazy(() => import('./features/SettingsView'))
+const AuthFlow = lazy(() => import('./components/AuthFlow'))
 
 const ENTRIES_STORAGE_KEY = 'god-mode-july-entries-v1'
 const SETTINGS_STORAGE_KEY = 'god-mode-july-settings-v1'
@@ -1259,6 +1259,23 @@ function App() {
       setCloudStatus({ tone: 'success', message: 'Account data export downloaded.' })
     } catch (error) {
       setCloudStatus(serviceErrorStatus(error, 'Could not export account data.'))
+    } finally {
+      setCloudBusy(false)
+    }
+  }
+
+  async function exportDashboardCsv() {
+    if (!supabase || !user) return
+
+    setCloudBusy(true)
+    try {
+      const payload = await buildAccountDataExport()
+      const { accountDataToDashboardCsv } = await import('./dashboardExport')
+      const filename = `${sanitizeFilenamePart(settings.title)}-${todayIso()}-dashboard.csv`
+      downloadTextFile(filename, 'text/csv;charset=utf-8', accountDataToDashboardCsv(payload))
+      setCloudStatus({ tone: 'success', message: 'Dashboard CSV export downloaded.' })
+    } catch (error) {
+      setCloudStatus(serviceErrorStatus(error, 'Could not export dashboard CSV.'))
     } finally {
       setCloudBusy(false)
     }
@@ -2435,6 +2452,7 @@ function App() {
               onPullCloud={pullCloudData}
               onRetryCloud={retryCloudConnection}
               onExportAccountData={exportAccountData}
+              onExportDashboardCsv={exportDashboardCsv}
               onDeleteCloudAccountData={deleteCloudAccountData}
               onUseCloudVersion={useCloudConflictVersion}
               onKeepLocalVersion={keepLocalConflictVersion}
@@ -2461,29 +2479,31 @@ function App() {
         </div>
       )}
       {authReady && authFlowOpen && (
-        <AuthFlow
-          mode={authFlowMode}
-          emailPurpose={authEmailPurpose}
-          user={user}
-          email={authEmail}
-          password={authPassword}
-          passwordConfirmation={authPasswordConfirmation}
-          status={authStatus}
-          busy={cloudBusy}
-          online={isOnline}
-          passwordSetupRequired={passwordSetupRequired}
-          onModeChange={changeAuthFlowMode}
-          onEmailChange={setAuthEmail}
-          onPasswordChange={setAuthPassword}
-          onPasswordConfirmationChange={setAuthPasswordConfirmation}
-          onSignIn={signInWithPassword}
-          onSendSignupLink={sendSignupLink}
-          onSendPasswordReset={sendPasswordReset}
-          onSetPassword={setAccountPassword}
-          onSignOut={signOut}
-          onContinueLocal={closeAuthFlow}
-          onClose={closeAuthFlow}
-        />
+        <Suspense fallback={null}>
+          <AuthFlow
+            mode={authFlowMode}
+            emailPurpose={authEmailPurpose}
+            user={user}
+            email={authEmail}
+            password={authPassword}
+            passwordConfirmation={authPasswordConfirmation}
+            status={authStatus}
+            busy={cloudBusy}
+            online={isOnline}
+            passwordSetupRequired={passwordSetupRequired}
+            onModeChange={changeAuthFlowMode}
+            onEmailChange={setAuthEmail}
+            onPasswordChange={setAuthPassword}
+            onPasswordConfirmationChange={setAuthPasswordConfirmation}
+            onSignIn={signInWithPassword}
+            onSendSignupLink={sendSignupLink}
+            onSendPasswordReset={sendPasswordReset}
+            onSetPassword={setAccountPassword}
+            onSignOut={signOut}
+            onContinueLocal={closeAuthFlow}
+            onClose={closeAuthFlow}
+          />
+        </Suspense>
       )}
       {showTutorial && authReady && !authFlowOpen && (
         <TutorialOverlay

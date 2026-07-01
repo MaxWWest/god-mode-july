@@ -42,6 +42,7 @@ import type {
   FriendEvent,
   FriendEventComment,
   FriendEventReaction,
+  FriendProfile,
   FriendSquad,
   FriendSquadMember,
   FriendshipRow,
@@ -95,6 +96,19 @@ export async function buildAccountDataExport(
   const challengeData = await loadChallengeExportData(client, user.id)
   const squadData = await loadSquadExportData(client, user.id)
   const eventData = await loadEventExportData(client, user.id)
+  const friendProfiles = await loadProfileExportData(client, collectVisibleProfileIds({
+    userId: user.id,
+    friendships: (friendshipResult.data ?? [])
+      .map(normalizeFriendshipRow)
+      .filter((row): row is FriendshipRow => row !== null),
+    challenges: challengeData.challenges,
+    participants: challengeData.participants,
+    squads: squadData.squads,
+    squadMembers: squadData.members,
+    events: eventData.events,
+    comments: eventData.comments,
+    reactions: eventData.reactions,
+  }))
 
   return {
     app: 'god-mode-july',
@@ -105,6 +119,7 @@ export async function buildAccountDataExport(
     cloud: {
       snapshot: normalizeCloudSnapshot(snapshotResult.data),
       profile: normalizeFriendProfileRow(profileResult.data),
+      friendProfiles,
       friendships: (friendshipResult.data ?? [])
         .map(normalizeFriendshipRow)
         .filter((row): row is FriendshipRow => row !== null),
@@ -119,6 +134,62 @@ export async function buildAccountDataExport(
       friendEventReactions: eventData.reactions,
     },
   }
+}
+
+function collectVisibleProfileIds({
+  userId,
+  friendships,
+  challenges,
+  participants,
+  squads,
+  squadMembers,
+  events,
+  comments,
+  reactions,
+}: {
+  userId: string
+  friendships: FriendshipRow[]
+  challenges: FriendChallenge[]
+  participants: FriendChallengeParticipant[]
+  squads: FriendSquad[]
+  squadMembers: FriendSquadMember[]
+  events: FriendEvent[]
+  comments: FriendEventComment[]
+  reactions: FriendEventReaction[]
+}): string[] {
+  const ids = new Set<string>([userId])
+  for (const friendship of friendships) {
+    ids.add(friendship.userA)
+    ids.add(friendship.userB)
+    ids.add(friendship.createdBy)
+    ids.add(friendship.requestedBy)
+  }
+  for (const challenge of challenges) ids.add(challenge.creatorId)
+  for (const participant of participants) {
+    ids.add(participant.userId)
+    ids.add(participant.invitedBy)
+  }
+  for (const squad of squads) ids.add(squad.ownerId)
+  for (const member of squadMembers) {
+    ids.add(member.userId)
+    ids.add(member.addedBy)
+  }
+  for (const event of events) {
+    ids.add(event.actorId)
+    if (event.targetUserId) ids.add(event.targetUserId)
+  }
+  for (const comment of comments) ids.add(comment.userId)
+  for (const reaction of reactions) ids.add(reaction.userId)
+  return Array.from(ids)
+}
+
+async function loadProfileExportData(client: SupabaseClient, userIds: string[]): Promise<FriendProfile[]> {
+  if (userIds.length === 0) return []
+  const { data, error } = await client.from(SUPABASE_PROFILE_TABLE)
+    .select('user_id, display_name, invite_code')
+    .in('user_id', userIds)
+  if (error) throw error
+  return (data ?? []).map(normalizeFriendProfileRow).filter((row): row is FriendProfile => row !== null)
 }
 
 async function loadChallengeExportData(client: SupabaseClient, userId: string) {

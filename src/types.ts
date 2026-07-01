@@ -178,6 +178,7 @@ export type AccountDataExport = {
   cloud: {
     snapshot: CloudSnapshot | null
     profile: FriendProfile | null
+    friendProfiles: FriendProfile[]
     friendships: FriendshipRow[]
     summary: ChallengeSummary | null
     friendChallenges: FriendChallenge[]

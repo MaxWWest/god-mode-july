@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_PRIVACY_SETTINGS,
   DEFAULT_SETTINGS,
   buildDailyShareText,
   completionStats,
@@ -19,6 +20,8 @@ import {
   normalizeSettings,
   ruleComplete,
 } from './tracker'
+import { accountDataToDashboardCsv } from './dashboardExport'
+import type { AccountDataExport } from './types'
 
 describe('tracker scoring', () => {
   it('weights non-negotiable rules twice as much as supporting rules', () => {
@@ -245,6 +248,51 @@ describe('tracker scoring', () => {
     expect(shareText).toContain('Meals:\n- Dinner: Chicken bowl')
     expect(shareText).toContain('Exercises:\n- Strength 90 min')
     expect(shareText).toContain('Time day completed:')
+  })
+
+  it('exports dashboard-friendly CSV rows across local and social data', () => {
+    const settings = normalizeSettings({ ...DEFAULT_SETTINGS, startDate: '2026-07-01', endDate: '2026-07-31' })
+    const entry = {
+      ...makeEmptyEntry('2026-07-01'),
+      finalizedAt: '2026-07-01T23:00:00.000Z',
+      workouts: [{ id: 'lift', type: 'Strength', minutes: 45 }],
+      foods: [{ id: 'beer', meal: 'dinner' as const, name: 'Beer', calories: 150, proteinGrams: 1, carbsGrams: 12, fatGrams: 0, sodiumMg: 10, categories: ['alcohol' as const] }],
+      calories: 150,
+      proteinGrams: 1,
+      sober: false,
+    }
+    const payload: AccountDataExport = {
+      app: 'god-mode-july',
+      exportType: 'account-data',
+      exportedAt: '2026-07-02T00:00:00.000Z',
+      user: { id: 'user-1', email: 'max@example.com' },
+      local: { settings, entries: { [entry.date]: entry }, privacy: DEFAULT_PRIVACY_SETTINGS },
+      cloud: {
+        snapshot: null,
+        profile: { userId: 'user-1', displayName: 'Max', inviteCode: 'GM-MAX' },
+        friendProfiles: [{ userId: 'friend-1', displayName: 'Cole', inviteCode: 'GM-COLE' }],
+        friendships: [{ userA: 'user-1', userB: 'friend-1', createdBy: 'user-1', requestedBy: 'user-1', status: 'accepted', createdAt: '2026-07-01T12:00:00.000Z', respondedAt: '2026-07-01T12:05:00.000Z' }],
+        summary: null,
+        friendChallenges: [{ id: 'challenge-1', creatorId: 'user-1', name: 'July Sprint', startDate: '2026-07-01', endDate: '2026-07-30', scoringMode: 'softShared', settings, createdAt: '2026-07-01T12:00:00.000Z', updatedAt: '2026-07-01T12:00:00.000Z' }],
+        friendChallengeParticipants: [{ challengeId: 'challenge-1', userId: 'friend-1', invitedBy: 'user-1', status: 'accepted', summary: null, createdAt: '2026-07-01T12:00:00.000Z', respondedAt: '2026-07-01T12:10:00.000Z' }],
+        challengeScoreSnapshots: [{ challengeId: 'challenge-1', userId: 'friend-1', date: '2026-07-01', completionPercent: 88, completedRules: 7, totalRules: 8, publishedAt: '2026-07-01T23:15:00.000Z' }],
+        friendSquads: [],
+        friendSquadMembers: [],
+        friendEvents: [{ id: 'event-1', actorId: 'friend-1', targetUserId: 'user-1', challengeId: 'challenge-1', squadId: null, eventType: 'challenge_score_published', metadata: { challengeName: 'July Sprint' }, createdAt: '2026-07-01T23:15:00.000Z', comments: [], reactions: [] }],
+        friendEventComments: [],
+        friendEventReactions: [],
+      },
+    }
+
+    const csv = accountDataToDashboardCsv(payload)
+
+    expect(csv).toContain('daily_completion,2026-07-01,user-1,max@example.com,Max')
+    expect(csv).toContain('daily_workout,2026-07-01,user-1,max@example.com,Max')
+    expect(csv).toContain('food_calories,150,kcal,Dinner: Beer (alcohol)')
+    expect(csv).toContain('challenge,2026-07-01,user-1,,Max,challenge-1,July Sprint')
+    expect(csv).toContain('challenge_participant_summary,,friend-1,,Cole,challenge-1,July Sprint')
+    expect(csv).toContain('challenge_score,2026-07-01,friend-1,,Cole,challenge-1,July Sprint')
+    expect(csv).toContain('friend_event,2026-07-01,friend-1,,Cole,challenge-1,July Sprint')
   })
 })
 

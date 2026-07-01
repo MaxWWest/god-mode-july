@@ -83,6 +83,7 @@ export default function SettingsView({
   onPullCloud,
   onRetryCloud,
   onExportAccountData,
+  onExportDashboardCsv,
   onDeleteCloudAccountData,
   onUseCloudVersion,
   onKeepLocalVersion,
@@ -109,6 +110,7 @@ export default function SettingsView({
   onPullCloud: () => void
   onRetryCloud: () => void
   onExportAccountData: () => void
+  onExportDashboardCsv: () => void
   onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
   onKeepLocalVersion: () => void
@@ -296,6 +298,7 @@ export default function SettingsView({
               configured={cloudConfigured} user={user} status={cloudStatus} busy={cloudBusy} online={online}
               updatedAt={cloudUpdatedAt} conflict={syncConflict} onOpenAccount={onOpenAccount} onPushCloud={onPushCloud}
               onPullCloud={onPullCloud} onRetryCloud={onRetryCloud} onExportAccountData={onExportAccountData}
+              onExportDashboardCsv={onExportDashboardCsv}
               onDeleteCloudAccountData={onDeleteCloudAccountData} onUseCloudVersion={onUseCloudVersion}
               onKeepLocalVersion={onKeepLocalVersion} onMergeCloudEntries={onMergeCloudEntries}
               onDismissConflict={onDismissConflict}
@@ -435,6 +438,7 @@ function CloudSyncPanel({
   onPullCloud,
   onRetryCloud,
   onExportAccountData,
+  onExportDashboardCsv,
   onDeleteCloudAccountData,
   onUseCloudVersion,
   onKeepLocalVersion,
@@ -453,6 +457,7 @@ function CloudSyncPanel({
   onPullCloud: () => void
   onRetryCloud: () => void
   onExportAccountData: () => void
+  onExportDashboardCsv: () => void
   onDeleteCloudAccountData: () => void
   onUseCloudVersion: () => void
   onKeepLocalVersion: () => void
@@ -523,6 +528,9 @@ function CloudSyncPanel({
             <div className="account-data-actions">
               <button className="secondary-button" type="button" onClick={onExportAccountData} disabled={busy || !online}>
                 Export Account Data
+              </button>
+              <button className="secondary-button" type="button" onClick={onExportDashboardCsv} disabled={busy || !online}>
+                Export Dashboard CSV
               </button>
               <button className="danger-button" type="button" onClick={onDeleteCloudAccountData} disabled={busy || !online}>
                 Delete Cloud Data
