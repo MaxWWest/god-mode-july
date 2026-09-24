@@ -1867,6 +1867,175 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.daily-dashboard {
+  gap: 16px;
+}
+
+.daily-status-strip {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: center;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.daily-status-strip h2,
+.finish-day-panel h2 {
+  margin: 2px 0 0;
+  font-size: 1.35rem;
+}
+
+.daily-status-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(112px, 0.8fr);
+  gap: 8px;
+}
+
+.daily-status-metrics span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border-left: 1px solid var(--line);
+}
+
+.daily-status-metrics small,
+.finish-day-panel p,
+.activity-detail-note {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.daily-status-metrics strong {
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+}
+
+.daily-status-metrics .daily-percent {
+  align-content: center;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: var(--accent-faint);
+  text-align: center;
+}
+
+.daily-status-metrics .daily-percent strong {
+  color: var(--accent-text-strong);
+  font-size: 1.25rem;
+}
+
+.daily-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(330px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.daily-food-panel,
+.daily-side-stack,
+.daily-activity-panel,
+.daily-goals-panel,
+.daily-goal-groups,
+.daily-goal-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.daily-side-stack {
+  gap: 16px;
+}
+
+.daily-activity-panel .section-heading,
+.daily-goals-panel .section-heading,
+.daily-food-panel .section-heading {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.activity-quick-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.daily-activity-panel .check-field {
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.daily-activity-panel .ghost-button {
+  justify-self: start;
+}
+
+.activity-detail-note {
+  margin: 0;
+}
+
+.daily-goal-group {
+  gap: 7px;
+}
+
+.daily-goal-group h3 {
+  margin: 0;
+  padding: 0 2px 6px;
+  border-bottom: 2px solid var(--accent-border);
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.daily-goal-group.goal-diet h3 {
+  border-color: rgba(87, 217, 121, 0.45);
+}
+
+.daily-goal-group.goal-mental h3 {
+  border-color: var(--accent-border-strong);
+}
+
+.daily-goal-group.goal-misc h3 {
+  border-color: rgba(255, 192, 74, 0.45);
+}
+
+.daily-goal-group .rule-list {
+  gap: 6px;
+}
+
+.daily-goal-group .rule-row {
+  min-height: 54px;
+  padding: 9px 10px;
+}
+
+.finish-day-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(300px, 1.35fr) auto;
+  gap: 18px;
+  align-items: end;
+  border-color: var(--accent-border);
+}
+
+.finish-day-panel p {
+  margin: 5px 0 0;
+}
+
+.finish-day-panel .text-area-field textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.finish-day-panel .day-action-row {
+  margin: 0;
+  align-self: end;
+}
+
 .quick-start-panel {
   display: grid;
   gap: 12px;
@@ -4454,6 +4623,25 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .daily-status-strip,
+  .daily-dashboard-grid,
+  .finish-day-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-status-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .daily-status-metrics span {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .finish-day-panel .day-action-row {
+    width: 100%;
+  }
+
   .cut-progress-heading,
   .cut-weight-flow,
   .cut-dashboard-stats,

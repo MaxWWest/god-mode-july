@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { MealLogger, QuickWorkoutLogger } from './components/DailyLoggers'
+import { MealLogger } from './components/DailyLoggers'
 import type { AuthEmailPurpose, AuthFlowMode } from './components/AuthFlow'
 import { passwordPairError } from './auth'
 import { loadFromStorage, saveToStorage } from './storage'
@@ -140,6 +140,7 @@ import {
   CheckField,
   NavButton,
   NumberField,
+  TextArea,
 } from './ui'
 
 const CheckInView = lazy(() => import('./features/CheckInView'))
@@ -2325,16 +2326,13 @@ function App() {
         {view === 'home' && (
           <Dashboard
             entry={entry}
-            entries={entries}
             selectedDate={selectedDate}
             previousFoods={previousFoods}
             settings={settings}
             completed={stats.completed}
             totalRules={stats.total}
             percent={stats.percent}
-            latestWeight={latestWeight}
             isFinalized={entryFinalized}
-            quickStartItems={quickStartItems}
             foodLibrary={foodLibrary}
             onToggleRule={toggleRule}
             onUpdate={updateEntryIfUnlocked}
@@ -2642,14 +2640,12 @@ function TutorialOverlay({
 
 function Dashboard({
   entry,
-  entries,
   selectedDate,
   previousFoods,
   settings,
   completed,
   totalRules,
   percent,
-  latestWeight,
   isFinalized,
   onToggleRule,
   onUpdate,
@@ -2661,20 +2657,16 @@ function Dashboard({
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
-  quickStartItems,
   foodLibrary,
 }: {
   entry: DailyEntry
-  entries: EntryMap
   selectedDate: string
   previousFoods: FoodLog[]
   settings: ChallengeSettings
   completed: number
   totalRules: number
   percent: number
-  latestWeight: number | undefined
   isFinalized: boolean
-  quickStartItems: QuickStartItem[]
   foodLibrary: FoodLibraryItem[]
   onToggleRule: (key: RuleKey) => void
   onUpdate: (patch: Partial<DailyEntry>) => void
@@ -2688,121 +2680,46 @@ function Dashboard({
   onShareDay: () => void
 }) {
   const activeRules = getEnabledRules(settings, selectedDate)
-  const exerciseRules = getEnabledRules(settings).filter((rule) => rule.category === 'exercise' && rule.exercise)
-  const todayExerciseRules = activeRules.filter((rule) => rule.category === 'exercise' && rule.exercise)
-  const nextExercise = exerciseRules
-    .map((rule) => ({ rule, date: getNextExerciseDate(rule, selectedDate, settings) }))
-    .filter((item): item is { rule: RuleConfig; date: string } => item.date !== null)
-    .sort((a, b) => a.date.localeCompare(b.date))[0]
-  const weightPoints = calculateRollingWeightAverage(entries, selectedDate)
-  const currentTrendPounds = weightPoints[weightPoints.length - 1]?.rollingAverage ?? entry.weightPounds ?? null
-  const cutProgress = calculateProgressToCheckpoint(settings, currentTrendPounds)
-  const weeklyCut = buildWeeklyCutSummary(entries, settings, selectedDate)
-  const cutStatus = getCutStatus(entries, settings, selectedDate)
-  const lossRate = calculateWeightLossRate(entries, selectedDate)
   const adherence = calculateAdherenceScore(entry, settings)
   const coreThree = calculateCoreThreeCompliance(entry, settings)
-  const weightUnit = settings.targets.weightUnit
-  const formatWeight = (value: number | null) => value === null ? '—' : `${poundsToDisplay(value, weightUnit).toFixed(1)} ${weightUnit}`
+  const runningWorkout = (entry.workouts ?? []).find((workout) => workout.id === 'home-running')
+  const runningMinutes = runningWorkout?.minutes ?? null
+  const visibleRules = activeRules.filter((rule) => rule.category !== 'exercise')
+  const goalGroups = [
+    { key: 'diet', label: 'Diet', rules: visibleRules.filter((rule) => rule.category === 'diet') },
+    { key: 'mental', label: 'Mental', rules: visibleRules.filter((rule) => rule.category === 'mental') },
+    { key: 'misc', label: 'Misc', rules: visibleRules.filter((rule) => !['diet', 'mental'].includes(rule.category)) },
+  ].filter((group) => group.rules.length > 0)
+
+  function updateRunningMinutes(minutes: number | null) {
+    const otherWorkouts = (entry.workouts ?? []).filter((workout) => workout.id !== 'home-running')
+    const workouts = normalizeWorkoutLogs(minutes && minutes > 0
+      ? [...otherWorkouts, { id: 'home-running', type: 'Run', minutes, notes: 'Quick logged from Home' }]
+      : otherWorkouts)
+    onUpdate({ workouts, exerciseMinutes: workoutMinutesTotal(workouts) })
+  }
 
   return (
-    <div className="page-stack">
-      <section className={`panel cut-progress-panel status-${cutStatus.tone}`}>
-        <div className="cut-progress-heading">
-          <div>
-            <p className="eyebrow">God Mode · Cut phase</p>
-            <h2>Cut Progress</h2>
-          </div>
-          <span className="cut-status-pill">{cutStatus.label}</span>
-        </div>
-        <div className="cut-weight-flow">
-          <span><small>Start</small><strong>{formatWeight(settings.targets.startingWeightPounds)}</strong></span>
-          <i aria-hidden="true">›</i>
-          <span><small>Current trend</small><strong>{formatWeight(currentTrendPounds)}</strong></span>
-          <i aria-hidden="true">›</i>
-          <span><small>Checkpoint #1</small><strong>{formatWeight(settings.targets.checkpointWeightsPounds[0])}</strong></span>
-        </div>
-        <div className="cut-progress-track" aria-label={`${cutProgress.percent}% to checkpoint`}><span style={{ width: `${cutProgress.percent}%` }} /></div>
-        <div className="cut-dashboard-stats">
-          <span><small>This week</small><strong>{weeklyCut.weightChange === null ? 'More data' : `${weeklyCut.weightChange > 0 ? '+' : ''}${weeklyCut.weightChange.toFixed(1)} lb`}</strong></span>
-          <span><small>Rate</small><strong>{lossRate.percentPerWeek === null ? 'More data' : `${lossRate.percentPerWeek.toFixed(2)}% / wk`}</strong></span>
-          <span><small>Core Three</small><strong>{weeklyCut.coreThreeDays} / {weeklyCut.elapsedDays} days</strong></span>
-          <span><small>Today</small><strong>{adherence}% adherence</strong></span>
-        </div>
-        <p className="cut-status-copy">{cutStatus.message}</p>
-      </section>
-
-      <section className="hero-card">
-        <div className="hero-copy">
+    <div className="page-stack daily-dashboard">
+      <section className="daily-status-strip" aria-label="Today's progress">
+        <div>
           <p className="eyebrow">{formatDate(selectedDate)}</p>
-          <h2>{isFinalized ? 'Day finalized.' : percent === 100 ? 'God mode secured.' : 'Build the day.'}</h2>
-          <p>{completed} of {totalRules} rules complete{isFinalized && entry.finalizedAt ? ` · ${formatDateTime(entry.finalizedAt)}` : ''}</p>
+          <h2>{isFinalized ? 'Day complete' : 'Today'}</h2>
         </div>
-        <div className="progress-ring" style={{ '--progress': `${percent * 3.6}deg` } as CSSProperties}>
-          <div>
-            <strong>{percent}%</strong>
-            <span>today</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="stats-grid" aria-label="Tracker summary">
-        <StatCard label="Current streak" value={`${currentStreak(entries, selectedDate, settings)} days`} icon="🔥" />
-        <StatCard label="Longest streak" value={`${longestStreak(entries, settings)} days`} icon="🏆" />
-        <StatCard label="Latest weight" value={latestWeight ? `${latestWeight.toFixed(1)} lb` : '—'} icon="◒" />
-      </section>
-
-      <section className="panel today-cut-card">
-        <div className="section-heading"><div><p className="eyebrow">Today</p><h2>Core inputs</h2></div><strong>{coreThree.complete ? 'CORE THREE COMPLETE' : `${adherence}%`}</strong></div>
-        <div className="today-cut-grid">
-          <span><small>Weight</small><strong>{formatWeight(entry.weightPounds)}</strong></span>
-          <span><small>Calories</small><strong>{entry.calories === null ? '—' : `${Math.round(entry.calories)} / ${settings.targets.calories}`}</strong></span>
-          <span><small>Protein</small><strong>{entry.proteinGrams === null ? '—' : `${Math.round(entry.proteinGrams)} / ${settings.targets.proteinGrams} g`}</strong></span>
-          <span><small>Steps</small><strong>{entry.steps === null ? '—' : `${entry.steps.toLocaleString()} / ${settings.targets.steps.toLocaleString()}`}</strong></span>
-          <span><small>Workout</small><strong>{entry.plannedWorkoutCompleted === null ? '—' : entry.plannedWorkoutCompleted ? 'Plan complete' : 'Not complete'}</strong></span>
-          <span><small>Sleep</small><strong>{entry.sleepHours === null ? '—' : `${entry.sleepHours} / ${settings.targets.sleepHours} hr`}</strong></span>
-        </div>
-        <div className="field-grid home-cut-inputs">
-          <NumberField disabled={isFinalized} label="Morning weight" value={entry.weightPounds === null ? null : poundsToDisplay(entry.weightPounds, weightUnit)} min={weightUnit === 'kg' ? 25 : 50} max={weightUnit === 'kg' ? 320 : 700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value === null ? null : displayWeightToPounds(value, weightUnit) })} suffix={weightUnit} />
-          <NumberField disabled={isFinalized} label="Steps" value={entry.steps} min={0} max={200000} step={100} onChange={(value) => onUpdate({ steps: value })} suffix="steps" />
-          <NumberField disabled={isFinalized} label="Sleep" value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
-          <CheckField disabled={isFinalized} label="Planned training or recovery complete" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
+        <div className="daily-status-metrics">
+          <span><small>Rules</small><strong>{completed}/{totalRules}</strong></span>
+          <span><small>Adherence</small><strong>{adherence}%</strong></span>
+          <span><small>Core Three</small><strong>{coreThree.complete ? 'Complete' : 'In progress'}</strong></span>
+          <span className="daily-percent"><strong>{percent}%</strong><small>day complete</small></span>
         </div>
       </section>
 
-      <QuickStartChecklist items={quickStartItems} />
-
-      {exerciseRules.length > 0 && todayExerciseRules.length === 0 && (
-        <section className="rest-day-banner home-rest-day" aria-label="Exercise rest day">
-          <span aria-hidden="true">◒</span>
-          <div>
-            <strong>Exercise recovery day</strong>
-            <small>{nextExercise ? `Next planned: ${nextExercise.rule.label} on ${formatShortDate(nextExercise.date)}.` : 'No upcoming training day is scheduled.'} Optional movement can still be logged in Check-In.</small>
+      <div className="daily-dashboard-grid">
+        <section className="panel daily-food-panel">
+          <div className="section-heading">
+            <div><p className="eyebrow">Food</p><h2>Meals</h2></div>
+            <span>{entry.foods?.length ?? 0} items logged</span>
           </div>
-        </section>
-      )}
-
-      <section className="panel quick-log-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Log the inputs</p>
-            <h2>Meals + Workouts</h2>
-          </div>
-        </div>
-        <div className="quick-log-section">
-          <div className="quick-log-heading"><strong>Workout</strong><span>{entry.exerciseMinutes} min logged</span></div>
-          <QuickWorkoutLogger
-            workouts={entry.workouts ?? []}
-            disabled={isFinalized}
-            plannedType={todayExerciseRules[0]?.exercise?.workoutType}
-            onChange={(nextWorkouts) => {
-              const workouts = normalizeWorkoutLogs(nextWorkouts)
-              onUpdate({ workouts, exerciseMinutes: workoutMinutesTotal(workouts) })
-            }}
-          />
-        </div>
-        <div className="quick-log-section">
-          <div className="quick-log-heading"><strong>Meals</strong><span>{entry.foods?.length ?? 0} items logged</span></div>
           <MealLogger
             foods={entry.foods ?? []}
             foodLibrary={foodLibrary}
@@ -2814,73 +2731,52 @@ function Dashboard({
             onUseFoodFromLibrary={onUseFoodFromLibrary}
             onToggleFoodFavorite={onToggleFoodFavorite}
           />
-        </div>
-      </section>
+        </section>
 
-      <section className="panel rules-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Daily standards</p>
-            <h2>Today’s Rules</h2>
-          </div>
-          <span>{completed}/{totalRules}</span>
-        </div>
+        <aside className="daily-side-stack">
+          <section className="panel daily-activity-panel">
+            <div className="section-heading"><div><p className="eyebrow">Movement</p><h2>Activity</h2></div><span>{entry.exerciseMinutes} min</span></div>
+            <div className="activity-quick-fields">
+              <NumberField disabled={isFinalized} label="Steps" value={entry.steps} min={0} max={200000} step={100} onChange={(value) => onUpdate({ steps: value })} suffix="steps" />
+              <NumberField disabled={isFinalized} label="Running time" value={runningMinutes} min={0} max={1440} step={5} onChange={updateRunningMinutes} suffix="min" />
+            </div>
+            <CheckField disabled={isFinalized} label="Planned activity complete" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
+            {(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length > 0 && (
+              <p className="activity-detail-note">{(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length} detailed workout{(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length === 1 ? '' : 's'} also logged in Check-In.</p>
+            )}
+            <button className="ghost-button compact-button" type="button" onClick={onOpenCheckIn}>Edit detailed exercise</button>
+          </section>
 
-        <div className="rule-list">
-          {activeRules.map((rule) => {
-            const isComplete = ruleComplete(entry, rule.key, settings)
-            const detail = ruleDetail(rule, entry, settings)
+          <section className="panel daily-goals-panel">
+            <div className="section-heading"><div><p className="eyebrow">Daily standards</p><h2>Goals</h2></div><span>{completed}/{totalRules}</span></div>
+            <div className="daily-goal-groups">
+              {goalGroups.map((group) => (
+                <section className={`daily-goal-group goal-${group.key}`} key={group.key}>
+                  <h3>{group.label}</h3>
+                  <div className="rule-list">
+                    {group.rules.map((rule) => {
+                      const isComplete = ruleComplete(entry, rule.key, settings)
+                      const detail = ruleDetail(rule, entry, settings)
+                      const requiresLog = Boolean(rule.diet)
+                      const content = <><span className="rule-icon">{rule.icon}</span><span className="rule-label"><strong>{rule.label}</strong><small>{detail ?? (rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting')}</small></span><span className="rule-check" aria-label={isComplete ? 'Complete' : 'Incomplete'}>{isComplete ? '✓' : ''}</span></>
+                      return requiresLog
+                        ? <article className={`rule-row tracked-rule-row ${isComplete ? 'is-complete' : ''}`} key={rule.key}>{content}</article>
+                        : <button className={`rule-row ${isComplete ? 'is-complete' : ''}`} type="button" key={rule.key} onClick={() => onToggleRule(rule.key)} disabled={isFinalized}>{content}</button>
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        </aside>
+      </div>
 
-            const requiresLog = Boolean(rule.exercise || rule.diet)
-            const content = (
-              <>
-                <span className="rule-icon">{rule.icon}</span>
-                <span className="rule-label">
-                  <strong>{rule.label}</strong>
-                  <small>{detail ?? (rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting')}</small>
-                </span>
-                <span className="rule-check" aria-label={isComplete ? 'Complete' : 'Incomplete'}>
-                  {isComplete ? '✓' : ''}
-                </span>
-              </>
-            )
-
-            return requiresLog ? (
-              <article className={`rule-row tracked-rule-row ${isComplete ? 'is-complete' : ''}`} key={rule.key}>
-                {content}
-              </article>
-            ) : (
-              <button
-                className={`rule-row ${isComplete ? 'is-complete' : ''}`}
-                type="button"
-                key={rule.key}
-                onClick={() => onToggleRule(rule.key)}
-                disabled={isFinalized}
-              >
-                {content}
-              </button>
-            )
-          })}
-        </div>
-
+      <section className="panel finish-day-panel">
+        <div><p className="eyebrow">Finish & Share</p><h2>{isFinalized ? 'Your day is published.' : 'Ready to lock it in?'}</h2><p>{isFinalized && entry.finalizedAt ? `Completed ${formatDateTime(entry.finalizedAt)}` : 'Review the details, leave a note, then finalize when the day is done.'}</p></div>
+        <TextArea disabled={isFinalized} label="Daily comment" value={entry.wentWell} placeholder="A win, lesson, or note for the group chat..." onChange={(wentWell) => onUpdate({ wentWell })} />
         <div className={`day-action-row ${isFinalized ? 'is-finalized' : ''}`}>
-          <button className="primary-button" type="button" onClick={onOpenCheckIn}>
-            Open full check-in
-          </button>
-          {isFinalized ? (
-            <>
-              <button className="secondary-button" type="button" onClick={onShareDay}>
-                Share Day
-              </button>
-              <button className="secondary-button" type="button" onClick={onUnlockDay}>
-                Unlock Day
-              </button>
-            </>
-          ) : (
-            <button className="secondary-button" type="button" onClick={onFinalizeDay}>
-              Finalize Day
-            </button>
-          )}
+          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Open full check-in</button>
+          {isFinalized ? <><button className="primary-button" type="button" onClick={onShareDay}>Share Day</button><button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock Day</button></> : <button className="primary-button" type="button" onClick={onFinalizeDay}>Finish Day</button>}
         </div>
       </section>
     </div>

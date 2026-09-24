@@ -83,8 +83,8 @@ test('custom text fields allow deletion and spaces before committing', async ({ 
 test('numeric fields allow deletion before entering replacement values', async ({ page }) => {
   await openFreshApp(page)
 
-  const workoutDuration = page.getByRole('spinbutton', { name: 'Duration min', exact: true })
-  await expect(workoutDuration).toHaveValue('30')
+  const workoutDuration = page.getByRole('spinbutton', { name: 'Running time min', exact: true })
+  await expect(workoutDuration).toHaveValue('')
   await workoutDuration.fill('')
   await expect(workoutDuration).toHaveValue('')
   await workoutDuration.type('45')
@@ -107,11 +107,11 @@ test('numeric fields allow deletion before entering replacement values', async (
   await expect(sleepTarget).toHaveValue('7.5')
 })
 
-test('cut dashboard stays within common phone, tablet, and desktop widths', async ({ page }) => {
+test('daily dashboard stays within common phone, tablet, and desktop widths', async ({ page }) => {
   await openFreshApp(page)
   for (const width of [375, 390, 430, 768, 1440]) {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
-    await expect(page.getByRole('heading', { name: 'Cut Progress', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Meals', exact: true })).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1)
   }
