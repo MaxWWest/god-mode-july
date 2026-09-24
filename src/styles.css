@@ -117,10 +117,10 @@ textarea:focus-visible {
 }
 
 .app-shell {
-  width: min(100%, 760px);
+  width: min(100%, 1240px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: env(safe-area-inset-top) 18px calc(96px + env(safe-area-inset-bottom));
+  padding: env(safe-area-inset-top) 24px calc(96px + env(safe-area-inset-bottom));
 }
 
 .topbar {
@@ -1931,8 +1931,8 @@ textarea:focus-visible {
 
 .daily-dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(330px, 0.95fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 2fr) minmax(340px, 0.9fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -4304,7 +4304,7 @@ textarea:focus-visible {
   bottom: 10px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  width: min(calc(100% - 24px), 720px);
+  width: min(calc(100% - 32px), 1160px);
   padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom));
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -4351,6 +4351,18 @@ textarea:focus-visible {
 .bottom-nav span {
   font-size: 0.56rem;
   font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .daily-status-strip,
+  .daily-dashboard-grid,
+  .finish-day-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .finish-day-panel .day-action-row {
+    width: 100%;
+  }
 }
 
 @media (max-width: 520px) {
@@ -4623,12 +4635,6 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
-  .daily-status-strip,
-  .daily-dashboard-grid,
-  .finish-day-panel {
-    grid-template-columns: 1fr;
-  }
-
   .daily-status-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4636,10 +4642,6 @@ textarea:focus-visible {
   .daily-status-metrics span {
     border-left: 0;
     border-top: 1px solid var(--line);
-  }
-
-  .finish-day-panel .day-action-row {
-    width: 100%;
   }
 
   .cut-progress-heading,
