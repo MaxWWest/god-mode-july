@@ -124,4 +124,12 @@ test('daily dashboard stays within common phone, tablet, and desktop widths', as
   }))
   expect(desktopOverflow.horizontal).toBeLessThanOrEqual(1)
   expect(desktopOverflow.vertical).toBeLessThanOrEqual(1)
+
+  await page.setViewportSize({ width: 1296, height: 726 })
+  const shortLaptopOverflow = await page.evaluate(() => ({
+    horizontal: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    vertical: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  }))
+  expect(shortLaptopOverflow.horizontal).toBeLessThanOrEqual(1)
+  expect(shortLaptopOverflow.vertical).toBeLessThanOrEqual(1)
 })
