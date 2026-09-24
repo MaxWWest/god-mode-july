@@ -86,6 +86,17 @@ import {
   workoutMinutesTotal,
 } from './tracker'
 import {
+  buildWeeklyCutSummary,
+  calculateAdherenceScore,
+  calculateCoreThreeCompliance,
+  calculateProgressToCheckpoint,
+  calculateRollingWeightAverage,
+  calculateWeightLossRate,
+  getCutStatus,
+  displayWeightToPounds,
+  poundsToDisplay,
+} from './cutMetrics'
+import {
   isSupabaseConfigured,
   supabase,
 } from './supabase'
@@ -126,7 +137,9 @@ import type {
 } from './types'
 import {
   AppNoticeToast,
+  CheckField,
   NavButton,
+  NumberField,
 } from './ui'
 
 const CheckInView = lazy(() => import('./features/CheckInView'))
@@ -2681,9 +2694,44 @@ function Dashboard({
     .map((rule) => ({ rule, date: getNextExerciseDate(rule, selectedDate, settings) }))
     .filter((item): item is { rule: RuleConfig; date: string } => item.date !== null)
     .sort((a, b) => a.date.localeCompare(b.date))[0]
+  const weightPoints = calculateRollingWeightAverage(entries, selectedDate)
+  const currentTrendPounds = weightPoints[weightPoints.length - 1]?.rollingAverage ?? entry.weightPounds ?? null
+  const cutProgress = calculateProgressToCheckpoint(settings, currentTrendPounds)
+  const weeklyCut = buildWeeklyCutSummary(entries, settings, selectedDate)
+  const cutStatus = getCutStatus(entries, settings, selectedDate)
+  const lossRate = calculateWeightLossRate(entries, selectedDate)
+  const adherence = calculateAdherenceScore(entry, settings)
+  const coreThree = calculateCoreThreeCompliance(entry, settings)
+  const weightUnit = settings.targets.weightUnit
+  const formatWeight = (value: number | null) => value === null ? '—' : `${poundsToDisplay(value, weightUnit).toFixed(1)} ${weightUnit}`
 
   return (
     <div className="page-stack">
+      <section className={`panel cut-progress-panel status-${cutStatus.tone}`}>
+        <div className="cut-progress-heading">
+          <div>
+            <p className="eyebrow">God Mode · Cut phase</p>
+            <h2>Cut Progress</h2>
+          </div>
+          <span className="cut-status-pill">{cutStatus.label}</span>
+        </div>
+        <div className="cut-weight-flow">
+          <span><small>Start</small><strong>{formatWeight(settings.targets.startingWeightPounds)}</strong></span>
+          <i aria-hidden="true">›</i>
+          <span><small>Current trend</small><strong>{formatWeight(currentTrendPounds)}</strong></span>
+          <i aria-hidden="true">›</i>
+          <span><small>Checkpoint #1</small><strong>{formatWeight(settings.targets.checkpointWeightsPounds[0])}</strong></span>
+        </div>
+        <div className="cut-progress-track" aria-label={`${cutProgress.percent}% to checkpoint`}><span style={{ width: `${cutProgress.percent}%` }} /></div>
+        <div className="cut-dashboard-stats">
+          <span><small>This week</small><strong>{weeklyCut.weightChange === null ? 'More data' : `${weeklyCut.weightChange > 0 ? '+' : ''}${weeklyCut.weightChange.toFixed(1)} lb`}</strong></span>
+          <span><small>Rate</small><strong>{lossRate.percentPerWeek === null ? 'More data' : `${lossRate.percentPerWeek.toFixed(2)}% / wk`}</strong></span>
+          <span><small>Core Three</small><strong>{weeklyCut.coreThreeDays} / {weeklyCut.elapsedDays} days</strong></span>
+          <span><small>Today</small><strong>{adherence}% adherence</strong></span>
+        </div>
+        <p className="cut-status-copy">{cutStatus.message}</p>
+      </section>
+
       <section className="hero-card">
         <div className="hero-copy">
           <p className="eyebrow">{formatDate(selectedDate)}</p>
@@ -2702,6 +2750,24 @@ function Dashboard({
         <StatCard label="Current streak" value={`${currentStreak(entries, selectedDate, settings)} days`} icon="🔥" />
         <StatCard label="Longest streak" value={`${longestStreak(entries, settings)} days`} icon="🏆" />
         <StatCard label="Latest weight" value={latestWeight ? `${latestWeight.toFixed(1)} lb` : '—'} icon="◒" />
+      </section>
+
+      <section className="panel today-cut-card">
+        <div className="section-heading"><div><p className="eyebrow">Today</p><h2>Core inputs</h2></div><strong>{coreThree.complete ? 'CORE THREE COMPLETE' : `${adherence}%`}</strong></div>
+        <div className="today-cut-grid">
+          <span><small>Weight</small><strong>{formatWeight(entry.weightPounds)}</strong></span>
+          <span><small>Calories</small><strong>{entry.calories === null ? '—' : `${Math.round(entry.calories)} / ${settings.targets.calories}`}</strong></span>
+          <span><small>Protein</small><strong>{entry.proteinGrams === null ? '—' : `${Math.round(entry.proteinGrams)} / ${settings.targets.proteinGrams} g`}</strong></span>
+          <span><small>Steps</small><strong>{entry.steps === null ? '—' : `${entry.steps.toLocaleString()} / ${settings.targets.steps.toLocaleString()}`}</strong></span>
+          <span><small>Workout</small><strong>{entry.plannedWorkoutCompleted === null ? '—' : entry.plannedWorkoutCompleted ? 'Plan complete' : 'Not complete'}</strong></span>
+          <span><small>Sleep</small><strong>{entry.sleepHours === null ? '—' : `${entry.sleepHours} / ${settings.targets.sleepHours} hr`}</strong></span>
+        </div>
+        <div className="field-grid home-cut-inputs">
+          <NumberField disabled={isFinalized} label="Morning weight" value={entry.weightPounds === null ? null : poundsToDisplay(entry.weightPounds, weightUnit)} min={weightUnit === 'kg' ? 25 : 50} max={weightUnit === 'kg' ? 320 : 700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value === null ? null : displayWeightToPounds(value, weightUnit) })} suffix={weightUnit} />
+          <NumberField disabled={isFinalized} label="Steps" value={entry.steps} min={0} max={200000} step={100} onChange={(value) => onUpdate({ steps: value })} suffix="steps" />
+          <NumberField disabled={isFinalized} label="Sleep" value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
+          <CheckField disabled={isFinalized} label="Planned training or recovery complete" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
+        </div>
       </section>
 
       <QuickStartChecklist items={quickStartItems} />

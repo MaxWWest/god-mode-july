@@ -24,6 +24,16 @@ import {
   ruleComplete,
   selectableEndDate,
 } from '../tracker'
+import {
+  buildWeeklyCutSummary,
+  calculateProgressToCheckpoint,
+  calculateRollingWeightAverage,
+  calculateWaistChange,
+  calculateWeightLossRate,
+  getCutStatus,
+  inchesToDisplay,
+  poundsToDisplay,
+} from '../cutMetrics'
 
 const TREND_METRICS: TrendMetric[] = [
   {
@@ -142,6 +152,7 @@ export default function ProgressView({
 }) {
   const [period, setPeriod] = useState<ProgressPeriod>('week')
   const [progressTab, setProgressTab] = useState<'overview' | 'calendar'>('overview')
+  const [weightRange, setWeightRange] = useState<7 | 30 | 90 | 0>(30)
   const dates = getLoggedDates(entries, settings)
   const ruleRates = getRuleRatesForDates(dates, entries, settings)
   const periodRecap = buildPeriodRecap(entries, settings, period)
@@ -160,6 +171,19 @@ export default function ProgressView({
     : Math.round(dates.reduce((sum, date) => sum + completionStats(entries[date], settings).percent, 0) / dates.length)
 
   const weakestRule = [...ruleRates].sort((a, b) => a.rate - b.rate)[0]
+  const allWeightPoints = calculateRollingWeightAverage(entries, throughDate)
+  const weightPoints = weightRange === 0 ? allWeightPoints : allWeightPoints.filter((point) => point.date >= addDays(throughDate, -(weightRange - 1)))
+  const weeklyCut = buildWeeklyCutSummary(entries, settings, throughDate)
+  const weightRate = calculateWeightLossRate(entries, throughDate)
+  const latestTrend = allWeightPoints[allWeightPoints.length - 1]?.rollingAverage ?? null
+  const cutProgress = calculateProgressToCheckpoint(settings, latestTrend)
+  const waist = calculateWaistChange(entries)
+  const waistPoints = Object.values(entries)
+    .filter((entry) => entry.date <= throughDate && typeof entry.waistInches === 'number')
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-12)
+    .map((entry) => ({ date: entry.date, value: entry.waistInches! }))
+  const cutStatus = getCutStatus(entries, settings, throughDate)
 
   return (
     <div className="page-stack">
@@ -178,6 +202,41 @@ export default function ProgressView({
         <ProgressCalendar entries={entries} selectedDate={selectedDate} settings={settings} onSelectDate={onSelectDate} />
       ) : (
         <>
+
+      <section className={`panel cut-review-panel status-${cutStatus.tone}`}>
+        <div className="section-heading">
+          <div><p className="eyebrow">Weekly decision support</p><h2>{cutStatus.label}</h2></div>
+          <strong>{weeklyCut.averageAdherence === null ? '—' : `${Math.round(weeklyCut.averageAdherence)}% adherence`}</strong>
+        </div>
+        <p>{cutStatus.message}</p>
+        <div className="weekly-cut-grid">
+          <span><small>Current week avg</small><strong>{weeklyCut.currentWeightAverage === null ? '—' : `${poundsToDisplay(weeklyCut.currentWeightAverage, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}`}</strong></span>
+          <span><small>Previous week avg</small><strong>{weeklyCut.previousWeightAverage === null ? '—' : `${poundsToDisplay(weeklyCut.previousWeightAverage, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}`}</strong></span>
+          <span><small>Weekly change</small><strong>{weeklyCut.weightChange === null ? '—' : `${weeklyCut.weightChange > 0 ? '+' : ''}${weeklyCut.weightChange.toFixed(1)} lb`}</strong></span>
+          <span><small>Rate</small><strong>{weightRate.poundsPerWeek === null ? 'Not enough data' : `${weightRate.poundsPerWeek.toFixed(1)} lb/wk · ${weightRate.percentPerWeek?.toFixed(2)}%`}</strong></span>
+          <span><small>Core Three</small><strong>{weeklyCut.coreThreeDays} / {weeklyCut.elapsedDays} days</strong></span>
+          <span><small>Checkpoint</small><strong>{cutProgress.remaining === null ? '—' : `${cutProgress.remaining.toFixed(1)} lb remaining`}</strong></span>
+        </div>
+      </section>
+
+      <section className="panel weight-trend-panel">
+        <div className="section-heading">
+          <div><p className="eyebrow">Scale noise vs signal</p><h2>Weight Trend</h2></div>
+          <div className="period-toggle" role="group" aria-label="Weight chart range">
+            {([7, 30, 90, 0] as const).map((range) => <button className={weightRange === range ? 'active' : ''} type="button" key={range} onClick={() => setWeightRange(range)}>{range === 0 ? 'All' : `${range}D`}</button>)}
+          </div>
+        </div>
+        <WeightTrendChart points={weightPoints} settings={settings} />
+      </section>
+
+      <section className="panel weekly-checkin-panel">
+        <div className="section-heading"><div><p className="eyebrow">Current week</p><h2>Weekly Check-In</h2></div></div>
+        <div className="weekly-checkin-groups">
+          <article><h3>Nutrition</h3><span>Calories <b>{weeklyCut.averageCalories === null ? '—' : Math.round(weeklyCut.averageCalories)}</b></span><span>Protein <b>{weeklyCut.averageProtein === null ? '—' : `${Math.round(weeklyCut.averageProtein)} g`}</b></span><span>Alcohol <b>{weeklyCut.alcoholDrinks} drinks</b></span></article>
+          <article><h3>Activity</h3><span>Steps <b>{weeklyCut.averageSteps === null ? '—' : Math.round(weeklyCut.averageSteps).toLocaleString()}</b></span><span>Strength <b>{weeklyCut.strengthSessions}</b></span><span>Cardio / Recovery <b>{weeklyCut.cardioSessions} / {weeklyCut.recoverySessions}</b></span></article>
+          <article><h3>Body + Recovery</h3><span>Waist <b>{waist.current === null ? '—' : `${inchesToDisplay(waist.current, settings.targets.waistUnit).toFixed(1)} ${settings.targets.waistUnit}`}</b></span><span>Waist change <b>{waist.change === null ? '—' : `${inchesToDisplay(waist.change, settings.targets.waistUnit).toFixed(1)} ${settings.targets.waistUnit}`}</b></span><span>Sleep <b>{weeklyCut.averageSleep === null ? '—' : `${weeklyCut.averageSleep.toFixed(1)} hr`}</b></span><MiniWaistChart points={waistPoints} /></article>
+        </div>
+      </section>
 
       {exercisePatterns.length > 0 && (
         <section className="panel exercise-progress-panel">
@@ -285,6 +344,51 @@ export default function ProgressView({
       )}
     </div>
   )
+}
+
+function WeightTrendChart({ points, settings }: { points: ReturnType<typeof calculateRollingWeightAverage>; settings: ChallengeSettings }) {
+  if (points.length < 2) return <div className="trend-empty">Keep logging morning weight. Your trend appears after at least three measurements.</div>
+  const width = 720
+  const height = 260
+  const padding = { x: 38, y: 28 }
+  const references = [settings.targets.startingWeightPounds, settings.targets.checkpointWeightsPounds[0]]
+  const values = [...points.map((point) => point.raw), ...points.flatMap((point) => point.rollingAverage === null ? [] : [point.rollingAverage]), ...references]
+  const min = Math.min(...values) - 1
+  const max = Math.max(...values) + 1
+  const x = (index: number) => padding.x + (index / (points.length - 1)) * (width - padding.x * 2)
+  const y = (value: number) => padding.y + ((max - value) / (max - min)) * (height - padding.y * 2)
+  const rawPath = points.map((point, index) => `${index ? 'L' : 'M'} ${x(index).toFixed(1)} ${y(point.raw).toFixed(1)}`).join(' ')
+  const trendSegments: string[] = []
+  let drawing = false
+  points.forEach((point, index) => {
+    if (point.rollingAverage === null) { drawing = false; return }
+    trendSegments.push(`${drawing ? 'L' : 'M'} ${x(index).toFixed(1)} ${y(point.rollingAverage).toFixed(1)}`)
+    drawing = true
+  })
+  return (
+    <div className="weight-chart-wrap">
+      <svg className="weight-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Daily weight and seven day rolling average">
+        {references.map((value, index) => <g key={value}><line className={`weight-reference ref-${index}`} x1={padding.x} x2={width - padding.x} y1={y(value)} y2={y(value)} /><text x={padding.x + 4} y={y(value) - 5}>{index === 0 ? 'START' : 'CHECKPOINT'}</text></g>)}
+        <path className="weight-raw-line" d={rawPath} />
+        <path className="weight-average-line" d={trendSegments.join(' ')} />
+        {points.map((point, index) => <circle className="weight-raw-point" key={point.date} cx={x(index)} cy={y(point.raw)} r="2.5"><title>{point.date}: {poundsToDisplay(point.raw, settings.targets.weightUnit).toFixed(1)} {settings.targets.weightUnit}</title></circle>)}
+      </svg>
+      <div className="weight-chart-footer"><span>{formatShortDate(points[0].date)}</span><span>Raw daily</span><strong>7-day average</strong><span>{formatShortDate(points[points.length - 1].date)}</span></div>
+    </div>
+  )
+}
+
+function MiniWaistChart({ points }: { points: Array<{ date: string; value: number }> }) {
+  if (points.length < 2) return <small className="waist-empty">Add weekly waist measurements to reveal the trend.</small>
+  const min = Math.min(...points.map((point) => point.value))
+  const max = Math.max(...points.map((point) => point.value))
+  const range = max - min || 1
+  const path = points.map((point, index) => {
+    const x = 5 + (index / (points.length - 1)) * 190
+    const y = 8 + ((max - point.value) / range) * 44
+    return `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`
+  }).join(' ')
+  return <svg className="waist-sparkline" viewBox="0 0 200 60" role="img" aria-label="Recent waist measurement trend"><path d={path} /></svg>
 }
 
 function calendarCellLabel(date: string, settings: ChallengeSettings): string {

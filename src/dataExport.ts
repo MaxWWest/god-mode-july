@@ -95,8 +95,15 @@ export function accountDataToStructuredCsv(payload: AccountDataExport): string {
     appendMetricRow(rows, base, 'sleep_hours', entry.sleepHours, 'hours')
     appendMetricRow(rows, base, 'water_liters', entry.waterLiters, 'liters')
     appendMetricRow(rows, base, 'weight_pounds', entry.weightPounds, 'lb')
+    appendMetricRow(rows, base, 'waist_inches', entry.waistInches, 'in')
+    appendMetricRow(rows, base, 'steps', entry.steps, 'steps')
+    appendMetricRow(rows, base, 'alcohol_drinks', entry.alcoholDrinks, 'drinks')
     appendMetricRow(rows, base, 'calories', entry.calories, 'kcal')
     appendMetricRow(rows, base, 'protein_grams', entry.proteinGrams, 'g')
+    appendMetricRow(rows, base, 'carbs_grams', entry.carbsGrams, 'g')
+    appendMetricRow(rows, base, 'fat_grams', entry.fatGrams, 'g')
+    appendMetricRow(rows, base, 'fiber_grams', entry.fiberGrams, 'g')
+    appendMetricRow(rows, base, 'planned_workout_completed', entry.plannedWorkoutCompleted)
 
     for (const workout of entry.workouts) {
       appendMetricRow(rows, currentUserBase('daily_workout', entry.date), 'workout_minutes', workout.minutes, 'minutes', workout.type)

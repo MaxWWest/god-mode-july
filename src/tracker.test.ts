@@ -56,6 +56,20 @@ describe('tracker scoring', () => {
     expect(settings.rules.some((rule) => rule.key === 'custom-morning-walk')).toBe(true)
   })
 
+  it('migrates the old untouched 90-minute defaults into the cut plan', () => {
+    const settings = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      targets: { ...DEFAULT_SETTINGS.targets, exerciseMinutes: 90, calories: 2200, proteinGrams: 140 },
+      rules: DEFAULT_SETTINGS.rules.map((rule) => rule.key === 'exercise'
+        ? { ...rule, exercise: { cycleDays: 1 as const, scheduledDays: [1], workoutType: 'Any exercise', targetMinutes: 90 } }
+        : rule),
+    })
+    const exercise = settings.rules.find((rule) => rule.key === 'exercise')!
+
+    expect(settings.targets).toMatchObject({ exerciseMinutes: 30, calories: 2000, proteinGrams: 150, steps: 12000 })
+    expect(exercise.exercise).toMatchObject({ cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Strength', targetMinutes: 30 })
+  })
+
   it('normalizes persisted appearance choices and rejects unknown themes', () => {
     expect(normalizeSettings({ ...DEFAULT_SETTINGS, appearance: { theme: 'light', accent: 'teal' } }).appearance)
       .toEqual({ theme: 'light', accent: 'teal' })

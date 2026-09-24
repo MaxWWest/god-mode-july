@@ -39,6 +39,7 @@ import {
   todayIso,
 } from '../tracker'
 import { NumberField, SectionTitle, TextField } from '../ui'
+import { displayWeightToPounds, poundsToDisplay } from '../cutMetrics'
 
 const DIET_PRESETS = [
   { label: 'Carbs', unit: 'g', goal: 250, goalType: 'maximum' as const, trackingSource: 'carbs' as const },
@@ -312,14 +313,31 @@ export default function SettingsView({
       ) : (
         <>
           <section className="panel form-panel">
-            <SectionTitle number="1" title="Scoring" />
+            <SectionTitle number="1" title="Cut Targets" />
+            <p className="form-help">These targets power Home, adherence, Core Three, and weekly trend guidance.</p>
+            <div className="field-grid cut-target-grid">
+              <NumberField label="Calories" value={settings.targets.calories} min={800} max={6000} step={50} commitOnBlur onChange={(value) => value !== null && updateTargets({ calories: value })} suffix="kcal" />
+              <NumberField label="Protein minimum" value={settings.targets.proteinGrams} min={20} max={400} step={5} commitOnBlur onChange={(value) => value !== null && updateTargets({ proteinGrams: value })} suffix="g" />
+              <NumberField label="Preferred protein max" value={settings.targets.proteinPreferredMaximum} min={20} max={500} step={5} commitOnBlur onChange={(value) => value !== null && updateTargets({ proteinPreferredMaximum: value })} suffix="g" />
+              <NumberField label="Daily steps" value={settings.targets.steps} min={1000} max={100000} step={500} commitOnBlur onChange={(value) => value !== null && updateTargets({ steps: value })} suffix="steps" />
+              <NumberField label="Water" value={settings.targets.waterLiters} min={0.1} max={15} step={0.1} commitOnBlur onChange={(value) => value !== null && updateTargets({ waterLiters: value })} suffix="L" />
+              <NumberField label="Sleep minimum" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} commitOnBlur onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
+              <NumberField label="Starting weight" value={poundsToDisplay(settings.targets.startingWeightPounds, settings.targets.weightUnit)} min={settings.targets.weightUnit === 'kg' ? 25 : 50} max={settings.targets.weightUnit === 'kg' ? 320 : 700} step={0.1} commitOnBlur onChange={(value) => value !== null && updateTargets({ startingWeightPounds: displayWeightToPounds(value, settings.targets.weightUnit) })} suffix={settings.targets.weightUnit} />
+              <NumberField label="Checkpoint #1" value={poundsToDisplay(settings.targets.checkpointWeightsPounds[0], settings.targets.weightUnit)} min={settings.targets.weightUnit === 'kg' ? 25 : 50} max={settings.targets.weightUnit === 'kg' ? 320 : 700} step={0.1} commitOnBlur onChange={(value) => value !== null && updateTargets({ checkpointWeightsPounds: [displayWeightToPounds(value, settings.targets.weightUnit), ...settings.targets.checkpointWeightsPounds.slice(1)] })} suffix={settings.targets.weightUnit} />
+            </div>
+            <div className="unit-toggle-row">
+              <label className="weight-field"><span>Weight units</span><select value={settings.targets.weightUnit} onChange={(event) => updateTargets({ weightUnit: event.target.value as 'lb' | 'kg' })}><option value="lb">Pounds</option><option value="kg">Kilograms</option></select></label>
+              <label className="weight-field"><span>Waist units</span><select value={settings.targets.waistUnit} onChange={(event) => updateTargets({ waistUnit: event.target.value as 'in' | 'cm' })}><option value="in">Inches</option><option value="cm">Centimeters</option></select></label>
+            </div>
+          </section>
+          <section className="panel form-panel">
+            <SectionTitle number="2" title="Legacy Rule Scoring" />
             <div className="rule-glossary">
               <span><strong>Scored</strong> counts toward today’s percent and streaks.</span>
               <span><strong>Non-negotiable</strong> counts double.</span>
               <span><strong>Supporting</strong> counts once.</span>
               <span><strong>Active</strong> counts now; inactive stays saved.</span>
             </div>
-            <NumberField label="Sleep target" value={settings.targets.sleepHours} min={0.25} max={24} step={0.25} commitOnBlur onChange={(value) => value !== null && updateTargets({ sleepHours: value })} suffix="hr" />
           </section>
 
           {categories.map((category, categoryIndex) => {

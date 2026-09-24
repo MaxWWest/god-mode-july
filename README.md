@@ -1,6 +1,6 @@
 # God Mode July
 
-A mobile-first React + TypeScript progressive web app for tracking daily discipline, fitness, and nutrition habits without a fixed end date.
+A mobile-first React + TypeScript progressive web app for tracking a sustainable fat-loss phase alongside daily discipline, fitness, nutrition, and private social challenges.
 
 ## Current beta capabilities
 
@@ -9,6 +9,14 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 - Responsive light/dark interface with customizable accent colors
 - Daily rule checklist
 - Detailed check-in form
+- Fast daily cut log for weight, calories, protein, steps, planned training/recovery, and sleep
+- Secondary water, alcohol, waist, carbohydrate, fat, fiber, and body-note logging
+- Configurable calorie, protein range, steps, water, sleep, starting-weight, checkpoint, and measurement-unit targets
+- Weighted cutting adherence score: calories 40%, protein 25%, steps 20%, planned training/recovery 15%
+- Core Three weekly compliance for calories, protein, and steps
+- Raw weight plus 7-day rolling average, calendar-week averages, weekly loss rate, and conservative status guidance
+- Editable Checkpoint #1 progress and waist-change tracking
+- Weekly check-in summaries for body, nutrition, activity, recovery, and adherence
 - Configurable tracker title and start date
 - Light, dark, or system appearance with five selectable accent colors
 - Exercise, diet, mental, and miscellaneous scored rule categories
@@ -72,7 +80,7 @@ A mobile-first React + TypeScript progressive web app for tracking daily discipl
 
 - Production beta: [god-mode-july.vercel.app](https://god-mode-july.vercel.app/)
 - Current automated coverage: Vitest unit/service coverage plus desktop/mobile Playwright smoke tests
-- Production build uses feature-level code splitting and remains below Vite's chunk warning threshold
+- Production build uses feature-level code splitting; the main orchestration chunk currently emits Vite's 500 kB advisory and remains a cleanup target
 - Core daily tracking works offline; authentication, cross-device sync, and Social require Supabase
 - The main remaining beta risk is end-to-end validation across real accounts, browsers, and installed iPhone PWAs
 
@@ -100,7 +108,7 @@ Install prompts and service-worker behavior are most reliable from the productio
 npm test
 ```
 
-Vitest covers weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, appearance normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
+Vitest covers cutting adherence and trends, missing weigh-ins, anti-undereating behavior, weighted tracker scoring, exercise pattern scheduling and cycle progress, meal-derived macro and food-category scoring, flexible diet goals, appearance normalization, privacy-safe publishing, challenge template overrides, daily challenge snapshots, Supabase row normalization, transient-error retry behavior, and mocked friend/squad/challenge mutations.
 
 Run the desktop and mobile Chromium smoke suite:
 
@@ -160,6 +168,7 @@ Exercise rules use repeating cycles anchored to the tracker start date. A rule c
 - `src/social.ts` holds shared friend challenge templates, reactions, tabs, and social labels.
 - `src/socialData.ts` holds social score calculations, challenge settings, row normalizers, and Supabase schema compatibility checks.
 - `src/tracker.ts` holds shared tracker defaults, rule scoring, date helpers, backup/import/export helpers, and data normalizers.
+- `src/cutMetrics.ts` owns weight trends, weekly averages, adherence, Core Three, checkpoint progress, waist change, and rule-based cut status calculations.
 - `src/services/socialApi.ts` owns profile, friendship, squad, challenge, leaderboard, and activity-feed database operations.
 - `src/services/cloudApi.ts` owns cloud snapshots, account export, and cloud account deletion operations.
 - `src/auth.ts` owns shared account password validation, while `src/components/AuthFlow.tsx` owns signup, login, and password setup UI.

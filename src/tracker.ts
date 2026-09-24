@@ -40,7 +40,7 @@ export const MIN_FOOD_SERVINGS = 0.25
 export const MAX_FOOD_SERVINGS = 20
 const LEGACY_DEFAULT_START_DATE = '2026-07-01'
 const LEGACY_DEFAULT_END_DATE = '2026-07-31'
-export const WORKOUT_TYPES = ['Strength', 'Cardio', 'Walking', 'Running', 'Cycling', 'Mobility', 'Sports', 'Workout', 'Other']
+export const WORKOUT_TYPES = ['Strength', 'Run', 'Walk', 'Cycling', 'Yoga / Mobility', 'Other Cardio', 'Recovery', 'Rest', 'Sports', 'Other']
 export const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
 export const FOOD_CATEGORIES: FoodCategory[] = ['alcohol', 'dessert', 'fruit', 'vegetable', 'protein', 'grain', 'dairy', 'other']
 const DEFAULT_WORKOUT_TYPE = WORKOUT_TYPES[0]
@@ -55,17 +55,23 @@ export const DEFAULT_RULE_CATEGORIES: RuleCategoryConfig[] = [
 ]
 
 export const DEFAULT_TARGETS: ChallengeTargets = {
-  exerciseMinutes: 90,
-  calories: 2200,
-  proteinGrams: 140,
+  exerciseMinutes: 30,
+  calories: 2000,
+  proteinGrams: 150,
+  proteinPreferredMaximum: 180,
+  steps: 12000,
   waterLiters: 3,
-  sleepHours: 7.5,
+  sleepHours: 7,
+  startingWeightPounds: 229,
+  checkpointWeightsPounds: [215],
+  weightUnit: 'lb',
+  waistUnit: 'in',
 }
 
 export const DEFAULT_RULES: RuleConfig[] = [
   {
     key: 'exercise', label: 'Exercise', icon: '◆', enabled: true, weight: 'nonNegotiable', category: 'exercise',
-    exercise: { cycleDays: 1, scheduledDays: [1], workoutType: 'Any exercise', targetMinutes: 90 },
+    exercise: { cycleDays: 7, scheduledDays: [1, 3, 5], workoutType: 'Strength', targetMinutes: 30 },
   },
   {
     key: 'sober', label: 'Alcohol', icon: '◈', enabled: true, weight: 'nonNegotiable', category: 'diet',
@@ -73,11 +79,11 @@ export const DEFAULT_RULES: RuleConfig[] = [
   },
   {
     key: 'calories', label: 'Calories', icon: '◌', enabled: false, weight: 'supporting', category: 'diet',
-    diet: { goalType: 'maximum', goal: 2200, unit: 'kcal', trackingSource: 'calories' },
+    diet: { goalType: 'maximum', goal: 2000, unit: 'kcal', trackingSource: 'calories' },
   },
   {
     key: 'protein', label: 'Protein', icon: '▲', enabled: true, weight: 'nonNegotiable', category: 'diet',
-    diet: { goalType: 'minimum', goal: 140, unit: 'g', trackingSource: 'protein' },
+    diet: { goalType: 'minimum', goal: 150, unit: 'g', trackingSource: 'protein' },
   },
   {
     key: 'water', label: 'Water', icon: '≈', enabled: false, weight: 'supporting', category: 'diet',
@@ -249,7 +255,7 @@ function normalizeWorkoutLog(value: unknown, index: number): WorkoutLog | null {
   const type = normalizeWorkoutType(candidate.type)
   const minutes = normalizeBoundedNumber(candidate.minutes, 0, 0, MAX_WORKOUT_MINUTES)
 
-  return { id, type, minutes }
+  return { id, type, minutes, notes: normalizeText(candidate.notes).slice(0, 240) }
 }
 
 export function normalizeWorkoutLogs(value: unknown): WorkoutLog[] {
@@ -625,14 +631,27 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
   const targetsCandidate = candidate.targets && typeof candidate.targets === 'object'
     ? candidate.targets as Partial<ChallengeTargets>
     : {}
+  const hasLegacyDefaultTargets = targetsCandidate.exerciseMinutes === 90
+    && targetsCandidate.calories === 2200
+    && targetsCandidate.proteinGrams === 140
 
   const targets: ChallengeTargets = {
-    exerciseMinutes: normalizeTarget(targetsCandidate.exerciseMinutes, DEFAULT_TARGETS.exerciseMinutes, 1),
-    calories: normalizeTarget(targetsCandidate.calories, DEFAULT_TARGETS.calories, 1),
-    proteinGrams: normalizeTarget(targetsCandidate.proteinGrams, DEFAULT_TARGETS.proteinGrams, 1),
+    exerciseMinutes: hasLegacyDefaultTargets ? DEFAULT_TARGETS.exerciseMinutes : normalizeTarget(targetsCandidate.exerciseMinutes, DEFAULT_TARGETS.exerciseMinutes, 1),
+    calories: hasLegacyDefaultTargets ? DEFAULT_TARGETS.calories : normalizeTarget(targetsCandidate.calories, DEFAULT_TARGETS.calories, 1),
+    proteinGrams: hasLegacyDefaultTargets ? DEFAULT_TARGETS.proteinGrams : normalizeTarget(targetsCandidate.proteinGrams, DEFAULT_TARGETS.proteinGrams, 1),
+    proteinPreferredMaximum: normalizeTarget(targetsCandidate.proteinPreferredMaximum, DEFAULT_TARGETS.proteinPreferredMaximum, 1),
+    steps: normalizeTarget(targetsCandidate.steps, DEFAULT_TARGETS.steps, 1),
     waterLiters: normalizeTarget(targetsCandidate.waterLiters, DEFAULT_TARGETS.waterLiters, 0.1),
     sleepHours: normalizeTarget(targetsCandidate.sleepHours, DEFAULT_TARGETS.sleepHours, 0.25),
+    startingWeightPounds: normalizeTarget(targetsCandidate.startingWeightPounds, DEFAULT_TARGETS.startingWeightPounds, 50),
+    checkpointWeightsPounds: Array.isArray(targetsCandidate.checkpointWeightsPounds)
+      ? targetsCandidate.checkpointWeightsPounds.map((weight) => normalizeOptionalNumber(weight, 50, 700)).filter((weight): weight is number => weight !== null).slice(0, 8)
+      : DEFAULT_TARGETS.checkpointWeightsPounds,
+    weightUnit: targetsCandidate.weightUnit === 'kg' ? 'kg' : 'lb',
+    waistUnit: targetsCandidate.waistUnit === 'cm' ? 'cm' : 'in',
   }
+  if (targets.proteinPreferredMaximum < targets.proteinGrams) targets.proteinPreferredMaximum = targets.proteinGrams
+  if (targets.checkpointWeightsPounds.length === 0) targets.checkpointWeightsPounds = [...DEFAULT_TARGETS.checkpointWeightsPounds]
 
   const storedRules = Array.isArray(candidate.rules) ? candidate.rules : []
   const storedRuleByKey = new Map<RuleKey, Partial<RuleConfig>>()
@@ -668,6 +687,10 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
     const dietFallback: DietRuleSettings = fallbackDiet
       ?? { goalType: 'minimum', goal: 1, unit: 'g' }
 
+    const storedExercise = storedRule?.exercise
+    const isLegacyDailyExercise = defaultRule.key === 'exercise'
+      && storedExercise?.cycleDays === 1
+      && storedExercise.targetMinutes === 90
     return {
       key: defaultRule.key,
       label,
@@ -675,7 +698,7 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
       enabled: typeof storedRule?.enabled === 'boolean' ? storedRule.enabled : defaultRule.enabled,
       weight: normalizeRuleWeight(storedRule?.weight, defaultRule.weight),
       category,
-      exercise: category === 'exercise' ? normalizeExerciseSettings(storedRule?.exercise, exerciseFallback) : undefined,
+      exercise: category === 'exercise' ? normalizeExerciseSettings(isLegacyDailyExercise ? undefined : storedRule?.exercise, exerciseFallback) : undefined,
       diet: category === 'diet' ? normalizeDietSettings(storedRule?.diet, dietFallback) : undefined,
       deleted: storedRule?.deleted === true,
     }
@@ -771,6 +794,14 @@ function normalizeEntry(value: unknown, fallbackDate: string): DailyEntry | null
     proteinGrams: hasFoodLogs ? foodTotals.proteinGrams : normalizeOptionalNumber(candidate.proteinGrams, 0, 500),
     waterLiters: normalizeOptionalNumber(candidate.waterLiters, 0, 15),
     weightPounds: normalizeOptionalNumber(candidate.weightPounds, 50, 700),
+    waistInches: normalizeOptionalNumber(candidate.waistInches, 15, 100),
+    steps: normalizeOptionalNumber(candidate.steps, 0, 200000),
+    alcoholDrinks: normalizeOptionalNumber(candidate.alcoholDrinks, 0, 100),
+    carbsGrams: normalizeOptionalNumber(candidate.carbsGrams, 0, 2000),
+    fatGrams: normalizeOptionalNumber(candidate.fatGrams, 0, 1000),
+    fiberGrams: normalizeOptionalNumber(candidate.fiberGrams, 0, 500),
+    plannedWorkoutCompleted: typeof candidate.plannedWorkoutCompleted === 'boolean' ? candidate.plannedWorkoutCompleted : null,
+    bodyNotes: normalizeText(candidate.bodyNotes).slice(0, 1000),
     readTenPages: candidate.readTenPages === true,
     journaled: candidate.journaled === true,
     ruleCompletions: normalizeRuleCompletionMap(candidate.ruleCompletions),
@@ -851,6 +882,14 @@ export function makeEmptyEntry(date: string): DailyEntry {
     proteinGrams: null,
     waterLiters: null,
     weightPounds: null,
+    waistInches: null,
+    steps: null,
+    alcoholDrinks: null,
+    carbsGrams: null,
+    fatGrams: null,
+    fiberGrams: null,
+    plannedWorkoutCompleted: null,
+    bodyNotes: '',
     readTenPages: false,
     journaled: false,
     ruleCompletions: {},
@@ -1232,6 +1271,14 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
     'protein_grams',
     'water_liters',
     'weight_pounds',
+    'waist_inches',
+    'steps',
+    'alcohol_drinks',
+    'carbs_grams',
+    'fat_grams',
+    'fiber_grams',
+    'planned_workout_completed',
+    'body_notes',
     'read_ten_pages',
     'journaled',
     'mood',
@@ -1263,6 +1310,14 @@ export function entriesToCsv(entries: EntryMap, settings: ChallengeSettings): st
       entry.proteinGrams,
       entry.waterLiters,
       entry.weightPounds,
+      entry.waistInches,
+      entry.steps,
+      entry.alcoholDrinks,
+      entry.carbsGrams,
+      entry.fatGrams,
+      entry.fiberGrams,
+      entry.plannedWorkoutCompleted,
+      entry.bodyNotes,
       Number(entry.readTenPages),
       Number(entry.journaled),
       entry.mood,

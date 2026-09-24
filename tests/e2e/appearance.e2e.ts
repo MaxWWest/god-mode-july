@@ -98,11 +98,21 @@ test('numeric fields allow deletion before entering replacement values', async (
   await expect(calories).toHaveValue('250')
 
   await openSettings(page)
-  const sleepTarget = page.getByRole('spinbutton', { name: 'Sleep target hr', exact: true })
+  const sleepTarget = page.getByRole('spinbutton', { name: 'Sleep minimum hr', exact: true })
   await sleepTarget.fill('')
   await expect(sleepTarget).toHaveValue('')
   await sleepTarget.type('7.5')
   await expect(sleepTarget).toHaveValue('7.5')
   await sleepTarget.press('Tab')
   await expect(sleepTarget).toHaveValue('7.5')
+})
+
+test('cut dashboard stays within common phone, tablet, and desktop widths', async ({ page }) => {
+  await openFreshApp(page)
+  for (const width of [375, 390, 430, 768, 1440]) {
+    await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
+    await expect(page.getByRole('heading', { name: 'Cut Progress', exact: true })).toBeVisible()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1)
+  }
 })

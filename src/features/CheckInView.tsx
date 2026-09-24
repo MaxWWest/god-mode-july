@@ -20,12 +20,14 @@ import {
   normalizeWorkoutLogs,
   workoutMinutesTotal,
 } from '../tracker'
+import { displayWaistToInches, displayWeightToPounds, inchesToDisplay, poundsToDisplay } from '../cutMetrics'
 import {
   CheckField,
   NumberField,
   RatingField,
   SectionTitle,
   SelectField,
+  TextField,
   TextArea,
 } from '../ui'
 
@@ -131,8 +133,33 @@ export default function CheckInView({
         <p>{isFinalized && entry.finalizedAt ? `Locked ${formatDateTime(entry.finalizedAt)}.` : 'Track the facts. Honest data is more useful than a perfect score.'}</p>
       </section>
 
+      <section className="panel form-panel cut-daily-log">
+        <SectionTitle number="1" title="Daily Cut Log" />
+        <p className="form-help">The six essentials. Missing values stay blank and never count as zero.</p>
+        <div className="field-grid cut-primary-fields">
+          <NumberField disabled={isFinalized} label="Morning weight" value={entry.weightPounds === null ? null : poundsToDisplay(entry.weightPounds, settings.targets.weightUnit)} min={settings.targets.weightUnit === 'kg' ? 25 : 50} max={settings.targets.weightUnit === 'kg' ? 320 : 700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value === null ? null : displayWeightToPounds(value, settings.targets.weightUnit) })} suffix={settings.targets.weightUnit} />
+          <NumberField disabled={isFinalized} label="Calories" value={entry.calories} min={0} max={10000} step={10} onChange={(value) => onUpdate({ calories: value })} suffix="kcal" />
+          <NumberField disabled={isFinalized} label="Protein" value={entry.proteinGrams} min={0} max={500} step={1} onChange={(value) => onUpdate({ proteinGrams: value })} suffix="g" />
+          <NumberField disabled={isFinalized} label="Steps" value={entry.steps} min={0} max={200000} step={100} onChange={(value) => onUpdate({ steps: value })} suffix="steps" />
+          <NumberField disabled={isFinalized} label="Sleep" value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
+          <CheckField disabled={isFinalized} label="Planned training or recovery completed" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
+        </div>
+        <details className="cut-secondary-fields">
+          <summary>Water, alcohol, waist, and optional macros</summary>
+          <div className="field-grid">
+            <NumberField disabled={isFinalized} label="Water" value={entry.waterLiters} min={0} max={15} step={0.1} onChange={(value) => onUpdate({ waterLiters: value })} suffix="L" />
+            <NumberField disabled={isFinalized} label="Alcohol" value={entry.alcoholDrinks} min={0} max={100} step={1} onChange={(value) => onUpdate({ alcoholDrinks: value })} suffix="drinks" />
+            <NumberField disabled={isFinalized} label="Waist" value={entry.waistInches === null ? null : inchesToDisplay(entry.waistInches, settings.targets.waistUnit)} min={20} max={settings.targets.waistUnit === 'cm' ? 250 : 100} step={0.1} onChange={(value) => onUpdate({ waistInches: value === null ? null : displayWaistToInches(value, settings.targets.waistUnit) })} suffix={settings.targets.waistUnit} />
+            <NumberField disabled={isFinalized} label="Carbohydrates" value={entry.carbsGrams} min={0} max={2000} onChange={(value) => onUpdate({ carbsGrams: value })} suffix="g" />
+            <NumberField disabled={isFinalized} label="Fat" value={entry.fatGrams} min={0} max={1000} onChange={(value) => onUpdate({ fatGrams: value })} suffix="g" />
+            <NumberField disabled={isFinalized} label="Fiber" value={entry.fiberGrams} min={0} max={500} onChange={(value) => onUpdate({ fiberGrams: value })} suffix="g" />
+          </div>
+          <TextArea disabled={isFinalized} label="Body notes" value={entry.bodyNotes} placeholder="Training performance, soreness, appetite, or anything worth remembering." onChange={(bodyNotes) => onUpdate({ bodyNotes })} />
+        </details>
+      </section>
+
       <section className="panel form-panel">
-        <SectionTitle number="1" title="Exercise" />
+        <SectionTitle number="2" title="Training" />
         {exerciseRules.length > 0 && (
           <div className="today-plan-list">
             {exerciseRules.map((rule) => (
@@ -176,6 +203,7 @@ export default function CheckInView({
               <article className="workout-log-row" key={workout.id}>
                 <SelectField disabled={isFinalized} label="Type" value={workout.type} options={WORKOUT_TYPES} onChange={(type) => updateWorkout(workout.id, { type })} />
                 <NumberField disabled={isFinalized} label="Minutes" value={workout.minutes} min={0} max={MAX_WORKOUT_MINUTES} step={5} onChange={(value) => updateWorkout(workout.id, { minutes: value ?? 0 })} suffix="min" />
+                <TextField disabled={isFinalized} label="Workout notes" value={workout.notes ?? ''} onChange={(notes) => updateWorkout(workout.id, { notes })} />
                 <button className="ghost-button workout-remove-button" type="button" onClick={() => removeWorkout(workout.id)} disabled={isFinalized}>Remove</button>
               </article>
             ))}
@@ -184,7 +212,7 @@ export default function CheckInView({
       </section>
 
       <section className="panel form-panel">
-        <SectionTitle number="2" title="Diet" />
+        <SectionTitle number="3" title="Diet" />
         <MealLogger
           foods={entry.foods ?? []}
           foodLibrary={foodLibrary}
@@ -239,7 +267,7 @@ export default function CheckInView({
       </section>
 
       <section className="panel form-panel">
-        <SectionTitle number="3" title="Mental + Misc" />
+        <SectionTitle number="4" title="Mental + Misc" />
         {habitRules.length === 0 ? (
           <p className="empty-rule-category">No active mental or miscellaneous rules.</p>
         ) : habitRules.map((rule) => (
@@ -248,11 +276,7 @@ export default function CheckInView({
       </section>
 
       <section className="panel form-panel">
-        <SectionTitle number="4" title="Body Signals" />
-        <div className="field-grid">
-          <NumberField disabled={isFinalized} label={`Sleep hours (${settings.targets.sleepHours} hr target)`} value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
-          <NumberField disabled={isFinalized} label="Weight" value={entry.weightPounds} min={50} max={700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value })} suffix="lb" />
-        </div>
+        <SectionTitle number="5" title="Recovery Signals" />
         <div className="rating-grid">
           <RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} />
           <RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} />

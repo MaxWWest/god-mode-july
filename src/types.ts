@@ -63,8 +63,14 @@ export type ChallengeTargets = {
   exerciseMinutes: number
   calories: number
   proteinGrams: number
+  proteinPreferredMaximum: number
+  steps: number
   waterLiters: number
   sleepHours: number
+  startingWeightPounds: number
+  checkpointWeightsPounds: number[]
+  weightUnit: 'lb' | 'kg'
+  waistUnit: 'in' | 'cm'
 }
 
 export type ChallengeSettings = {
@@ -81,6 +87,7 @@ export type WorkoutLog = {
   id: string
   type: string
   minutes: number
+  notes?: string
 }
 
 export type FoodLog = {
@@ -123,6 +130,14 @@ export type DailyEntry = {
   proteinGrams: number | null
   waterLiters: number | null
   weightPounds: number | null
+  waistInches: number | null
+  steps: number | null
+  alcoholDrinks: number | null
+  carbsGrams: number | null
+  fatGrams: number | null
+  fiberGrams: number | null
+  plannedWorkoutCompleted: boolean | null
+  bodyNotes: string
   readTenPages: boolean
   journaled: boolean
   ruleCompletions: Record<string, boolean>
