@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { MealLogger } from './components/DailyLoggers'
 import type { AuthEmailPurpose, AuthFlowMode } from './components/AuthFlow'
 import { passwordPairError } from './auth'
 import { loadFromStorage, saveToStorage } from './storage'
@@ -2326,19 +2325,11 @@ function App() {
           <Dashboard
             entry={entry}
             selectedDate={selectedDate}
-            previousFoods={previousFoods}
             settings={settings}
             completed={stats.completed}
             totalRules={stats.total}
-            percent={stats.percent}
             isFinalized={entryFinalized}
-            foodLibrary={foodLibrary}
             onToggleRule={toggleRule}
-            onUpdate={updateEntryIfUnlocked}
-            onSaveFoodToLibrary={saveFoodToLibrary}
-            onDeleteFoodFromLibrary={deleteFoodFromLibrary}
-            onUseFoodFromLibrary={markFoodLibraryItemUsed}
-            onToggleFoodFavorite={toggleFoodLibraryFavorite}
             onOpenCheckIn={() => setView('check-in')}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
@@ -2640,39 +2631,23 @@ function TutorialOverlay({
 function Dashboard({
   entry,
   selectedDate,
-  previousFoods,
   settings,
   completed,
   totalRules,
-  percent,
   isFinalized,
   onToggleRule,
-  onUpdate,
-  onSaveFoodToLibrary,
-  onDeleteFoodFromLibrary,
-  onUseFoodFromLibrary,
-  onToggleFoodFavorite,
   onOpenCheckIn,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
-  foodLibrary,
 }: {
   entry: DailyEntry
   selectedDate: string
-  previousFoods: FoodLog[]
   settings: ChallengeSettings
   completed: number
   totalRules: number
-  percent: number
   isFinalized: boolean
-  foodLibrary: FoodLibraryItem[]
   onToggleRule: (key: RuleKey) => void
-  onUpdate: (patch: Partial<DailyEntry>) => void
-  onSaveFoodToLibrary: (food: FoodLog) => void
-  onDeleteFoodFromLibrary: (foodId: string) => void
-  onUseFoodFromLibrary: (foodId: string) => void
-  onToggleFoodFavorite: (foodId: string) => void
   onOpenCheckIn: () => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
@@ -2681,8 +2656,7 @@ function Dashboard({
   const activeRules = getEnabledRules(settings, selectedDate)
   const adherence = calculateAdherenceScore(entry, settings)
   const coreThree = calculateCoreThreeCompliance(entry, settings)
-  const runningWorkout = (entry.workouts ?? []).find((workout) => workout.id === 'home-running')
-  const runningMinutes = runningWorkout?.minutes ?? null
+  const exerciseRules = activeRules.filter((rule) => rule.category === 'exercise' && rule.exercise)
   const visibleRules = activeRules.filter((rule) => rule.category !== 'exercise')
   const goalGroups = [
     { key: 'diet', label: 'Diet', rules: visibleRules.filter((rule) => rule.category === 'diet') },
@@ -2690,97 +2664,55 @@ function Dashboard({
     { key: 'misc', label: 'Misc', rules: visibleRules.filter((rule) => !['diet', 'mental'].includes(rule.category)) },
   ].filter((group) => group.rules.length > 0)
 
-  function updateRunningMinutes(minutes: number | null) {
-    const otherWorkouts = (entry.workouts ?? []).filter((workout) => workout.id !== 'home-running')
-    const workouts = normalizeWorkoutLogs(minutes && minutes > 0
-      ? [...otherWorkouts, { id: 'home-running', type: 'Run', minutes, notes: 'Quick logged from Home' }]
-      : otherWorkouts)
-    onUpdate({ workouts, exerciseMinutes: workoutMinutesTotal(workouts) })
-  }
+  const targetRows = [
+    { label: 'Calories', value: entry.calories, target: settings.targets.calories, suffix: 'kcal' },
+    { label: 'Protein', value: entry.proteinGrams, target: settings.targets.proteinGrams, suffix: 'g' },
+    { label: 'Steps', value: entry.steps, target: settings.targets.steps, suffix: '' },
+    { label: 'Sleep', value: entry.sleepHours, target: settings.targets.sleepHours, suffix: 'hr' },
+  ]
 
   return (
-    <div className="page-stack daily-dashboard">
-      <section className="daily-status-strip" aria-label="Today's progress">
-        <div>
-          <p className="eyebrow">{formatDate(selectedDate)}</p>
-          <h2>{isFinalized ? 'Day complete' : 'Today'}</h2>
-        </div>
-        <div className="daily-status-metrics">
-          <span><small>Rules</small><strong>{completed}/{totalRules}</strong></span>
-          <span><small>Adherence</small><strong>{adherence}%</strong></span>
-          <span><small>Core Three</small><strong>{coreThree.complete ? 'Complete' : 'In progress'}</strong></span>
-          <span className="daily-percent"><strong>{percent}%</strong><small>day complete</small></span>
-        </div>
-        <div className="daily-status-actions">
-          <button className="secondary-button compact-button" type="button" onClick={onOpenCheckIn}>Full check-in</button>
-          {isFinalized ? (
-            <>
-              <button className="primary-button compact-button" type="button" onClick={onShareDay}>Share Day</button>
-              <button className="ghost-button compact-button" type="button" onClick={onUnlockDay}>Unlock</button>
-            </>
-          ) : (
-            <button className="primary-button compact-button" type="button" onClick={onFinalizeDay}>Finish Day</button>
-          )}
+    <div className="page-stack home-command-center">
+      <section className="home-command-header">
+        <div><p className="eyebrow">{formatDate(selectedDate)}</p><h2>{isFinalized ? 'Day published' : 'Build today'}</h2><p>Log the behaviors. Let Progress judge the trend.</p></div>
+        <div className="home-score-block"><strong>{adherence}%</strong><span>adherence</span><small>{coreThree.complete ? 'Core Three complete' : `${completed}/${totalRules} goals complete`}</small></div>
+        <div className="home-command-actions">
+          <button className="primary-button" type="button" onClick={onOpenCheckIn}>{isFinalized ? 'View check-in' : 'Check in now'}</button>
+          {isFinalized ? <><button className="secondary-button" type="button" onClick={onShareDay}>Share Day</button><button className="ghost-button" type="button" onClick={onUnlockDay}>Unlock</button></> : <button className="secondary-button" type="button" onClick={onFinalizeDay}>Finish Day</button>}
         </div>
       </section>
 
-      <div className="daily-dashboard-grid">
-        <section className="panel daily-food-panel">
-          <div className="section-heading">
-            <div><p className="eyebrow">Food</p><h2>Meals</h2></div>
-            <span>{entry.foods?.length ?? 0} items logged</span>
+      <div className="home-command-grid">
+        <section className="panel home-targets-panel">
+          <div className="section-heading"><div><p className="eyebrow">Today at a glance</p><h2>Core inputs</h2></div><button className="ghost-button compact-button" type="button" onClick={onOpenCheckIn}>Edit</button></div>
+          <div className="home-target-list">
+            {targetRows.map((row) => {
+              const value = row.value
+              const progress = value === null ? 0 : Math.min(100, Math.round((value / row.target) * 100))
+              return <article key={row.label}><div><strong>{row.label}</strong><span>{value === null ? 'Not logged' : `${value.toLocaleString()}${row.suffix ? ` ${row.suffix}` : ''}`} <small>/ {row.target.toLocaleString()} {row.suffix}</small></span></div><div className="home-target-track"><i style={{ width: `${progress}%` }} /></div></article>
+            })}
           </div>
-          <MealLogger
-            foods={entry.foods ?? []}
-            foodLibrary={foodLibrary}
-            previousFoods={previousFoods}
-            disabled={isFinalized}
-            onChange={(foods) => onUpdate(foodLogsEntryPatch(foods))}
-            onSaveFoodToLibrary={onSaveFoodToLibrary}
-            onDeleteFoodFromLibrary={onDeleteFoodFromLibrary}
-            onUseFoodFromLibrary={onUseFoodFromLibrary}
-            onToggleFoodFavorite={onToggleFoodFavorite}
-          />
+          <div className={`home-plan-status ${entry.plannedWorkoutCompleted ? 'is-complete' : ''}`}><span>{entry.plannedWorkoutCompleted ? '✓' : '○'}</span><div><strong>Training or recovery plan</strong><small>{entry.plannedWorkoutCompleted ? 'Completed as planned' : 'Not marked complete yet'}</small></div></div>
         </section>
 
-        <aside className="daily-side-stack">
-          <section className="panel daily-activity-panel">
-            <div className="section-heading"><div><p className="eyebrow">Movement</p><h2>Activity</h2></div><span>{entry.exerciseMinutes} min</span></div>
-            <div className="activity-quick-fields">
-              <NumberField disabled={isFinalized} label="Steps" value={entry.steps} min={0} max={200000} step={100} onChange={(value) => onUpdate({ steps: value })} suffix="steps" />
-              <NumberField disabled={isFinalized} label="Running time" value={runningMinutes} min={0} max={1440} step={5} onChange={updateRunningMinutes} suffix="min" />
-            </div>
-            <CheckField disabled={isFinalized} label="Planned activity complete" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
-            {(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length > 0 && (
-              <p className="activity-detail-note">{(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length} detailed workout{(entry.workouts ?? []).filter((workout) => workout.id !== 'home-running').length === 1 ? '' : 's'} also logged in Check-In.</p>
-            )}
-            <button className="ghost-button compact-button" type="button" onClick={onOpenCheckIn}>Edit detailed exercise</button>
-          </section>
+        <section className="panel home-day-plan">
+          <div className="section-heading"><div><p className="eyebrow">Plan</p><h2>Movement</h2></div><span>{entry.exerciseMinutes} min</span></div>
+          {exerciseRules.length > 0 ? exerciseRules.map((rule) => <article className="home-plan-row" key={rule.key}><span>{rule.icon}</span><div><strong>{rule.label}</strong><small>{rule.exercise?.workoutType} · {rule.exercise?.targetMinutes} min</small></div></article>) : <p className="home-empty-copy">Recovery day. Steps and optional movement are enough.</p>}
+          {(entry.workouts ?? []).map((workout) => <article className="home-log-row" key={workout.id}><strong>{workout.type}</strong><span>{workout.minutes} min</span></article>)}
+          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Log training</button>
+        </section>
 
-          <section className="panel daily-goals-panel">
-            <div className="section-heading"><div><p className="eyebrow">Daily standards</p><h2>Goals</h2></div><span>{completed}/{totalRules}</span></div>
-            <div className="daily-goal-groups">
-              {goalGroups.map((group) => (
-                <section className={`daily-goal-group goal-${group.key}`} key={group.key}>
-                  <h3>{group.label}</h3>
-                  <div className="rule-list">
-                    {group.rules.map((rule) => {
-                      const isComplete = ruleComplete(entry, rule.key, settings)
-                      const detail = ruleDetail(rule, entry, settings)
-                      const requiresLog = Boolean(rule.diet)
-                      const content = <><span className="rule-icon">{rule.icon}</span><span className="rule-label"><strong>{rule.label}</strong><small>{detail ?? (rule.weight === 'nonNegotiable' ? 'Non-negotiable' : 'Supporting')}</small></span><span className="rule-check" aria-label={isComplete ? 'Complete' : 'Incomplete'}>{isComplete ? '✓' : ''}</span></>
-                      return requiresLog
-                        ? <article className={`rule-row tracked-rule-row ${isComplete ? 'is-complete' : ''}`} key={rule.key}>{content}</article>
-                        : <button className={`rule-row ${isComplete ? 'is-complete' : ''}`} type="button" key={rule.key} onClick={() => onToggleRule(rule.key)} disabled={isFinalized}>{content}</button>
-                    })}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </section>
-        </aside>
+        <section className="panel home-meals-summary">
+          <div className="section-heading"><div><p className="eyebrow">Nutrition</p><h2>Meals</h2></div><span>{entry.foods?.length ?? 0} logged</span></div>
+          {(entry.foods ?? []).length > 0 ? <div className="home-food-list">{(entry.foods ?? []).slice(0, 5).map((food) => <article key={food.id}><div><strong>{food.name}</strong><small>{food.meal}</small></div><span>{food.calories} kcal · {food.proteinGrams} g</span></article>)}</div> : <p className="home-empty-copy">No meals logged. Add food or enter daily totals in Check-In.</p>}
+          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Log meals</button>
+        </section>
+
+        <section className="panel home-goals-panel">
+          <div className="section-heading"><div><p className="eyebrow">Personal standards</p><h2>Goals</h2></div><span>{completed}/{totalRules}</span></div>
+          <div className="home-goal-columns">{goalGroups.map((group) => <section key={group.key}><h3>{group.label}</h3>{group.rules.map((rule) => { const complete = ruleComplete(entry, rule.key, settings); const tracked = Boolean(rule.diet); return tracked ? <article className={complete ? 'is-complete' : ''} key={rule.key}><span>{complete ? '✓' : '○'}</span><div><strong>{rule.label}</strong><small>{ruleDetail(rule, entry, settings)}</small></div></article> : <button className={complete ? 'is-complete' : ''} key={rule.key} type="button" disabled={isFinalized} onClick={() => onToggleRule(rule.key)}><span>{complete ? '✓' : '○'}</span><strong>{rule.label}</strong></button> })}</section>)}</div>
+        </section>
       </div>
-
     </div>
   )
 }

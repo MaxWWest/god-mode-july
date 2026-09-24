@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ChallengeSettings, DailyEntry, FoodLibraryItem, FoodLog, RuleConfig, WorkoutLog } from '../types'
 import { MealLogger } from '../components/DailyLoggers'
 import {
@@ -25,7 +26,6 @@ import {
   CheckField,
   NumberField,
   RatingField,
-  SectionTitle,
   SelectField,
   TextField,
   TextArea,
@@ -60,6 +60,7 @@ export default function CheckInView({
   onUnlockDay: () => void
   onShareDay: () => void
 }) {
+  const [activeSection, setActiveSection] = useState<'essentials' | 'meals' | 'training' | 'review'>('essentials')
   const workoutLogs = Array.isArray(entry.workouts) ? entry.workouts : []
   const workoutTotal = getExerciseMinutes(entry)
   const activeRules = getEnabledRules(settings, entry.date)
@@ -126,17 +127,19 @@ export default function CheckInView({
   }
 
   return (
-    <div className="page-stack">
-      <section className="page-intro">
-        <p className="eyebrow">{isFinalized ? 'Finalized' : 'Daily input'}</p>
-        <h2>Check-In</h2>
-        <p>{isFinalized && entry.finalizedAt ? `Locked ${formatDateTime(entry.finalizedAt)}.` : 'Track the facts. Honest data is more useful than a perfect score.'}</p>
+    <div className="page-stack checkin-workspace">
+      <section className="checkin-header">
+        <div><p className="eyebrow">{isFinalized ? 'Finalized' : 'Daily input'}</p><h2>Check-In</h2><p>{isFinalized && entry.finalizedAt ? `Locked ${formatDateTime(entry.finalizedAt)}.` : 'Six essentials first. Details only when they help.'}</p></div>
+        <div className="checkin-header-actions">{isFinalized ? <><button className="primary-button" type="button" onClick={onShareDay}>Share Day</button><button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock</button></> : <button className="primary-button" type="button" onClick={onFinalizeDay}>Finish Day</button>}</div>
       </section>
 
-      <section className="panel form-panel cut-daily-log">
-        <SectionTitle number="1" title="Daily Cut Log" />
-        <p className="form-help">The six essentials. Missing values stay blank and never count as zero.</p>
-        <div className="field-grid cut-primary-fields">
+      <nav className="checkin-tabs" aria-label="Check-in sections">
+        {([['essentials', 'Essentials'], ['meals', 'Meals'], ['training', 'Training'], ['review', 'Review']] as const).map(([key, label]) => <button className={activeSection === key ? 'active' : ''} type="button" key={key} onClick={() => setActiveSection(key)}>{label}</button>)}
+      </nav>
+
+      {activeSection === 'essentials' && <section className="panel checkin-section essentials-section">
+        <div className="checkin-section-heading"><div><p className="eyebrow">15-second log</p><h3>The essentials</h3></div><span>Blank means unknown, never zero.</span></div>
+        <div className="checkin-essential-grid">
           <NumberField disabled={isFinalized} label="Morning weight" value={entry.weightPounds === null ? null : poundsToDisplay(entry.weightPounds, settings.targets.weightUnit)} min={settings.targets.weightUnit === 'kg' ? 25 : 50} max={settings.targets.weightUnit === 'kg' ? 320 : 700} step={0.1} onChange={(value) => onUpdate({ weightPounds: value === null ? null : displayWeightToPounds(value, settings.targets.weightUnit) })} suffix={settings.targets.weightUnit} />
           <NumberField disabled={isFinalized} label="Calories" value={entry.calories} min={0} max={10000} step={10} onChange={(value) => onUpdate({ calories: value })} suffix="kcal" />
           <NumberField disabled={isFinalized} label="Protein" value={entry.proteinGrams} min={0} max={500} step={1} onChange={(value) => onUpdate({ proteinGrams: value })} suffix="g" />
@@ -144,9 +147,9 @@ export default function CheckInView({
           <NumberField disabled={isFinalized} label="Sleep" value={entry.sleepHours} min={0} max={24} step={0.25} onChange={(value) => onUpdate({ sleepHours: value })} suffix="hours" />
           <CheckField disabled={isFinalized} label="Planned training or recovery completed" checked={entry.plannedWorkoutCompleted === true} onChange={(checked) => onUpdate({ plannedWorkoutCompleted: checked })} />
         </div>
-        <details className="cut-secondary-fields">
-          <summary>Water, alcohol, waist, and optional macros</summary>
-          <div className="field-grid">
+        <details className="checkin-more-fields">
+          <summary>Body and secondary nutrition</summary>
+          <div className="field-grid checkin-secondary-grid">
             <NumberField disabled={isFinalized} label="Water" value={entry.waterLiters} min={0} max={15} step={0.1} onChange={(value) => onUpdate({ waterLiters: value })} suffix="L" />
             <NumberField disabled={isFinalized} label="Alcohol" value={entry.alcoholDrinks} min={0} max={100} step={1} onChange={(value) => onUpdate({ alcoholDrinks: value })} suffix="drinks" />
             <NumberField disabled={isFinalized} label="Waist" value={entry.waistInches === null ? null : inchesToDisplay(entry.waistInches, settings.targets.waistUnit)} min={20} max={settings.targets.waistUnit === 'cm' ? 250 : 100} step={0.1} onChange={(value) => onUpdate({ waistInches: value === null ? null : displayWaistToInches(value, settings.targets.waistUnit) })} suffix={settings.targets.waistUnit} />
@@ -154,12 +157,12 @@ export default function CheckInView({
             <NumberField disabled={isFinalized} label="Fat" value={entry.fatGrams} min={0} max={1000} onChange={(value) => onUpdate({ fatGrams: value })} suffix="g" />
             <NumberField disabled={isFinalized} label="Fiber" value={entry.fiberGrams} min={0} max={500} onChange={(value) => onUpdate({ fiberGrams: value })} suffix="g" />
           </div>
-          <TextArea disabled={isFinalized} label="Body notes" value={entry.bodyNotes} placeholder="Training performance, soreness, appetite, or anything worth remembering." onChange={(bodyNotes) => onUpdate({ bodyNotes })} />
+          <TextArea disabled={isFinalized} label="Body notes" value={entry.bodyNotes} placeholder="Soreness, appetite, performance, or anything worth remembering." onChange={(bodyNotes) => onUpdate({ bodyNotes })} />
         </details>
-      </section>
+      </section>}
 
-      <section className="panel form-panel">
-        <SectionTitle number="2" title="Training" />
+      {activeSection === 'training' && <section className="panel checkin-section training-section">
+        <div className="checkin-section-heading"><div><p className="eyebrow">Plan over punishment</p><h3>Training</h3></div><span>{workoutTotal} minutes logged</span></div>
         {exerciseRules.length > 0 && (
           <div className="today-plan-list">
             {exerciseRules.map((rule) => (
@@ -209,10 +212,10 @@ export default function CheckInView({
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
-      <section className="panel form-panel">
-        <SectionTitle number="3" title="Diet" />
+      {activeSection === 'meals' && <section className="panel checkin-section meals-section">
+        <div className="checkin-section-heading"><div><p className="eyebrow">Nutrition</p><h3>Meals</h3></div><span>{entry.foods?.length ?? 0} items logged</span></div>
         <MealLogger
           foods={entry.foods ?? []}
           foodLibrary={foodLibrary}
@@ -264,45 +267,18 @@ export default function CheckInView({
             </div>
           </div>
         )}
-      </section>
+      </section>}
 
-      <section className="panel form-panel">
-        <SectionTitle number="4" title="Mental + Misc" />
-        {habitRules.length === 0 ? (
-          <p className="empty-rule-category">No active mental or miscellaneous rules.</p>
-        ) : habitRules.map((rule) => (
-          <CheckField key={rule.key} disabled={isFinalized} label={rule.label} checked={ruleChecked(rule)} onChange={(checked) => updateRuleCheck(rule, checked)} />
-        ))}
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="5" title="Recovery Signals" />
-        <div className="rating-grid">
-          <RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} />
-          <RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} />
-          <RatingField disabled={isFinalized} label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} />
+      {activeSection === 'review' && <section className="panel checkin-section review-section">
+        <div className="checkin-section-heading"><div><p className="eyebrow">Close the loop</p><h3>Review</h3></div><span>Optional, but useful.</span></div>
+        <div className="checkin-review-grid">
+          <div className="checkin-review-block"><h4>Personal goals</h4>{habitRules.length === 0 ? <p className="empty-rule-category">No active mental or miscellaneous rules.</p> : habitRules.map((rule) => <CheckField key={rule.key} disabled={isFinalized} label={rule.label} checked={ruleChecked(rule)} onChange={(checked) => updateRuleCheck(rule, checked)} />)}</div>
+          <div className="checkin-review-block"><h4>Recovery signals</h4><div className="rating-grid"><RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} /><RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} /><RatingField disabled={isFinalized} label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} /></div></div>
+          <div className="checkin-review-block reflection-block"><h4>Reflection</h4><div className="reflection-grid"><TextArea disabled={isFinalized} label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} /><TextArea disabled={isFinalized} label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} /></div></div>
         </div>
-      </section>
+      </section>}
 
-      <section className="panel form-panel">
-        <SectionTitle number="5" title="Reflection" />
-        <TextArea disabled={isFinalized} label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} />
-        <TextArea disabled={isFinalized} label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} />
-      </section>
-
-      <section className="panel form-panel">
-        <SectionTitle number="6" title="Finalize" />
-        {isFinalized ? (
-          <div className="finalize-action-row">
-            <button className="primary-button" type="button" onClick={onShareDay}>Share Day</button>
-            <button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock Day</button>
-          </div>
-        ) : (
-          <button className="primary-button" type="button" onClick={onFinalizeDay}>Finalize Day</button>
-        )}
-      </section>
-
-      <p className="autosave-note">{isFinalized ? 'This day is locked until you unlock it.' : 'Changes save automatically on this device.'}</p>
+      <p className="autosave-note">{isFinalized ? 'This day is locked until you unlock it.' : 'Saved automatically. Use the tabs only when you need more detail.'}</p>
     </div>
   )
 }

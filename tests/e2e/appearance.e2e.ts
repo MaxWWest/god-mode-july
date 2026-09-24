@@ -83,13 +83,17 @@ test('custom text fields allow deletion and spaces before committing', async ({ 
 test('numeric fields allow deletion before entering replacement values', async ({ page }) => {
   await openFreshApp(page)
 
-  const workoutDuration = page.getByRole('spinbutton', { name: 'Running time min', exact: true })
-  await expect(workoutDuration).toHaveValue('')
+  await page.getByRole('button', { name: 'Check in now', exact: true }).click()
+  await page.getByRole('button', { name: 'Training', exact: true }).click()
+  await page.getByRole('button', { name: 'Add Exercise', exact: true }).click()
+  const workoutDuration = page.getByRole('spinbutton', { name: 'Minutes min', exact: true })
+  await expect(workoutDuration).toHaveValue('0')
   await workoutDuration.fill('')
   await expect(workoutDuration).toHaveValue('')
   await workoutDuration.type('45')
   await expect(workoutDuration).toHaveValue('45')
 
+  await page.getByRole('button', { name: 'Meals', exact: true }).click()
   const calories = page.getByRole('spinbutton', { name: 'Calories kcal', exact: true }).first()
   await expect(calories).toHaveValue('0')
   await calories.fill('')

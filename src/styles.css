@@ -1871,6 +1871,401 @@ textarea:focus-visible {
   gap: 16px;
 }
 
+.home-command-center {
+  gap: 14px;
+}
+
+.home-command-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto auto;
+  gap: 22px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px solid var(--accent-border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel-gradient);
+}
+
+.home-command-header h2 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.home-command-header p,
+.home-empty-copy {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.home-score-block {
+  display: grid;
+  min-width: 138px;
+  padding: 10px 16px;
+  border-left: 1px solid var(--line);
+  text-align: center;
+}
+
+.home-score-block strong {
+  color: var(--accent-text-strong);
+  font-size: 1.75rem;
+}
+
+.home-score-block span {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.home-score-block small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.home-command-actions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 7px;
+}
+
+.home-command-actions .ghost-button {
+  grid-column: 1 / -1;
+}
+
+.home-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(240px, 0.8fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.home-command-grid > .panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 10px;
+}
+
+.home-command-grid .section-heading {
+  margin-bottom: 0;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.home-command-grid .section-heading h2 {
+  font-size: 1.25rem;
+}
+
+.home-targets-panel {
+  grid-row: span 2;
+}
+
+.home-target-list {
+  display: grid;
+  gap: 12px;
+}
+
+.home-target-list article {
+  display: grid;
+  gap: 6px;
+}
+
+.home-target-list article > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-target-list strong,
+.home-plan-row strong,
+.home-food-list strong {
+  font-size: 0.8rem;
+}
+
+.home-target-list span {
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.home-target-list small,
+.home-plan-row small,
+.home-food-list small,
+.home-goal-columns small,
+.home-plan-status small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 650;
+}
+
+.home-target-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-strong);
+}
+
+.home-target-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.home-plan-status,
+.home-plan-row,
+.home-log-row,
+.home-food-list article,
+.home-goal-columns article,
+.home-goal-columns button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.home-plan-status > span,
+.home-plan-row > span,
+.home-goal-columns article > span,
+.home-goal-columns button > span {
+  flex: 0 0 auto;
+  color: var(--accent-text);
+  font-weight: 900;
+}
+
+.home-plan-status > div,
+.home-plan-row > div,
+.home-food-list article > div,
+.home-goal-columns article > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.home-plan-status.is-complete,
+.home-goal-columns .is-complete {
+  border-color: rgba(87, 217, 121, 0.28);
+  background: rgba(87, 217, 121, 0.06);
+}
+
+.home-log-row,
+.home-food-list article {
+  justify-content: space-between;
+}
+
+.home-log-row span,
+.home-food-list article > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.home-meals-summary,
+.home-day-plan {
+  align-content: start;
+}
+
+.home-food-list {
+  display: grid;
+  gap: 6px;
+}
+
+.home-goals-panel {
+  grid-column: 2 / 4;
+}
+
+.home-goal-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-goal-columns section {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.home-goal-columns h3 {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.63rem;
+  text-transform: uppercase;
+}
+
+.home-goal-columns button {
+  width: 100%;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-goal-columns button:disabled {
+  cursor: default;
+}
+
+.checkin-workspace {
+  gap: 12px;
+}
+
+.checkin-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 20px;
+  border: 1px solid var(--accent-border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel-gradient);
+}
+
+.checkin-header h2 {
+  margin: 0;
+  font-size: 1.55rem;
+}
+
+.checkin-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.checkin-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.checkin-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-solid);
+}
+
+.checkin-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.checkin-tabs button.active {
+  background: var(--accent-soft);
+  color: var(--accent-text-strong);
+}
+
+.checkin-section {
+  display: grid;
+  gap: 14px;
+  min-height: 390px;
+  padding: 18px;
+  border-radius: 10px;
+}
+
+.checkin-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.checkin-section-heading h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.checkin-section-heading > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.checkin-essential-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.checkin-more-fields {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.checkin-more-fields summary {
+  color: var(--accent-text);
+  font-size: 0.76rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.checkin-more-fields[open] {
+  display: grid;
+  gap: 12px;
+}
+
+.checkin-secondary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.training-section,
+.meals-section,
+.review-section {
+  align-content: start;
+}
+
+.checkin-review-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.65fr) minmax(0, 1.35fr);
+  gap: 12px;
+}
+
+.checkin-review-block {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-faint);
+}
+
+.checkin-review-block h4 {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.reflection-block {
+  grid-column: 1 / -1;
+}
+
+.reflection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reflection-grid textarea {
+  min-height: 90px;
+}
+
 .daily-status-strip {
   display: grid;
   grid-template-columns: minmax(150px, 0.55fr) minmax(0, 2fr) auto;
@@ -4364,6 +4759,18 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1100px) {
+  .home-command-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-targets-panel {
+    grid-row: auto;
+  }
+
+  .home-goals-panel {
+    grid-column: 1 / -1;
+  }
+
   .daily-status-strip {
     grid-template-columns: minmax(150px, 0.55fr) minmax(0, 2fr);
   }
@@ -4388,7 +4795,12 @@ textarea:focus-visible {
   .app-shell {
     padding-top: 0;
     padding-right: 18px;
+    padding-bottom: calc(50px + env(safe-area-inset-bottom));
     padding-left: 18px;
+  }
+
+  .checkin-workspace .autosave-note {
+    display: none;
   }
 
   .topbar {
@@ -4645,6 +5057,14 @@ textarea:focus-visible {
 }
 
 @media (max-width: 900px) {
+  .home-command-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .home-command-actions {
+    grid-column: 1 / -1;
+  }
+
   .daily-status-strip,
   .daily-dashboard-grid {
     grid-template-columns: 1fr;
@@ -4664,6 +5084,46 @@ textarea:focus-visible {
     width: 100%;
     padding-left: 12px;
     padding-right: 12px;
+  }
+
+  .home-command-header,
+  .home-command-grid,
+  .home-goal-columns,
+  .checkin-header,
+  .checkin-essential-grid,
+  .checkin-secondary-grid,
+  .checkin-review-grid,
+  .reflection-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-command-header,
+  .home-command-grid > .panel,
+  .checkin-header,
+  .checkin-section {
+    padding: 14px;
+  }
+
+  .home-command-grid .section-heading .compact-button {
+    width: auto;
+  }
+
+  .home-score-block {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .home-goals-panel,
+  .reflection-block {
+    grid-column: auto;
+  }
+
+  .checkin-tabs {
+    overflow-x: auto;
+  }
+
+  .checkin-tabs button {
+    min-width: 78px;
   }
 
   .hero-card {
