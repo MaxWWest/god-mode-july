@@ -118,4 +118,10 @@ test('daily dashboard stays within common phone, tablet, and desktop widths', as
 
   const desktopShell = await page.locator('.app-shell').boundingBox()
   expect(desktopShell?.width).toBeGreaterThan(1100)
+  const desktopOverflow = await page.evaluate(() => ({
+    horizontal: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    vertical: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  }))
+  expect(desktopOverflow.horizontal).toBeLessThanOrEqual(1)
+  expect(desktopOverflow.vertical).toBeLessThanOrEqual(1)
 })

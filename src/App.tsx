@@ -140,7 +140,6 @@ import {
   CheckField,
   NavButton,
   NumberField,
-  TextArea,
 } from './ui'
 
 const CheckInView = lazy(() => import('./features/CheckInView'))
@@ -2712,6 +2711,17 @@ function Dashboard({
           <span><small>Core Three</small><strong>{coreThree.complete ? 'Complete' : 'In progress'}</strong></span>
           <span className="daily-percent"><strong>{percent}%</strong><small>day complete</small></span>
         </div>
+        <div className="daily-status-actions">
+          <button className="secondary-button compact-button" type="button" onClick={onOpenCheckIn}>Full check-in</button>
+          {isFinalized ? (
+            <>
+              <button className="primary-button compact-button" type="button" onClick={onShareDay}>Share Day</button>
+              <button className="ghost-button compact-button" type="button" onClick={onUnlockDay}>Unlock</button>
+            </>
+          ) : (
+            <button className="primary-button compact-button" type="button" onClick={onFinalizeDay}>Finish Day</button>
+          )}
+        </div>
       </section>
 
       <div className="daily-dashboard-grid">
@@ -2771,14 +2781,6 @@ function Dashboard({
         </aside>
       </div>
 
-      <section className="panel finish-day-panel">
-        <div><p className="eyebrow">Finish & Share</p><h2>{isFinalized ? 'Your day is published.' : 'Ready to lock it in?'}</h2><p>{isFinalized && entry.finalizedAt ? `Completed ${formatDateTime(entry.finalizedAt)}` : 'Review the details, leave a note, then finalize when the day is done.'}</p></div>
-        <TextArea disabled={isFinalized} label="Daily comment" value={entry.wentWell} placeholder="A win, lesson, or note for the group chat..." onChange={(wentWell) => onUpdate({ wentWell })} />
-        <div className={`day-action-row ${isFinalized ? 'is-finalized' : ''}`}>
-          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Open full check-in</button>
-          {isFinalized ? <><button className="primary-button" type="button" onClick={onShareDay}>Share Day</button><button className="secondary-button" type="button" onClick={onUnlockDay}>Unlock Day</button></> : <button className="primary-button" type="button" onClick={onFinalizeDay}>Finish Day</button>}
-        </div>
-      </section>
     </div>
   )
 }

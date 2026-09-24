@@ -1873,8 +1873,8 @@ textarea:focus-visible {
 
 .daily-status-strip {
   display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 2fr);
-  gap: 24px;
+  grid-template-columns: minmax(150px, 0.55fr) minmax(0, 2fr) auto;
+  gap: 18px;
   align-items: center;
   padding: 16px 20px;
   border: 1px solid var(--line);
@@ -1929,10 +1929,20 @@ textarea:focus-visible {
   font-size: 1.25rem;
 }
 
+.daily-status-actions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 7px;
+}
+
+.daily-status-actions .ghost-button:last-child {
+  grid-column: 1 / -1;
+}
+
 .daily-dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(340px, 0.9fr);
-  gap: 20px;
+  grid-template-columns: minmax(0, 2fr) minmax(225px, 0.72fr) minmax(285px, 0.95fr);
+  gap: 14px;
   align-items: start;
 }
 
@@ -1948,7 +1958,7 @@ textarea:focus-visible {
 }
 
 .daily-side-stack {
-  gap: 16px;
+  display: contents;
 }
 
 .daily-activity-panel .section-heading,
@@ -2010,8 +2020,8 @@ textarea:focus-visible {
 }
 
 .daily-goal-group .rule-row {
-  min-height: 54px;
-  padding: 9px 10px;
+  min-height: 48px;
+  padding: 7px 9px;
 }
 
 .finish-day-panel {
@@ -4353,15 +4363,39 @@ textarea:focus-visible {
   font-weight: 800;
 }
 
+@media (max-width: 1100px) {
+  .daily-status-strip {
+    grid-template-columns: minmax(150px, 0.55fr) minmax(0, 2fr);
+  }
+
+  .daily-status-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .daily-dashboard-grid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
+  }
+
+  .daily-side-stack {
+    display: grid;
+    gap: 14px;
+  }
+}
+
 @media (max-width: 900px) {
   .daily-status-strip,
-  .daily-dashboard-grid,
-  .finish-day-panel {
+  .daily-dashboard-grid {
     grid-template-columns: 1fr;
   }
 
-  .finish-day-panel .day-action-row {
-    width: 100%;
+  .daily-status-actions {
+    justify-content: stretch;
+  }
+
+  .daily-status-actions button {
+    flex: 1;
   }
 }
 
