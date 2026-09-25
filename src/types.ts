@@ -1,4 +1,4 @@
-export type View = 'home' | 'check-in' | 'progress' | 'friends' | 'settings'
+export type View = 'home' | 'diet' | 'check-in' | 'progress' | 'friends' | 'settings'
 
 export type BuiltInRuleKey = 'exercise' | 'sober' | 'foodLogged' | 'calories' | 'protein' | 'water' | 'sleep' | 'reading' | 'journal'
 export type CustomRuleKey = `custom-${string}`
@@ -106,6 +106,14 @@ export type FoodLibraryItem = Omit<FoodLog, 'meal'> & {
   favorite: boolean
   useCount: number
   lastUsedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type SavedMeal = {
+  id: string
+  name: string
+  foods: FoodLog[]
   createdAt: string
   updatedAt: string
 }

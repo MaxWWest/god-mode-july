@@ -15,6 +15,7 @@ import type {
   ExerciseRuleSettings,
   FoodCategory,
   FoodLibraryItem,
+  SavedMeal,
   FoodLog,
   FoodNutritionTotals,
   MealType,
@@ -379,6 +380,31 @@ export function normalizeFoodLibrary(value: unknown): FoodLibraryItem[] {
     if (items.length >= MAX_FOOD_LIBRARY_ITEMS) break
   }
   return items.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function normalizeSavedMeals(value: unknown): SavedMeal[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw, index) => {
+    if (!raw || typeof raw !== 'object') return []
+    const candidate = raw as Partial<SavedMeal>
+    const name = typeof candidate.name === 'string' ? candidate.name.trim() : ''
+    const foods = Array.isArray(candidate.foods)
+      ? candidate.foods.flatMap((food) => {
+        if (!food || typeof food !== 'object') return []
+        const normalized = normalizeFoodLog(food, index)
+        return normalized ? [normalized] : []
+      })
+      : []
+    if (!name || foods.length === 0) return []
+    const now = new Date().toISOString()
+    return [{
+      id: typeof candidate.id === 'string' && candidate.id ? candidate.id : `saved-meal-${index}`,
+      name,
+      foods,
+      createdAt: typeof candidate.createdAt === 'string' ? candidate.createdAt : now,
+      updatedAt: typeof candidate.updatedAt === 'string' ? candidate.updatedAt : now,
+    }]
+  }).slice(0, 50)
 }
 
 export function foodLibraryItemFromFood(food: FoodLog, existing?: FoodLibraryItem): FoodLibraryItem {

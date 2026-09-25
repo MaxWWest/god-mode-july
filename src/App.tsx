@@ -66,12 +66,14 @@ import {
   getLoggedDates,
   getTrackingDates,
   foodLibraryItemFromFood,
+  duplicateFoodLog,
   isEntryFinalized,
   isIsoDate,
   makeEmptyEntry,
   mergeCloudOnlyEntries,
   normalizeEntries,
   normalizeFoodLibrary,
+  normalizeSavedMeals,
   normalizePrivacySettings,
   normalizeReminderSettings,
   normalizeSettings,
@@ -117,6 +119,7 @@ import type {
   FriendFeedReaction,
   FoodLibraryItem,
   FoodLog,
+  SavedMeal,
   FriendProfile,
   FriendRequest,
   FriendSquadView,
@@ -142,6 +145,7 @@ import {
 } from './ui'
 
 const CheckInView = lazy(() => import('./features/CheckInView'))
+const DietView = lazy(() => import('./features/DietView'))
 const FriendsView = lazy(() => import('./features/FriendsView'))
 const ProgressView = lazy(() => import('./features/ProgressView'))
 const SettingsView = lazy(() => import('./features/SettingsView'))
@@ -155,6 +159,7 @@ const TUTORIAL_STORAGE_KEY = 'god-mode-july-tutorial-seen-v2'
 const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
 const PASSWORD_SETUP_STORAGE_KEY = 'god-mode-july-password-setup-required-v1'
 const FOOD_LIBRARY_STORAGE_KEY = 'god-mode-july-food-library-v1'
+const SAVED_MEALS_STORAGE_KEY = 'god-mode-july-saved-meals-v1'
 const PENDING_FRIEND_INVITE_STORAGE_KEY = 'god-mode-july-pending-friend-invite-v1'
 const PENDING_CHALLENGE_LINK_STORAGE_KEY = 'god-mode-july-pending-challenge-link-v1'
 
@@ -514,6 +519,7 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
   const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
   const [foodLibrary, setFoodLibrary] = useState<FoodLibraryItem[]>(() => normalizeFoodLibrary(loadFromStorage<unknown>(FOOD_LIBRARY_STORAGE_KEY, [])))
+  const [savedMeals, setSavedMeals] = useState<SavedMeal[]>(() => normalizeSavedMeals(loadFromStorage<unknown>(SAVED_MEALS_STORAGE_KEY, [])))
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(() => normalizeReminderSettings(loadFromStorage<unknown>(REMINDER_STORAGE_KEY, null)))
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(() => normalizeSyncMeta(loadFromStorage<unknown>(SYNC_META_STORAGE_KEY, DEFAULT_SYNC_META)))
   const [privacySettings, setPrivacySettings] = useState<PrivacySettings>(() => normalizePrivacySettings(loadFromStorage<unknown>(PRIVACY_STORAGE_KEY, null)))
@@ -633,6 +639,10 @@ function App() {
   useEffect(() => {
     saveToStorage(FOOD_LIBRARY_STORAGE_KEY, foodLibrary)
   }, [foodLibrary])
+
+  useEffect(() => {
+    saveToStorage(SAVED_MEALS_STORAGE_KEY, savedMeals)
+  }, [savedMeals])
 
   useEffect(() => {
     if (launchDeepLink.friendCode) saveToStorage(PENDING_FRIEND_INVITE_STORAGE_KEY, launchDeepLink.friendCode)
@@ -983,6 +993,32 @@ function App() {
       return { ...food, favorite: nextFavorite, updatedAt: new Date().toISOString() }
     })))
     showAppNotice(nextFavorite ? 'Saved food marked as favorite.' : 'Saved food removed from favorites.', 'neutral')
+  }
+
+  function saveMealPreset(name: string, foods: FoodLog[]) {
+    const trimmedName = name.trim()
+    if (!trimmedName || foods.length === 0) return
+    const now = new Date().toISOString()
+    setSavedMeals((current) => normalizeSavedMeals([{
+      id: `saved-meal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmedName,
+      foods,
+      createdAt: now,
+      updatedAt: now,
+    }, ...current]))
+    showAppNotice(`${trimmedName} saved as a meal.`)
+  }
+
+  function deleteMealPreset(mealId: string) {
+    setSavedMeals((current) => current.filter((meal) => meal.id !== mealId))
+    showAppNotice('Saved meal removed.', 'neutral')
+  }
+
+  function addMealPreset(meal: SavedMeal) {
+    if (entryFinalized) return
+    const foods = [...(entry.foods ?? []), ...meal.foods.map((food) => duplicateFoodLog(food))]
+    updateEntry(foodLogsEntryPatch(foods))
+    showAppNotice(`${meal.name} added to today.`)
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
@@ -2324,17 +2360,41 @@ function App() {
         {view === 'home' && (
           <Dashboard
             entry={entry}
+            entries={entries}
             selectedDate={selectedDate}
             settings={settings}
+            savedMeals={savedMeals}
             completed={stats.completed}
             totalRules={stats.total}
             isFinalized={entryFinalized}
             onToggleRule={toggleRule}
             onOpenCheckIn={() => setView('check-in')}
+            onOpenDiet={() => setView('diet')}
+            onAddSavedMeal={addMealPreset}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
             onShareDay={shareSelectedDay}
           />
+        )}
+
+        {view === 'diet' && (
+          <Suspense fallback={<section className="panel focus-panel"><p className="eyebrow">Loading</p><h2>Opening Diet.</h2><p>Preparing foods and meals.</p></section>}>
+            <DietView
+              entry={entry}
+              previousFoods={previousFoods}
+              foodLibrary={foodLibrary}
+              savedMeals={savedMeals}
+              isFinalized={entryFinalized}
+              onUpdate={updateEntryIfUnlocked}
+              onSaveFoodToLibrary={saveFoodToLibrary}
+              onDeleteFoodFromLibrary={deleteFoodFromLibrary}
+              onUseFoodFromLibrary={markFoodLibraryItemUsed}
+              onToggleFoodFavorite={toggleFoodLibraryFavorite}
+              onSaveMeal={saveMealPreset}
+              onDeleteMeal={deleteMealPreset}
+              onAddMeal={addMealPreset}
+            />
+          </Suspense>
         )}
 
         {view === 'check-in' && (
@@ -2480,6 +2540,7 @@ function App() {
 
       <nav className="bottom-nav" aria-label="Primary navigation">
         <NavButton label="Home" icon="home" active={view === 'home'} onClick={() => setView('home')} />
+        <NavButton label="Diet" icon="diet" active={view === 'diet'} onClick={() => setView('diet')} />
         <NavButton label="Check-In" icon="check" active={view === 'check-in'} onClick={() => setView('check-in')} />
         <NavButton label="Progress" icon="progress" active={view === 'progress'} onClick={() => setView('progress')} />
         <NavButton label="Social" icon="friends" active={view === 'friends'} onClick={() => setView('friends')} badgeCount={friendsBadgeCount} />
@@ -2630,25 +2691,33 @@ function TutorialOverlay({
 
 function Dashboard({
   entry,
+  entries,
   selectedDate,
   settings,
+  savedMeals,
   completed,
   totalRules,
   isFinalized,
   onToggleRule,
   onOpenCheckIn,
+  onOpenDiet,
+  onAddSavedMeal,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
 }: {
   entry: DailyEntry
+  entries: EntryMap
   selectedDate: string
   settings: ChallengeSettings
+  savedMeals: SavedMeal[]
   completed: number
   totalRules: number
   isFinalized: boolean
   onToggleRule: (key: RuleKey) => void
   onOpenCheckIn: () => void
+  onOpenDiet: () => void
+  onAddSavedMeal: (meal: SavedMeal) => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
   onShareDay: () => void
@@ -2656,7 +2725,6 @@ function Dashboard({
   const activeRules = getEnabledRules(settings, selectedDate)
   const adherence = calculateAdherenceScore(entry, settings)
   const coreThree = calculateCoreThreeCompliance(entry, settings)
-  const exerciseRules = activeRules.filter((rule) => rule.category === 'exercise' && rule.exercise)
   const visibleRules = activeRules.filter((rule) => rule.category !== 'exercise')
   const goalGroups = [
     { key: 'diet', label: 'Diet', rules: visibleRules.filter((rule) => rule.category === 'diet') },
@@ -2664,17 +2732,17 @@ function Dashboard({
     { key: 'misc', label: 'Misc', rules: visibleRules.filter((rule) => !['diet', 'mental'].includes(rule.category)) },
   ].filter((group) => group.rules.length > 0)
 
-  const targetRows = [
-    { label: 'Calories', value: entry.calories, target: settings.targets.calories, suffix: 'kcal' },
-    { label: 'Protein', value: entry.proteinGrams, target: settings.targets.proteinGrams, suffix: 'g' },
-    { label: 'Steps', value: entry.steps, target: settings.targets.steps, suffix: '' },
-    { label: 'Sleep', value: entry.sleepHours, target: settings.targets.sleepHours, suffix: 'hr' },
-  ]
+  const recentDates = Array.from({ length: 7 }, (_, index) => addDays(selectedDate, index - 6))
+  const weeklySummary = buildWeeklyCutSummary(entries, settings, selectedDate)
+  const weightPoints = calculateRollingWeightAverage(entries, selectedDate).slice(-7)
+  const calorieProgress = entry.calories === null ? 0 : Math.min(100, Math.round((entry.calories / settings.targets.calories) * 100))
+  const proteinProgress = entry.proteinGrams === null ? 0 : Math.min(100, Math.round((entry.proteinGrams / settings.targets.proteinGrams) * 100))
+  const stepProgress = entry.steps === null ? 0 : Math.min(100, Math.round((entry.steps / settings.targets.steps) * 100))
 
   return (
     <div className="page-stack home-command-center">
       <section className="home-command-header">
-        <div><p className="eyebrow">{formatDate(selectedDate)}</p><h2>{isFinalized ? 'Day published' : 'Build today'}</h2><p>Log the behaviors. Let Progress judge the trend.</p></div>
+        <div><p className="eyebrow">{formatDate(selectedDate)}</p><h2>{isFinalized ? 'Day published' : 'Your dashboard'}</h2><p>Today’s behaviors beside the trend they are creating.</p></div>
         <div className="home-score-block"><strong>{adherence}%</strong><span>adherence</span><small>{coreThree.complete ? 'Core Three complete' : `${completed}/${totalRules} goals complete`}</small></div>
         <div className="home-command-actions">
           <button className="primary-button" type="button" onClick={onOpenCheckIn}>{isFinalized ? 'View check-in' : 'Check in now'}</button>
@@ -2682,39 +2750,66 @@ function Dashboard({
         </div>
       </section>
 
-      <div className="home-command-grid">
-        <section className="panel home-targets-panel">
-          <div className="section-heading"><div><p className="eyebrow">Today at a glance</p><h2>Core inputs</h2></div><button className="ghost-button compact-button" type="button" onClick={onOpenCheckIn}>Edit</button></div>
-          <div className="home-target-list">
-            {targetRows.map((row) => {
-              const value = row.value
-              const progress = value === null ? 0 : Math.min(100, Math.round((value / row.target) * 100))
-              return <article key={row.label}><div><strong>{row.label}</strong><span>{value === null ? 'Not logged' : `${value.toLocaleString()}${row.suffix ? ` ${row.suffix}` : ''}`} <small>/ {row.target.toLocaleString()} {row.suffix}</small></span></div><div className="home-target-track"><i style={{ width: `${progress}%` }} /></div></article>
-            })}
-          </div>
-          <div className={`home-plan-status ${entry.plannedWorkoutCompleted ? 'is-complete' : ''}`}><span>{entry.plannedWorkoutCompleted ? '✓' : '○'}</span><div><strong>Training or recovery plan</strong><small>{entry.plannedWorkoutCompleted ? 'Completed as planned' : 'Not marked complete yet'}</small></div></div>
-        </section>
+      <div className="home-dashboard-grid">
+        <div className="home-dashboard-main">
+          <section className="panel home-trends-panel">
+            <div className="section-heading"><div><p className="eyebrow">Last seven days</p><h2>Trend snapshot</h2></div><span>{weeklySummary.weightChange === null ? 'Keep logging weight' : `${weeklySummary.weightChange > 0 ? '+' : ''}${weeklySummary.weightChange.toFixed(1)} lb vs last week`}</span></div>
+            <div className="home-trend-grid">
+              <MiniTrendChart label="Weight trend" values={weightPoints.map((point) => { const value = point.rollingAverage ?? point.raw; return value === null ? null : poundsToDisplay(value, settings.targets.weightUnit) })} dates={weightPoints.map((point) => point.date)} unit={settings.targets.weightUnit} />
+              <MiniTrendChart label="Sleep" values={recentDates.map((date) => entries[date]?.sleepHours ?? null)} dates={recentDates} unit="hr" target={settings.targets.sleepHours} />
+              <MiniTrendChart label="Steps" values={recentDates.map((date) => entries[date]?.steps ?? null)} dates={recentDates} unit="" target={settings.targets.steps} />
+            </div>
+          </section>
 
-        <section className="panel home-day-plan">
-          <div className="section-heading"><div><p className="eyebrow">Plan</p><h2>Movement</h2></div><span>{entry.exerciseMinutes} min</span></div>
-          {exerciseRules.length > 0 ? exerciseRules.map((rule) => <article className="home-plan-row" key={rule.key}><span>{rule.icon}</span><div><strong>{rule.label}</strong><small>{rule.exercise?.workoutType} · {rule.exercise?.targetMinutes} min</small></div></article>) : <p className="home-empty-copy">Recovery day. Steps and optional movement are enough.</p>}
-          {(entry.workouts ?? []).map((workout) => <article className="home-log-row" key={workout.id}><strong>{workout.type}</strong><span>{workout.minutes} min</span></article>)}
-          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Log training</button>
-        </section>
+          <section className="panel home-today-panel">
+            <div className="home-ring-column"><p className="eyebrow">Today</p><TargetRings calories={calorieProgress} protein={proteinProgress} steps={stepProgress} /><div className="home-ring-legend"><span><i className="calories" />Calories</span><span><i className="protein" />Protein</span><span><i className="steps" />Steps</span></div></div>
+            <div className="home-today-food"><div className="section-heading"><div><p className="eyebrow">Food eaten</p><h2>Meals</h2></div><span>{entry.foods.length} items</span></div>{entry.foods.length ? <div className="home-food-list">{entry.foods.slice(0, 6).map((food) => <article key={food.id}><div><strong>{food.name}</strong><small>{food.meal}</small></div><span>{food.calories} kcal · {food.proteinGrams} g</span></article>)}</div> : <p className="home-empty-copy">Nothing logged yet.</p>}<div className="home-meal-shortcuts">{savedMeals.slice(0, 4).map((meal) => <button type="button" key={meal.id} disabled={isFinalized} onClick={() => onAddSavedMeal(meal)}>+ {meal.name}</button>)}</div><button className="secondary-button compact-button" type="button" onClick={onOpenDiet}>Open Diet</button></div>
+          </section>
+        </div>
 
-        <section className="panel home-meals-summary">
-          <div className="section-heading"><div><p className="eyebrow">Nutrition</p><h2>Meals</h2></div><span>{entry.foods?.length ?? 0} logged</span></div>
-          {(entry.foods ?? []).length > 0 ? <div className="home-food-list">{(entry.foods ?? []).slice(0, 5).map((food) => <article key={food.id}><div><strong>{food.name}</strong><small>{food.meal}</small></div><span>{food.calories} kcal · {food.proteinGrams} g</span></article>)}</div> : <p className="home-empty-copy">No meals logged. Add food or enter daily totals in Check-In.</p>}
-          <button className="secondary-button" type="button" onClick={onOpenCheckIn}>Log meals</button>
-        </section>
-
-        <section className="panel home-goals-panel">
+        <section className="panel home-goals-panel home-dashboard-goals">
           <div className="section-heading"><div><p className="eyebrow">Personal standards</p><h2>Goals</h2></div><span>{completed}/{totalRules}</span></div>
           <div className="home-goal-columns">{goalGroups.map((group) => <section key={group.key}><h3>{group.label}</h3>{group.rules.map((rule) => { const complete = ruleComplete(entry, rule.key, settings); const tracked = Boolean(rule.diet); return tracked ? <article className={complete ? 'is-complete' : ''} key={rule.key}><span>{complete ? '✓' : '○'}</span><div><strong>{rule.label}</strong><small>{ruleDetail(rule, entry, settings)}</small></div></article> : <button className={complete ? 'is-complete' : ''} key={rule.key} type="button" disabled={isFinalized} onClick={() => onToggleRule(rule.key)}><span>{complete ? '✓' : '○'}</span><strong>{rule.label}</strong></button> })}</section>)}</div>
         </section>
       </div>
     </div>
   )
+}
+
+function MiniTrendChart({ label, values, dates, unit, target }: { label: string; values: (number | null)[]; dates: string[]; unit: string; target?: number }) {
+  const available = values.filter((value): value is number => value !== null && Number.isFinite(value))
+  const floor = available.length ? Math.min(...available, target ?? Infinity) : 0
+  const ceiling = available.length ? Math.max(...available, target ?? -Infinity) : 1
+  const range = Math.max(ceiling - floor, ceiling * 0.08, 1)
+  const points = values.map((value, index) => value === null ? null : {
+    x: values.length <= 1 ? 50 : 5 + (index / (values.length - 1)) * 90,
+    y: 86 - ((value - floor) / range) * 68,
+  })
+  const polyline = points.filter((point): point is { x: number; y: number } => point !== null).map((point) => `${point.x},${point.y}`).join(' ')
+  const latest = [...values].reverse().find((value): value is number => value !== null) ?? null
+
+  return <article className="mini-trend-card">
+    <div><strong>{label}</strong><span>{latest === null ? 'No data' : `${latest.toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit ? ` ${unit}` : ''}`}</span></div>
+    <svg viewBox="0 0 100 100" role="img" aria-label={`${label} for the last seven days`}>
+      {target !== undefined && target >= floor && target <= ceiling && <line className="trend-target-line" x1="5" x2="95" y1={86 - ((target - floor) / range) * 68} y2={86 - ((target - floor) / range) * 68} />}
+      {polyline && <polyline points={polyline} />}
+      {points.map((point, index) => point && <circle key={dates[index] ?? index} cx={point.x} cy={point.y} r="2.7"><title>{dates[index]}: {values[index]} {unit}</title></circle>)}
+    </svg>
+    <small>{dates[0] ? formatShortDate(dates[0]) : ''}<span>{dates.at(-1) ? formatShortDate(dates.at(-1)!) : ''}</span></small>
+  </article>
+}
+
+function TargetRings({ calories, protein, steps }: { calories: number; protein: number; steps: number }) {
+  const average = Math.round((calories + protein + steps) / 3)
+  return <div className="target-rings" aria-label={`Daily targets ${average}% complete`}>
+    <div className="target-ring target-ring-calories" style={{ '--ring-progress': `${calories * 3.6}deg` } as CSSProperties}>
+      <div className="target-ring target-ring-protein" style={{ '--ring-progress': `${protein * 3.6}deg` } as CSSProperties}>
+        <div className="target-ring target-ring-steps" style={{ '--ring-progress': `${steps * 3.6}deg` } as CSSProperties}>
+          <div><strong>{average}%</strong><span>today</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
 }
 
 function QuickStartChecklist({ items }: { items: QuickStartItem[] }) {

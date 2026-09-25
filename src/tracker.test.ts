@@ -16,6 +16,7 @@ import {
   getNextExerciseDate,
   makeEmptyEntry,
   normalizeFoodLibrary,
+  normalizeSavedMeals,
   normalizePrivacySettings,
   normalizeSettings,
   ruleComplete,
@@ -232,6 +233,18 @@ describe('tracker scoring', () => {
     expect(duplicate).toMatchObject({ meal: 'snack', name: 'Beer', calories: 150, proteinGrams: 1, categories: ['alcohol'] })
     expect(duplicate.id).not.toBe(food.id)
     expect(duplicate.categories).not.toBe(food.categories)
+  })
+
+  it('normalizes reusable meals and drops empty presets', () => {
+    const meals = normalizeSavedMeals([
+      { id: 'breakfast', name: ' Morning fuel ', foods: [{ id: 'oats', meal: 'breakfast', name: 'Oats', calories: 300, proteinGrams: 12 }], createdAt: '2026-09-25T00:00:00.000Z' },
+      { id: 'empty', name: 'Empty', foods: [] },
+      { id: 'unnamed', name: '  ', foods: [{ id: 'food', meal: 'lunch', name: 'Food', calories: 1, proteinGrams: 1 }] },
+    ])
+
+    expect(meals).toHaveLength(1)
+    expect(meals[0]).toMatchObject({ id: 'breakfast', name: 'Morning fuel' })
+    expect(meals[0].foods[0]).toMatchObject({ name: 'Oats', calories: 300, proteinGrams: 12 })
   })
 
   it('builds a daily share scorecard for group accountability', () => {

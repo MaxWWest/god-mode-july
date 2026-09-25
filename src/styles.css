@@ -4708,7 +4708,7 @@ textarea:focus-visible {
   left: 50%;
   bottom: 10px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   width: min(calc(100% - 32px), 1160px);
   padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom));
   border: 1px solid var(--line);
@@ -5417,4 +5417,170 @@ textarea:focus-visible {
   .weight-trend-panel .period-toggle { width: 100%; }
   .weight-trend-panel .period-toggle button { flex: 1; }
   .weight-chart-footer span:nth-child(2) { display: none; }
+}
+
+/* Dashboard and diet workspace */
+.home-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.home-dashboard-main,
+.diet-library-column {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.home-trends-panel,
+.home-today-panel,
+.home-dashboard-goals,
+.diet-builder-panel,
+.saved-meals-panel,
+.food-library-summary {
+  padding: 18px;
+}
+
+.home-trends-panel .section-heading,
+.home-today-panel .section-heading,
+.home-dashboard-goals .section-heading,
+.saved-meals-panel .section-heading,
+.food-library-summary .section-heading {
+  margin-bottom: 12px;
+}
+
+.home-trend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mini-trend-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.mini-trend-card > div,
+.mini-trend-card > small {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mini-trend-card strong { font-size: 0.78rem; }
+.mini-trend-card span,
+.mini-trend-card small { color: var(--muted); font-size: 0.68rem; }
+.mini-trend-card svg { display: block; width: 100%; height: 80px; margin: 3px 0; overflow: visible; }
+.mini-trend-card polyline { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.mini-trend-card circle { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.mini-trend-card .trend-target-line { stroke: var(--success); stroke-width: 1.3; stroke-dasharray: 4 4; opacity: 0.7; }
+
+.home-today-panel {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+}
+
+.home-ring-column { display: grid; justify-items: center; gap: 8px; }
+.home-ring-column .eyebrow { justify-self: start; }
+.target-rings { display: grid; place-items: center; width: 152px; aspect-ratio: 1; }
+.target-ring { display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--ring-color) 0 var(--ring-progress), var(--surface-soft) var(--ring-progress) 360deg); }
+.target-ring::before { content: ''; position: absolute; }
+.target-ring-calories { width: 152px; height: 152px; padding: 11px; --ring-color: #ff5b6e; }
+.target-ring-protein { width: 130px; height: 130px; padding: 11px; background-color: var(--surface); --ring-color: #74d889; }
+.target-ring-steps { width: 108px; height: 108px; padding: 11px; background-color: var(--surface); --ring-color: var(--accent); }
+.target-ring-steps > div { display: grid; place-items: center; width: 86px; height: 86px; border-radius: 50%; background: var(--surface); }
+.target-ring-steps strong { font-size: 1.15rem; }
+.target-ring-steps span { color: var(--muted); font-size: 0.68rem; }
+.home-ring-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; color: var(--muted); font-size: 0.64rem; }
+.home-ring-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.home-ring-legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.home-ring-legend i.calories { background: #ff5b6e; }
+.home-ring-legend i.protein { background: #74d889; }
+
+.home-today-food { min-width: 0; }
+.home-food-list { display: grid; gap: 4px; margin-bottom: 10px; }
+.home-food-list article,
+.food-library-summary-list article {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.home-food-list div { display: grid; }
+.home-food-list strong,
+.food-library-summary-list strong { font-size: 0.75rem; }
+.home-food-list small,
+.home-food-list span,
+.food-library-summary-list span { color: var(--muted); font-size: 0.67rem; }
+.home-empty-copy { margin: 8px 0 12px; color: var(--muted); font-size: 0.75rem; }
+.home-meal-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.home-meal-shortcuts button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); background: var(--surface-soft); font-size: 0.66rem; }
+
+.home-dashboard-goals .home-goal-columns { grid-template-columns: 1fr; gap: 12px; }
+.home-dashboard-goals .home-goal-columns section { min-width: 0; }
+.home-dashboard-goals .home-goal-columns article,
+.home-dashboard-goals .home-goal-columns button { min-height: 42px; padding: 7px 9px; }
+
+.diet-workspace-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.65fr); gap: 16px; align-items: start; }
+.save-meal-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.saved-meal-list { display: grid; gap: 8px; }
+.saved-meal-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.saved-meal-list article > div:first-child { display: grid; gap: 3px; }
+.saved-meal-list article > div:last-child { display: flex; gap: 5px; }
+.saved-meal-list strong { font-size: 0.78rem; }
+.saved-meal-list small { color: var(--muted); font-size: 0.66rem; }
+.food-library-summary-list { display: grid; }
+
+@media (max-width: 1050px) {
+  .home-dashboard-grid,
+  .diet-workspace-grid { grid-template-columns: 1fr; }
+  .home-dashboard-goals .home-goal-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .home-trend-grid,
+  .home-dashboard-goals .home-goal-columns { grid-template-columns: 1fr; }
+  .home-today-panel { grid-template-columns: 1fr; }
+  .home-ring-column .eyebrow { justify-self: center; }
+  .saved-meal-list article { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 1101px) and (max-height: 800px) {
+  .home-command-center { gap: 10px; }
+  .home-command-header { padding: 10px 16px; }
+  .home-command-header h2 { font-size: 1.18rem; }
+  .home-command-header p { font-size: 0.66rem; }
+  .home-command-header .eyebrow { font-size: 0.56rem; }
+  .home-command-actions button { min-height: 38px; padding: 7px 12px; font-size: 0.7rem; }
+  .home-dashboard-grid,
+  .home-dashboard-main { gap: 10px; }
+  .home-trends-panel,
+  .home-today-panel,
+  .home-dashboard-goals { padding: 12px; }
+  .home-trends-panel .section-heading,
+  .home-today-panel .section-heading,
+  .home-dashboard-goals .section-heading { margin-bottom: 7px; }
+  .home-trends-panel .section-heading h2,
+  .home-today-panel .section-heading h2,
+  .home-dashboard-goals .section-heading h2 { font-size: 1.14rem; }
+  .mini-trend-card { padding: 9px; }
+  .mini-trend-card svg { height: 56px; }
+  .home-today-panel { grid-template-columns: 150px minmax(0, 1fr); gap: 14px; }
+  .target-rings { width: 116px; }
+  .target-ring-calories { width: 116px; height: 116px; padding: 8px; }
+  .target-ring-protein { width: 100px; height: 100px; padding: 8px; }
+  .target-ring-steps { width: 84px; height: 84px; padding: 8px; }
+  .target-ring-steps > div { width: 68px; height: 68px; }
+  .home-food-list article { padding: 4px 0; }
+  .home-dashboard-goals .home-goal-columns { gap: 7px; }
+  .home-dashboard-goals .home-goal-columns article,
+  .home-dashboard-goals .home-goal-columns button { min-height: 37px; padding: 5px 7px; }
 }

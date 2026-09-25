@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { AppNotice } from './types'
 
-export type IconName = 'home' | 'check' | 'progress' | 'friends' | 'settings'
+export type IconName = 'home' | 'diet' | 'check' | 'progress' | 'friends' | 'settings'
 
 export function Icon({ name }: { name: IconName }) {
   const paths = {
     home: <path d="M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9.5Z" />,
+    diet: <><path d="M6 3v7M9 3v7M6 7h3M7.5 10v11" /><path d="M15 3v18M15 3c4 2 4 7 0 9" /></>,
     check: <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>,
     progress: <><path d="M5 20V10M12 20V4M19 20v-7" /><path d="M3 20h18" /></>,
     friends: <><circle cx="8" cy="8" r="3" /><circle cx="17" cy="9" r="2.5" /><path d="M3 20a5 5 0 0 1 10 0" /><path d="M13.5 20a4 4 0 0 1 7.5 0" /></>,

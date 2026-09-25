@@ -25,7 +25,6 @@ import { displayWaistToInches, displayWeightToPounds, inchesToDisplay, poundsToD
 import {
   CheckField,
   NumberField,
-  RatingField,
   SelectField,
   TextField,
   TextArea,
@@ -273,7 +272,6 @@ export default function CheckInView({
         <div className="checkin-section-heading"><div><p className="eyebrow">Close the loop</p><h3>Review</h3></div><span>Optional, but useful.</span></div>
         <div className="checkin-review-grid">
           <div className="checkin-review-block"><h4>Personal goals</h4>{habitRules.length === 0 ? <p className="empty-rule-category">No active mental or miscellaneous rules.</p> : habitRules.map((rule) => <CheckField key={rule.key} disabled={isFinalized} label={rule.label} checked={ruleChecked(rule)} onChange={(checked) => updateRuleCheck(rule, checked)} />)}</div>
-          <div className="checkin-review-block"><h4>Recovery signals</h4><div className="rating-grid"><RatingField disabled={isFinalized} label="Mood" value={entry.mood} onChange={(value) => onUpdate({ mood: value })} /><RatingField disabled={isFinalized} label="Energy" value={entry.energy} onChange={(value) => onUpdate({ energy: value })} /><RatingField disabled={isFinalized} label="Hunger" value={entry.hunger} onChange={(value) => onUpdate({ hunger: value })} /></div></div>
           <div className="checkin-review-block reflection-block"><h4>Reflection</h4><div className="reflection-grid"><TextArea disabled={isFinalized} label="What went well?" value={entry.wentWell} placeholder="Name the win you want to repeat." onChange={(value) => onUpdate({ wentWell: value })} /><TextArea disabled={isFinalized} label="What made today difficult?" value={entry.difficult} placeholder="Record the trigger, obstacle, or weak point." onChange={(value) => onUpdate({ difficult: value })} /></div></div>
         </div>
       </section>}
