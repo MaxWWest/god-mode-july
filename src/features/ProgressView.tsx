@@ -156,10 +156,15 @@ export default function ProgressView({
   const dates = getLoggedDates(entries, settings)
   const ruleRates = getRuleRatesForDates(dates, entries, settings)
   const periodRecap = buildPeriodRecap(entries, settings, period)
-  const trendData = TREND_METRICS.map((metric) => ({
-    metric,
-    points: getTrendPoints(entries, settings, metric),
-  }))
+  const trendData = TREND_METRICS.map((metric) => {
+    const displayMetric: TrendMetric = metric.key === 'weight' ? {
+      ...metric,
+      unit: settings.targets.weightUnit,
+      format: (value) => `${value.toFixed(1)} ${settings.targets.weightUnit}`,
+      getValue: (entry) => entry.weightPounds === null ? null : poundsToDisplay(entry.weightPounds, settings.targets.weightUnit),
+    } : metric
+    return { metric: displayMetric, points: getTrendPoints(entries, settings, displayMetric) }
+  })
   const throughDate = selectableEndDate(settings)
   const exercisePatterns = getEnabledRules(settings)
     .filter((rule) => rule.category === 'exercise' && rule.exercise)
@@ -212,10 +217,10 @@ export default function ProgressView({
         <div className="weekly-cut-grid">
           <span><small>Current week avg</small><strong>{weeklyCut.currentWeightAverage === null ? '—' : `${poundsToDisplay(weeklyCut.currentWeightAverage, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}`}</strong></span>
           <span><small>Previous week avg</small><strong>{weeklyCut.previousWeightAverage === null ? '—' : `${poundsToDisplay(weeklyCut.previousWeightAverage, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}`}</strong></span>
-          <span><small>Weekly change</small><strong>{weeklyCut.weightChange === null ? '—' : `${weeklyCut.weightChange > 0 ? '+' : ''}${weeklyCut.weightChange.toFixed(1)} lb`}</strong></span>
-          <span><small>Rate</small><strong>{weightRate.poundsPerWeek === null ? 'Not enough data' : `${weightRate.poundsPerWeek.toFixed(1)} lb/wk · ${weightRate.percentPerWeek?.toFixed(2)}%`}</strong></span>
+          <span><small>Weekly change</small><strong>{weeklyCut.weightChange === null ? '—' : `${weeklyCut.weightChange > 0 ? '+' : ''}${poundsToDisplay(weeklyCut.weightChange, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}`}</strong></span>
+          <span><small>Rate</small><strong>{weightRate.poundsPerWeek === null ? 'Not enough data' : `${poundsToDisplay(weightRate.poundsPerWeek, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit}/wk · ${weightRate.percentPerWeek?.toFixed(2)}%`}</strong></span>
           <span><small>Core Three</small><strong>{weeklyCut.coreThreeDays} / {weeklyCut.elapsedDays} days</strong></span>
-          <span><small>Checkpoint</small><strong>{cutProgress.remaining === null ? '—' : `${cutProgress.remaining.toFixed(1)} lb remaining`}</strong></span>
+          <span><small>Checkpoint</small><strong>{cutProgress.remaining === null ? '—' : `${poundsToDisplay(cutProgress.remaining, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit} remaining`}</strong></span>
         </div>
       </section>
 
@@ -325,7 +330,7 @@ export default function ProgressView({
           </div>
         </div>
         <div className="weekly-list">
-          <PeriodRecapRow recap={periodRecap} />
+          <PeriodRecapRow recap={periodRecap} weightUnit={settings.targets.weightUnit} />
         </div>
       </section>
 
@@ -514,7 +519,7 @@ function TrendChart({ metric, points }: { metric: TrendMetric; points: TrendPoin
   )
 }
 
-function PeriodRecapRow({ recap }: { recap: PeriodRecap }) {
+function PeriodRecapRow({ recap, weightUnit }: { recap: PeriodRecap; weightUnit: 'lb' | 'kg' }) {
   const hasData = recap.loggedDays > 0
 
   return (
@@ -535,7 +540,7 @@ function PeriodRecapRow({ recap }: { recap: PeriodRecap }) {
           <span><small>Sleep</small><strong>{recap.averageSleep === null ? '—' : `${roundTo(recap.averageSleep)} hr`}</strong></span>
           <span><small>Calories</small><strong>{recap.averageCalories === null ? '—' : `${Math.round(recap.averageCalories)} kcal`}</strong></span>
           <span><small>Mood</small><strong>{recap.averageMood === null ? '—' : `${roundTo(recap.averageMood)}/5`}</strong></span>
-          <span><small>Weight</small><strong>{recap.weightChange === null ? '—' : formatSigned(recap.weightChange, 'lb')}</strong></span>
+          <span><small>Weight</small><strong>{recap.weightChange === null ? '—' : formatSigned(poundsToDisplay(recap.weightChange, weightUnit), weightUnit)}</strong></span>
           <span><small>Reflections</small><strong>{recap.reflectionCount}</strong></span>
         </div>
       ) : (

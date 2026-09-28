@@ -15,7 +15,7 @@ test('logs a complete day, finalizes it, and restores it after reload', async ({
 
   await expect(page.getByRole('heading', { name: 'Meals', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Check in now', exact: true }).click()
-  await page.getByRole('spinbutton', { name: 'Morning weight lb', exact: true }).fill('228.4')
+  await page.getByRole('spinbutton', { name: 'Morning weight kg', exact: true }).fill('103.6')
   await page.getByRole('spinbutton', { name: 'Steps steps', exact: true }).fill('13500')
   await page.getByRole('spinbutton', { name: 'Sleep hours', exact: true }).fill('7.5')
   await page.getByRole('checkbox', { name: 'Planned training or recovery completed', exact: true }).check()

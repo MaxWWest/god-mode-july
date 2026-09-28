@@ -65,7 +65,7 @@ export const DEFAULT_TARGETS: ChallengeTargets = {
   sleepHours: 7,
   startingWeightPounds: 229,
   checkpointWeightsPounds: [215],
-  weightUnit: 'lb',
+  weightUnit: 'kg',
   waistUnit: 'in',
 }
 
@@ -673,7 +673,7 @@ export function normalizeSettings(value: unknown): ChallengeSettings {
     checkpointWeightsPounds: Array.isArray(targetsCandidate.checkpointWeightsPounds)
       ? targetsCandidate.checkpointWeightsPounds.map((weight) => normalizeOptionalNumber(weight, 50, 700)).filter((weight): weight is number => weight !== null).slice(0, 8)
       : DEFAULT_TARGETS.checkpointWeightsPounds,
-    weightUnit: targetsCandidate.weightUnit === 'kg' ? 'kg' : 'lb',
+    weightUnit: targetsCandidate.weightUnit === 'lb' || targetsCandidate.weightUnit === 'kg' ? targetsCandidate.weightUnit : DEFAULT_TARGETS.weightUnit,
     waistUnit: targetsCandidate.waistUnit === 'cm' ? 'cm' : 'in',
   }
   if (targets.proteinPreferredMaximum < targets.proteinGrams) targets.proteinPreferredMaximum = targets.proteinGrams

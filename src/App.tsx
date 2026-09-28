@@ -43,6 +43,7 @@ import {
 } from './socialData'
 import {
   DAY_IN_MS,
+  MAX_FOOD_LOGS,
   DEFAULT_PRIVACY_SETTINGS,
   DEFAULT_SETTINGS,
   DEFAULT_SYNC_META,
@@ -66,6 +67,7 @@ import {
   getLoggedDates,
   getTrackingDates,
   foodLibraryItemFromFood,
+  foodLogFromLibraryItem,
   duplicateFoodLog,
   isEntryFinalized,
   isIsoDate,
@@ -119,6 +121,7 @@ import type {
   FriendFeedReaction,
   FoodLibraryItem,
   FoodLog,
+  MealType,
   SavedMeal,
   FriendProfile,
   FriendRequest,
@@ -160,6 +163,7 @@ const PRIVACY_STORAGE_KEY = 'god-mode-july-privacy-v1'
 const PASSWORD_SETUP_STORAGE_KEY = 'god-mode-july-password-setup-required-v1'
 const FOOD_LIBRARY_STORAGE_KEY = 'god-mode-july-food-library-v1'
 const SAVED_MEALS_STORAGE_KEY = 'god-mode-july-saved-meals-v1'
+const WEIGHT_UNIT_MIGRATION_KEY = 'god-mode-july-weight-unit-kg-v1'
 const PENDING_FRIEND_INVITE_STORAGE_KEY = 'god-mode-july-pending-friend-invite-v1'
 const PENDING_CHALLENGE_LINK_STORAGE_KEY = 'god-mode-july-pending-challenge-link-v1'
 
@@ -514,7 +518,12 @@ async function consumeAuthRedirectSession(): Promise<{ user: User | null; redire
 function App() {
   const [launchDeepLink] = useState<LaunchDeepLink>(() => readLaunchDeepLink())
   const launchedFromDeepLink = Boolean(launchDeepLink.friendCode || launchDeepLink.challengeId)
-  const [settings, setSettings] = useState<ChallengeSettings>(() => normalizeSettings(loadFromStorage<unknown>(SETTINGS_STORAGE_KEY, null)))
+  const [settings, setSettings] = useState<ChallengeSettings>(() => {
+    const loaded = normalizeSettings(loadFromStorage<unknown>(SETTINGS_STORAGE_KEY, null))
+    if (loadFromStorage<unknown>(WEIGHT_UNIT_MIGRATION_KEY, false) === true) return loaded
+    saveToStorage(WEIGHT_UNIT_MIGRATION_KEY, true)
+    return { ...loaded, targets: { ...loaded.targets, weightUnit: 'kg' } }
+  })
   const [view, setView] = useState<View>('home')
   const [selectedDate, setSelectedDate] = useState(() => clampDate(todayIso(), settings))
   const [entries, setEntries] = useState<EntryMap>(() => normalizeEntries(loadFromStorage<unknown>(ENTRIES_STORAGE_KEY, {})))
@@ -999,13 +1008,17 @@ function App() {
     const trimmedName = name.trim()
     if (!trimmedName || foods.length === 0) return
     const now = new Date().toISOString()
-    setSavedMeals((current) => normalizeSavedMeals([{
-      id: `saved-meal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: trimmedName,
-      foods,
-      createdAt: now,
-      updatedAt: now,
-    }, ...current]))
+    setSavedMeals((current) => {
+      const existing = current.find((meal) => meal.name.toLowerCase() === trimmedName.toLowerCase())
+      const nextMeal: SavedMeal = {
+        id: existing?.id ?? `saved-meal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: trimmedName,
+        foods,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
+      return normalizeSavedMeals([nextMeal, ...current.filter((meal) => meal.id !== existing?.id)])
+    })
     showAppNotice(`${trimmedName} saved as a meal.`)
   }
 
@@ -1019,6 +1032,13 @@ function App() {
     const foods = [...(entry.foods ?? []), ...meal.foods.map((food) => duplicateFoodLog(food))]
     updateEntry(foodLogsEntryPatch(foods))
     showAppNotice(`${meal.name} added to today.`)
+  }
+
+  function addSavedFood(food: FoodLibraryItem, meal: MealType = 'snack') {
+    if (entryFinalized || entry.foods.length >= MAX_FOOD_LOGS) return
+    updateEntry(foodLogsEntryPatch([...entry.foods, foodLogFromLibraryItem(food, meal)]))
+    markFoodLibraryItemUsed(food.id)
+    showAppNotice(`${food.name} added to ${meal}.`)
   }
 
   function updateSettings(nextSettings: ChallengeSettings) {
@@ -2364,6 +2384,7 @@ function App() {
             selectedDate={selectedDate}
             settings={settings}
             savedMeals={savedMeals}
+            foodLibrary={foodLibrary}
             completed={stats.completed}
             totalRules={stats.total}
             isFinalized={entryFinalized}
@@ -2371,6 +2392,7 @@ function App() {
             onOpenCheckIn={() => setView('check-in')}
             onOpenDiet={() => setView('diet')}
             onAddSavedMeal={addMealPreset}
+            onAddSavedFood={addSavedFood}
             onFinalizeDay={finalizeSelectedDay}
             onUnlockDay={unlockSelectedDay}
             onShareDay={shareSelectedDay}
@@ -2393,6 +2415,7 @@ function App() {
               onSaveMeal={saveMealPreset}
               onDeleteMeal={deleteMealPreset}
               onAddMeal={addMealPreset}
+              onAddFood={addSavedFood}
             />
           </Suspense>
         )}
@@ -2695,6 +2718,7 @@ function Dashboard({
   selectedDate,
   settings,
   savedMeals,
+  foodLibrary,
   completed,
   totalRules,
   isFinalized,
@@ -2702,6 +2726,7 @@ function Dashboard({
   onOpenCheckIn,
   onOpenDiet,
   onAddSavedMeal,
+  onAddSavedFood,
   onFinalizeDay,
   onUnlockDay,
   onShareDay,
@@ -2711,6 +2736,7 @@ function Dashboard({
   selectedDate: string
   settings: ChallengeSettings
   savedMeals: SavedMeal[]
+  foodLibrary: FoodLibraryItem[]
   completed: number
   totalRules: number
   isFinalized: boolean
@@ -2718,6 +2744,7 @@ function Dashboard({
   onOpenCheckIn: () => void
   onOpenDiet: () => void
   onAddSavedMeal: (meal: SavedMeal) => void
+  onAddSavedFood: (food: FoodLibraryItem, meal?: MealType) => void
   onFinalizeDay: () => void
   onUnlockDay: () => void
   onShareDay: () => void
@@ -2738,6 +2765,7 @@ function Dashboard({
   const calorieProgress = entry.calories === null ? 0 : Math.min(100, Math.round((entry.calories / settings.targets.calories) * 100))
   const proteinProgress = entry.proteinGrams === null ? 0 : Math.min(100, Math.round((entry.proteinGrams / settings.targets.proteinGrams) * 100))
   const stepProgress = entry.steps === null ? 0 : Math.min(100, Math.round((entry.steps / settings.targets.steps) * 100))
+  const quickFoods = [...foodLibrary].sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.useCount - a.useCount || a.name.localeCompare(b.name)).slice(0, 4)
 
   return (
     <div className="page-stack home-command-center">
@@ -2753,7 +2781,7 @@ function Dashboard({
       <div className="home-dashboard-grid">
         <div className="home-dashboard-main">
           <section className="panel home-trends-panel">
-            <div className="section-heading"><div><p className="eyebrow">Last seven days</p><h2>Trend snapshot</h2></div><span>{weeklySummary.weightChange === null ? 'Keep logging weight' : `${weeklySummary.weightChange > 0 ? '+' : ''}${weeklySummary.weightChange.toFixed(1)} lb vs last week`}</span></div>
+            <div className="section-heading"><div><p className="eyebrow">Last seven days</p><h2>Trend snapshot</h2></div><span>{weeklySummary.weightChange === null ? 'Keep logging weight' : `${weeklySummary.weightChange > 0 ? '+' : ''}${poundsToDisplay(weeklySummary.weightChange, settings.targets.weightUnit).toFixed(1)} ${settings.targets.weightUnit} vs last week`}</span></div>
             <div className="home-trend-grid">
               <MiniTrendChart label="Weight trend" values={weightPoints.map((point) => { const value = point.rollingAverage ?? point.raw; return value === null ? null : poundsToDisplay(value, settings.targets.weightUnit) })} dates={weightPoints.map((point) => point.date)} unit={settings.targets.weightUnit} />
               <MiniTrendChart label="Sleep" values={recentDates.map((date) => entries[date]?.sleepHours ?? null)} dates={recentDates} unit="hr" target={settings.targets.sleepHours} />
@@ -2763,7 +2791,7 @@ function Dashboard({
 
           <section className="panel home-today-panel">
             <div className="home-ring-column"><p className="eyebrow">Today</p><TargetRings calories={calorieProgress} protein={proteinProgress} steps={stepProgress} /><div className="home-ring-legend"><span><i className="calories" />Calories</span><span><i className="protein" />Protein</span><span><i className="steps" />Steps</span></div></div>
-            <div className="home-today-food"><div className="section-heading"><div><p className="eyebrow">Food eaten</p><h2>Meals</h2></div><span>{entry.foods.length} items</span></div>{entry.foods.length ? <div className="home-food-list">{entry.foods.slice(0, 6).map((food) => <article key={food.id}><div><strong>{food.name}</strong><small>{food.meal}</small></div><span>{food.calories} kcal · {food.proteinGrams} g</span></article>)}</div> : <p className="home-empty-copy">Nothing logged yet.</p>}<div className="home-meal-shortcuts">{savedMeals.slice(0, 4).map((meal) => <button type="button" key={meal.id} disabled={isFinalized} onClick={() => onAddSavedMeal(meal)}>+ {meal.name}</button>)}</div><button className="secondary-button compact-button" type="button" onClick={onOpenDiet}>Open Diet</button></div>
+            <div className="home-today-food"><div className="section-heading"><div><p className="eyebrow">Food eaten</p><h2>Meals</h2></div><span>{entry.foods.length} items</span></div>{entry.foods.length ? <div className="home-food-list">{entry.foods.slice(0, 6).map((food) => <article key={food.id}><div><strong>{food.name}</strong><small>{food.meal}</small></div><span>{food.calories} kcal · {food.proteinGrams} g</span></article>)}</div> : <p className="home-empty-copy">Nothing logged yet.</p>}<div className="home-quick-add"><small>Quick add foods</small><div className="home-meal-shortcuts">{quickFoods.map((food) => <button type="button" key={food.id} disabled={isFinalized} onClick={() => onAddSavedFood(food)}>+ {food.name}</button>)}</div></div><div className="home-quick-add"><small>Saved meals</small><div className="home-meal-shortcuts">{savedMeals.slice(0, 4).map((meal) => <button type="button" key={meal.id} disabled={isFinalized} onClick={() => onAddSavedMeal(meal)}>+ {meal.name}</button>)}</div></div><button className="secondary-button compact-button" type="button" onClick={onOpenDiet}>Open Diet</button></div>
           </section>
         </div>
 

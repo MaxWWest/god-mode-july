@@ -2203,6 +2203,68 @@ textarea:focus-visible {
   gap: 12px;
 }
 
+.core-input-card {
+  --metric-color: var(--accent);
+  position: relative;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--metric-color) 34%, var(--line));
+  border-radius: 8px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--metric-color) 10%, var(--surface)), var(--surface));
+}
+
+.core-input-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 42px;
+  height: 3px;
+  background: var(--metric-color);
+}
+
+.core-input-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.core-input-heading > span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--metric-color) 18%, transparent);
+  color: var(--metric-color);
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.core-input-heading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.core-input-heading strong { font-size: 0.82rem; }
+.core-input-heading small { color: var(--muted); font-size: 0.65rem; }
+.core-input-card .number-field > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.core-input-card .number-field > div { border-color: color-mix(in srgb, var(--metric-color) 28%, var(--line)); background: color-mix(in srgb, var(--surface-solid) 82%, transparent); }
+.core-input-card .number-field input { min-width: 0; padding: 11px 10px; font-size: 1.08rem; font-weight: 850; }
+.core-input-card .number-field small { color: var(--metric-color); font-weight: 850; }
+.core-input-card .check-field { min-height: 47px; border-color: color-mix(in srgb, var(--metric-color) 28%, var(--line)); background: color-mix(in srgb, var(--surface-solid) 82%, transparent); }
+.metric-weight { --metric-color: #78a9ff; }
+.metric-calories { --metric-color: #ff7b72; }
+.metric-protein { --metric-color: #70d98b; }
+.metric-steps { --metric-color: #d8b24f; }
+.metric-sleep { --metric-color: #9d8cff; }
+.metric-training { --metric-color: #54c8c0; }
+
 .checkin-more-fields {
   border-top: 1px solid var(--line);
   padding-top: 10px;
@@ -5523,6 +5585,7 @@ textarea:focus-visible {
 .home-empty-copy { margin: 8px 0 12px; color: var(--muted); font-size: 0.75rem; }
 .home-meal-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .home-meal-shortcuts button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); background: var(--surface-soft); font-size: 0.66rem; }
+.home-quick-add > small { color: var(--muted); font-size: 0.62rem; font-weight: 800; text-transform: uppercase; }
 
 .home-dashboard-goals .home-goal-columns { grid-template-columns: 1fr; gap: 12px; }
 .home-dashboard-goals .home-goal-columns section { min-width: 0; }
@@ -5531,13 +5594,17 @@ textarea:focus-visible {
 
 .diet-workspace-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.65fr); gap: 16px; align-items: start; }
 .save-meal-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.saved-meals-panel > .text-field { margin-bottom: 10px; }
 .saved-meal-list { display: grid; gap: 8px; }
 .saved-meal-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
 .saved-meal-list article > div:first-child { display: grid; gap: 3px; }
 .saved-meal-list article > div:last-child { display: flex; gap: 5px; }
 .saved-meal-list strong { font-size: 0.78rem; }
 .saved-meal-list small { color: var(--muted); font-size: 0.66rem; }
-.food-library-summary-list { display: grid; }
+.saved-food-search-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; margin-bottom: 10px; }
+.food-library-summary-list { display: grid; max-height: 430px; overflow-y: auto; }
+.food-library-summary-list article { align-items: center; }
+.food-library-summary-list article > div { display: grid; gap: 2px; }
 
 @media (max-width: 1050px) {
   .home-dashboard-grid,
